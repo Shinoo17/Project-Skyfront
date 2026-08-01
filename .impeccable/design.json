@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-30T00:00:00.000Z",
+  "title": "Design System: F-22 Raptor Viewer",
+  "extensions": {
+    "colorMeta": {
+      "void-black": {
+        "role": "neutral",
+        "displayName": "Void Black",
+        "canonical": "#050709",
+        "tonalRamp": ["#050709", "#0b0f12", "#12171c", "#263037", "#59656b", "#87949b", "#b9c3c8", "#eef3f5"]
+      },
+      "radar-ice": {
+        "role": "primary",
+        "displayName": "Radar Ice",
+        "canonical": "#9ad7e8",
+        "tonalRamp": ["#07171c", "#0e2b34", "#174757", "#286a7e", "#4b93a8", "#75bdcf", "#9ad7e8", "#e2f8fd"]
+      },
+      "caution-amber": {
+        "role": "secondary",
+        "displayName": "Caution Amber",
+        "canonical": "#ffb74a",
+        "tonalRamp": ["#1a1003", "#3d2608", "#67420d", "#986617", "#ca8c29", "#ffb74a", "#ffd188", "#fff0cf"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Airframe Display",
+        "purpose": "Watermark-scale aircraft identity only."
+      },
+      "instrument": {
+        "displayName": "Instrument Label",
+        "purpose": "State, measurement, identity, and actions."
+      }
+    },
+    "shadows": [
+      {
+        "name": "panel-float",
+        "value": "16px 24px 54px rgba(0, 0, 0, 0.34)",
+        "purpose": "Desktop control surface only."
+      },
+      {
+        "name": "live-point",
+        "value": "0 0 12px rgba(154, 215, 232, 0.5)",
+        "purpose": "Tiny online indicators only."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Panels and control state changes."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile-sheet",
+        "value": "760px"
+      },
+      {
+        "name": "compact-desktop",
+        "value": "1024px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Transport Play",
+      "kind": "button",
+      "refersTo": "transport-primary",
+      "description": "The decisive square playback control.",
+      "html": "<button class=\"ds-transport-play\" aria-label=\"Play animation\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" aria-hidden=\"true\"><path d=\"m7 4 13 8-13 8z\" fill=\"currentColor\"/></svg></button>",
+      "css": ".ds-transport-play { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 2px; color: #050709; background: #dae2e6; transition: background 180ms ease, transform 180ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-transport-play:hover { background: #9ad7e8; transform: translateY(-2px); } .ds-transport-play:focus-visible { outline: 2px solid #9ad7e8; outline-offset: 3px; }"
+    },
+    {
+      "name": "Instrument Button",
+      "kind": "button",
+      "refersTo": "instrument-button",
+      "description": "A flat technical action for view presets.",
+      "html": "<button class=\"ds-instrument-button\">FRONT</button>",
+      "css": ".ds-instrument-button { height: 38px; padding: 0 12px; border: 0; border-radius: 2px; color: #87949b; background: #0b0f12; font: 600 9px/1.4 'Arial Narrow', sans-serif; letter-spacing: .1em; } .ds-instrument-button:hover { color: #9ad7e8; background: #111a1f; } .ds-instrument-button:focus-visible { outline: 2px solid #9ad7e8; outline-offset: 3px; }"
+    },
+    {
+      "name": "Live Status",
+      "kind": "chip",
+      "description": "A status readout, not a decorative pill.",
+      "html": "<span class=\"ds-live-status\"><i></i>MODEL ONLINE</span>",
+      "css": ".ds-live-status { display: inline-flex; align-items: center; gap: 9px; color: #87949b; font: 600 9px/1.4 'Arial Narrow', sans-serif; letter-spacing: .16em; } .ds-live-status i { width: 6px; height: 6px; border-radius: 50%; background: #9ad7e8; box-shadow: 0 0 12px rgba(154, 215, 232, .5); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Radar Test Cell",
+    "overview": "The interface behaves like a dark aerospace evaluation room: the aircraft is the instrument under test and the UI is only the calibrated equipment around it. It is immersive without pretending to be a game HUD.",
+    "keyCharacteristics": [
+      "Aircraft-first, full-bleed composition",
+      "Near-black tonal layers with cold, directional illumination",
+      "Condensed instrument labels used only for identity, status, and measurement",
+      "One ice-blue active state and rare caution-amber orientation marks",
+      "Flat control surfaces; depth belongs primarily to the 3D scene"
+    ],
+    "rules": [
+      {
+        "name": "The Live Signal Rule",
+        "body": "Radar Ice appears only when the system is active, interactive, or focused. Caution Amber appears only where the user needs a singular orientation cue.",
+        "section": "colors"
+      },
+      {
+        "name": "The Instrument Type Rule",
+        "body": "Condensed uppercase text must name a state, measurement, identity, or action; it is not used as body copy.",
+        "section": "typography"
+      }
+    ],
+    "dos": [
+      "Do keep the aircraft as the brightest and largest object in the viewport.",
+      "Do use lines and readouts to clarify real state or interaction.",
+      "Do let active controls become brighter while inactive controls stay quiet.",
+      "Do preserve a usable keyboard focus state and reduced-motion behavior."
+    ],
+    "donts": [
+      "Don't turn the interface into a fictional weapons HUD or add fabricated performance claims.",
+      "Don't scatter neon glows, gradients on text, or decorative glass cards.",
+      "Don't use rounded cards as the default container for every control group.",
+      "Don't let interface chrome cover the aircraft on small screens."
+    ]
+  }
+}

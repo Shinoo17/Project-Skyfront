@@ -1,0 +1,490 @@
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Box,
+  ChevronDown,
+  Crosshair,
+  Expand,
+  Gauge,
+  Lightbulb,
+  Maximize,
+  Pause,
+  Plane,
+  Play,
+  Rotate3D,
+  RotateCcw,
+  RotateCw,
+  Scan,
+  SkipBack,
+  X,
+} from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+function formatTime(value = 0) {
+  const minutes = Math.floor(value / 60)
+  const seconds = Math.floor(value % 60)
+  const frames = Math.floor((value % 1) * 24)
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}:${String(frames).padStart(2, '0')}`
+}
+
+function Toggle({ active, onClick, icon: Icon, children }) {
+  return (
+    <button
+      type="button"
+      className={`toggle-row ${active ? 'is-active' : ''}`}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      <Icon size={16} strokeWidth={1.7} />
+      <span>{children}</span>
+      <i aria-hidden="true" />
+    </button>
+  )
+}
+
+function FlightControlButton({
+  axis,
+  value,
+  label,
+  icon: Icon,
+  flightInput,
+  onFlightInput,
+}) {
+  const isActive = flightInput[axis] === value
+  const press = () => onFlightInput(axis, value)
+  const release = () => onFlightInput(axis, 0)
+
+  return (
+    <button
+      type="button"
+      className={`flight-control-button ${isActive ? 'is-active' : ''}`}
+      aria-label={label}
+      aria-pressed={isActive}
+      onPointerDown={(event) => {
+        event.preventDefault()
+        event.currentTarget.setPointerCapture(event.pointerId)
+        press()
+      }}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onLostPointerCapture={release}
+      onKeyDown={(event) => {
+        if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
+          event.preventDefault()
+          press()
+        }
+      }}
+      onKeyUp={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          release()
+        }
+      }}
+      onBlur={release}
+    >
+      <Icon size={17} strokeWidth={1.7} />
+      <span>{label}</span>
+    </button>
+  )
+}
+
+function ControlPanel({
+  clips,
+  activeClip,
+  onClipChange,
+  playbackSpeed,
+  onSpeedChange,
+  autoRotate,
+  onAutoRotate,
+  lightingMode,
+  onLightingMode,
+  onViewChange,
+  manualFlight,
+  aircraftMotionEnabled,
+  onAircraftMotionToggle,
+  flightInput,
+  onManualFlightChange,
+  onFlightInput,
+  onFlightReset,
+  isOpen,
+  onClose,
+}) {
+  const [panelMode, setPanelMode] = useState(
+    manualFlight ? 'flight' : 'animations',
+  )
+
+  useEffect(() => {
+    setPanelMode(manualFlight ? 'flight' : 'animations')
+  }, [manualFlight])
+
+  const changePanelMode = (mode) => {
+    setPanelMode(mode)
+    onManualFlightChange(mode === 'flight')
+  }
+
+  const signedInput = (value) => {
+    const amount = Math.round(value * 100)
+    return `${amount > 0 ? '+' : ''}${amount}`
+  }
+
+  return (
+    <aside
+      className={`control-panel ${isOpen ? 'is-open' : ''} ${panelMode === 'flight' ? 'is-flight' : ''}`}
+      aria-label="Model controls"
+    >
+      <div className="panel-drag" aria-hidden="true" />
+      <div className="panel-heading">
+        <div>
+          <span>CONTROL SURFACE</span>
+          <strong>AIRFRAME / 001</strong>
+        </div>
+        <button type="button" className="icon-button close-panel" onClick={onClose} aria-label="ปิดแผงควบคุม">
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="panel-tabs" role="tablist" aria-label="Control mode">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={panelMode === 'animations'}
+          className={panelMode === 'animations' ? 'is-active' : ''}
+          onClick={() => changePanelMode('animations')}
+        >
+          <Scan size={13} /> Animations
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={panelMode === 'flight'}
+          className={panelMode === 'flight' ? 'is-active' : ''}
+          onClick={() => changePanelMode('flight')}
+        >
+          <Plane size={13} /> Flight
+        </button>
+      </div>
+
+      {panelMode === 'animations' && (
+        <section className="panel-section animation-section" role="tabpanel">
+        <p className="section-label">
+          <Scan size={13} />
+          Animation bank
+          <span className="clip-count">{clips.length} clips</span>
+        </p>
+        <div
+          className="clip-list"
+          tabIndex={clips.length ? 0 : -1}
+          aria-label={`Animation clips: ${clips.length} รายการ`}
+        >
+          {clips.length ? clips.map((clip, index) => (
+            <button
+              type="button"
+              key={`${clip.name}-${index}`}
+              className={`clip-button ${activeClip === clip.name ? 'is-active' : ''}`}
+              onClick={() => onClipChange(clip.name)}
+            >
+              <span>{String(index + 1).padStart(2, '0')}</span>
+              <div>
+                <strong>{clip.label || clip.name}</strong>
+                <small>{clip.tracks} CHANNELS · {clip.duration.toFixed(1)} SEC</small>
+              </div>
+              <i aria-hidden="true" />
+            </button>
+          )) : (
+            <div className="clip-skeleton"><span /><span /></div>
+          )}
+        </div>
+      </section>
+      )}
+
+      {panelMode === 'flight' && (
+        <section className="panel-section flight-section" role="tabpanel">
+          <p className="section-label">
+            <Plane size={13} />
+            Manual flight
+            <span className="manual-status">Live</span>
+          </p>
+
+          <div className="flight-pad">
+            <FlightControlButton
+              axis="yaw"
+              value={-1}
+              label="Yaw left"
+              icon={RotateCcw}
+              flightInput={flightInput}
+              onFlightInput={onFlightInput}
+            />
+            <FlightControlButton
+              axis="pitch"
+              value={1}
+              label="Pitch up"
+              icon={ArrowUp}
+              flightInput={flightInput}
+              onFlightInput={onFlightInput}
+            />
+            <FlightControlButton
+              axis="yaw"
+              value={1}
+              label="Yaw right"
+              icon={RotateCw}
+              flightInput={flightInput}
+              onFlightInput={onFlightInput}
+            />
+            <FlightControlButton
+              axis="roll"
+              value={-1}
+              label="Roll left"
+              icon={ArrowLeft}
+              flightInput={flightInput}
+              onFlightInput={onFlightInput}
+            />
+            <button
+              type="button"
+              className="flight-reset-button"
+              aria-label="Reset aircraft attitude"
+              onClick={onFlightReset}
+            >
+              <Crosshair size={17} />
+              <span>Level</span>
+            </button>
+            <FlightControlButton
+              axis="roll"
+              value={1}
+              label="Roll right"
+              icon={ArrowRight}
+              flightInput={flightInput}
+              onFlightInput={onFlightInput}
+            />
+            <FlightControlButton
+              axis="flaps"
+              value={1}
+              label="Flaps"
+              icon={ChevronDown}
+              flightInput={flightInput}
+              onFlightInput={onFlightInput}
+            />
+            <FlightControlButton
+              axis="pitch"
+              value={-1}
+              label="Pitch down"
+              icon={ArrowDown}
+              flightInput={flightInput}
+              onFlightInput={onFlightInput}
+            />
+            <span aria-hidden="true" />
+          </div>
+
+          <div className="flight-readout" aria-live="polite">
+            <span>PITCH <strong>{signedInput(flightInput.pitch)}</strong></span>
+            <span>ROLL <strong>{signedInput(flightInput.roll)}</strong></span>
+            <span>YAW <strong>{signedInput(flightInput.yaw)}</strong></span>
+            <span>FLAPS <strong>{signedInput(flightInput.flaps)}</strong></span>
+          </div>
+          <p className="flight-help">KEYS · ARROWS / Q E / F · HOLD TO CONTROL</p>
+        </section>
+      )}
+
+      {panelMode === 'animations' && (
+        <section className="panel-section">
+        <p className="section-label"><Gauge size={13} /> Playback velocity</p>
+        <div className="segmented-control" aria-label="Playback speed">
+          {[0.5, 1, 1.5, 2].map((speed) => (
+            <button
+              type="button"
+              key={speed}
+              className={playbackSpeed === speed ? 'is-active' : ''}
+              onClick={() => onSpeedChange(speed)}
+            >
+              {speed}×
+            </button>
+          ))}
+        </div>
+      </section>
+      )}
+
+      <section className="panel-section">
+        <p className="section-label"><Box size={13} /> Camera vector</p>
+        <div className="view-grid">
+          {[
+            ['perspective', '3/4'],
+            ['front', 'FRONT'],
+            ['side', 'SIDE'],
+            ['top', 'TOP'],
+          ].map(([view, label]) => (
+            <button type="button" key={view} onClick={() => onViewChange(view)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel-section toggle-stack">
+        {panelMode === 'animations' && (
+          <Toggle active={autoRotate} onClick={onAutoRotate} icon={Rotate3D}>
+            Auto orbit
+          </Toggle>
+        )}
+        {panelMode === 'flight' && (
+          <Toggle
+            active={aircraftMotionEnabled}
+            onClick={onAircraftMotionToggle}
+            icon={Rotate3D}
+          >
+            Aircraft follows input
+          </Toggle>
+        )}
+        <Toggle
+          active={lightingMode === 'stealth'}
+          onClick={onLightingMode}
+          icon={Lightbulb}
+        >
+          Low-light mode
+        </Toggle>
+      </section>
+
+      <p className="panel-note">
+        DRAG TO ORBIT · SCROLL TO ZOOM<br />
+        DOUBLE TAP TO RECENTER
+      </p>
+    </aside>
+  )
+}
+
+export default function Interface({
+  clips,
+  activeClip,
+  onClipChange,
+  isPlaying,
+  onPlayPause,
+  currentTime,
+  duration,
+  onSeek,
+  playbackSpeed,
+  onSpeedChange,
+  autoRotate,
+  onAutoRotate,
+  lightingMode,
+  onLightingMode,
+  onViewChange,
+  onRestart,
+  onFullscreen,
+  isPanelOpen,
+  manualFlight,
+  aircraftMotionEnabled,
+  onAircraftMotionToggle,
+  flightInput,
+  onManualFlightChange,
+  onFlightInput,
+  onFlightReset,
+  onPanelOpen,
+  onPanelClose,
+}) {
+  const progress = duration ? (currentTime / duration) * 100 : 0
+  const activeClipLabel =
+    clips.find((clip) => clip.name === activeClip)?.label || activeClip
+  const transportDisabled = !activeClip || manualFlight
+
+  return (
+    <div className="interface">
+      <header className="topbar">
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true"><i /><i /></span>
+          <div>
+            <strong>F–22 <em>RAPTOR</em></strong>
+            <small>TACTICAL AIRFRAME VIEWER</small>
+          </div>
+        </div>
+
+        <div className="top-status">
+          <span><i className="status-dot" /> MODEL ONLINE</span>
+          <span className="desktop-only">GLTF / 265 MESHES</span>
+        </div>
+
+        <button type="button" className="icon-button fullscreen-button" onClick={onFullscreen} aria-label="เต็มจอ">
+          <Maximize size={18} />
+        </button>
+      </header>
+
+      <div className="left-readout" aria-hidden="true">
+        <span>05</span>
+        <i />
+        <p>TACTICAL<br />AIRCRAFT</p>
+      </div>
+
+      <div className="airframe-title" aria-hidden="true">
+        <span>INTERACTIVE AIRFRAME</span>
+        <strong>RAPTOR</strong>
+        <p>265 MESHES · 7 MATERIALS · FULL ANIMATION RIG</p>
+      </div>
+
+      <button type="button" className="open-panel" onClick={onPanelOpen}>
+        {manualFlight ? 'FLIGHT' : 'CONTROLS'} <ChevronDown size={15} />
+      </button>
+
+      <ControlPanel
+        clips={clips}
+        activeClip={activeClip}
+        onClipChange={onClipChange}
+        playbackSpeed={playbackSpeed}
+        onSpeedChange={onSpeedChange}
+        autoRotate={autoRotate}
+        onAutoRotate={onAutoRotate}
+        lightingMode={lightingMode}
+        onLightingMode={onLightingMode}
+        onViewChange={onViewChange}
+        manualFlight={manualFlight}
+        aircraftMotionEnabled={aircraftMotionEnabled}
+        onAircraftMotionToggle={onAircraftMotionToggle}
+        flightInput={flightInput}
+        onManualFlightChange={onManualFlightChange}
+        onFlightInput={onFlightInput}
+        onFlightReset={onFlightReset}
+        isOpen={isPanelOpen}
+        onClose={onPanelClose}
+      />
+
+      <div className="transport">
+        <div className="transport-controls">
+          <button type="button" className="transport-main" onClick={onPlayPause} disabled={transportDisabled} aria-label={isPlaying ? 'หยุด animation ชั่วคราว' : 'เล่น animation'}>
+            {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
+          </button>
+          <button type="button" className="transport-secondary" onClick={onRestart} disabled={transportDisabled} aria-label="เริ่ม animation ใหม่">
+            <SkipBack size={17} />
+          </button>
+        </div>
+
+        <div className="timeline">
+          <div className="timeline-meta">
+            <span>{manualFlight ? 'MANUAL FLIGHT' : (activeClipLabel || 'LOADING CLIP')}</span>
+            <strong>{formatTime(currentTime)} <i>/</i> {formatTime(duration)}</strong>
+          </div>
+          <div className="range-wrap" style={{ '--progress': `${progress}%` }}>
+            <input
+              type="range"
+              min="0"
+              max={duration || 1}
+              value={Math.min(currentTime, duration || 1)}
+              step="0.01"
+              disabled={transportDisabled}
+              aria-label="Animation timeline"
+              onChange={(event) => onSeek(Number(event.target.value))}
+            />
+          </div>
+        </div>
+
+        <button type="button" className="reset-view" onClick={() => onViewChange('perspective')}>
+          <RotateCcw size={15} /> RESET VIEW
+        </button>
+      </div>
+
+      <div className="corner-data" aria-hidden="true">
+        <Expand size={13} />
+        <span>WEBGL / PBR</span>
+        <i />
+        <span>LIVE RENDER</span>
+      </div>
+    </div>
+  )
+}
