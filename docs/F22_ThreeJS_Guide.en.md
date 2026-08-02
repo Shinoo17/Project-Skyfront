@@ -19,12 +19,13 @@ Every number here was read from the actual file (`F22.blend`, Blender 5.2.0 LTS)
 | Materials | 7 |
 | Armatures (rigs) | 9 |
 | Scene FPS | **24** |
-| Timeline | frame 1 – 972 (40.5 s) |
+| Animation clips | 10 (open-only, reversible — §3) |
+| Showcase timeline | frame 1 – 972 (40.5 s), reference only |
 | Unit scale | 1.0 |
 | Bounding box | X 4.29 × Y 3.10 × Z 1.06 (Blender units) |
 | Textures | 28 PNG, ~85 MB total (`textures/`) |
-| GLB (textures embedded) | 54.76 MB, 19 images |
-| GLB (no textures) | 3.46 MB |
+| GLB (textures embedded) | 53.52 MB, 19 images, 10 clips |
+| GLB (no textures) | 2.22 MB |
 
 **Scale:** the real jet is 18.92 m long; the model is 4.29 units → multiply by **4.41** for meters.
 (Or leave it and scale camera/physics to model units — just pick one and stick with it.)
@@ -52,7 +53,8 @@ Prefixes in use:
 | `Body_`, `Wing_`, `Tail_` | structure + control surfaces | 15 |
 | `MLG_*` | main landing gear, left/right | 56 |
 | `NLG_*` | nose landing gear | 17 |
-| `Bay_*` | weapon bays, doors, rails | 45 |
+| `Bay_*` | weapon bays, doors, rails | 37 |
+| `Flare_Dispenser_*` | flare dispenser doors + pins, L/R | 8 |
 | `Canopy_*` | canopy assembly | 5 |
 | `Cockpit_*`, `Seat_*` | interior | 90 |
 | `Engine_Nozzle_*` | exhaust nozzles (thrust vectoring) | 9 |
@@ -73,11 +75,10 @@ The part tables below are **reference material** (for hiding parts, swapping mat
 
 ### 2.1 Facts established by the test export
 
-1. **You get 9 AnimationClips**, named after the armatures: `RIG_NoseGear`, `RIG_MainGear_L`, `RIG_MainGear_R`, `RIG_BayDoor_Center_L/R`, `RIG_BayDoor_Side_L/R`, `RIG_Canopy`, `RIG_Tail_Nozzle_Hook`.
-   (Even with export mode `SCENE`, the exporter still splits per armature.)
-2. All clips span **0.042 – 40.5 s** (frames 1–972), but **each clip only carries tracks for its own rig's bones**.
+1. **You get 10 AnimationClips**, named after the *mechanism*, not the armature: `Canopy_Open`, `WeaponBay_Main_L_Open`, `WeaponBay_Main_R_Open`, `WeaponBay_Side_L_Open`, `WeaponBay_Side_R_Open`, `FlareDispenser_L_Open`, `FlareDispenser_R_Open`, `LandingGear_Deploy`, `Tailhook_Deploy`, `Aero_Demo` (§3).
+2. Each clip starts at **0 s**, runs closed → open, and carries tracks **only for the bones of its own mechanism**. `LandingGear_Deploy` is the one clip that spans several armatures (nose + both mains) — by design.
 3. **0 skinned meshes** — every mesh is a plain node parented under a bone node ⇒ you can write transforms directly onto nodes (spin wheels, deflect control surfaces) with no skinning involved.
-4. `track time = frame / 24` exactly → frame 1 = 0.04167 s, frame 972 = 40.5 s.
+4. `track time = frame / 24` exactly → 24 source frames = 1 s.
 
 ### 2.2 rig → bone → mesh
 
@@ -126,18 +127,26 @@ The part tables below are **reference material** (for hiding parts, swapping mat
 | `Bone.007` / `.008` | nose gear doors R / L (`NLG_Door_Rail_x` + 3 hinge pins) |
 | `Control` | control bone |
 
-`RIG_BayDoor_Center_L` / `_R` — **drives both the center bay door AND the side bay door on that side**
+`RIG_Bay_L` / `_R` (renamed from `RIG_BayDoor_Center_x`) — **three independent mechanisms on one rig**, split by bone into three clips:
 
-| bone | parts |
-|---|---|
-| `Bone.002` | `Bay_Center_Door_x` + frame + hinge rod |
-| `Bone.003` | center door edge / seal / strip |
-| `Bone.009` `.010` `.011` `.004` | hinge arm, inner rib, outer rib, forward seal |
-| `Bone` | `Bay_Side_Door_x_Inner` + lower frame |
-| `Bone.001` | `Bay_Side_Door_x_Outer` + upper frame |
-| `Bone.008` | side door hinge arm/pin |
+| bone | parts | mechanism |
+|---|---|---|
+| `Bone.002` | `Bay_Center_Door_x` + frame + hinge rod | lower (main) bay — **the only keyed bone** |
+| `Bone.003` | center door edge / seal / seam / strip | child of `Bone.002`, **no keys** |
+| `Bone.010` / `.011` | `Bay_Center_Door_Rib_x_Inner` / `_Outer` | child of `Bone.002`, **no keys** |
+| `Bone.004` | `Bay_Center_Door_Seal_Fwd` (**R rig only**; unused on L) | **static**, no keys |
+| `Bone` | `Bay_Side_Door_x_Inner` + lower frame + hinge rod | side bay |
+| `Bone.001` | `Bay_Side_Door_x_Outer` + upper frame + hinge rod | side bay |
+| `Bone.008` | `Flare_Dispenser_x_Upper` (+ pin) | flare dispenser |
+| `Bone.009` | `Flare_Dispenser_x_Lower` (+ pin) | flare dispenser |
 
-`RIG_BayDoor_Side_L` / `_R` — AIM-9 trapeze launcher
+> The two flare dispenser doors used to be called `Bay_Side_DoorHingeArm_x` / `Bay_Center_DoorHingeArm_x`. They are not hinge arms: they are two ~11 cm boxes sitting **0.43 units aft of the side bay**, on their own hinges, with their own travel (74° / 68° vs the doors' 90° / 120°). Renamed for accuracy.
+
+> **Main bay door history.** `Bone.003`, `.010`, `.011` and `.004` each used to carry their own rotation keys (129.8° / 122.4° / 112.4° / 180°), and `.003`→`.010` were chained so the angles stacked. The door leaf therefore tore away from its own edge trim and ribs while swinging — the distance between `Bay_Center_Door_L` and its trim pieces drifted by 29.9–77.7 mm between closed and open, leaving the trim across the bay mouth and making the bay look like it never opened fully.
+>
+> Fixed: `Bone.011` reparented under `Bone.002`, all keys on the four bones deleted (40 fcurves per clip), `Bone.004` made static. The whole door assembly now swings rigidly on `Bone.002` at 119.8° — drift is **0.00 mm** on every pair, and BVH shows no intersection with the skin at the open frame. The side bay and flare doors never had this problem (0.00 mm drift already) and were left alone.
+
+`RIG_Trapeze_L` / `_R` (renamed from `RIG_BayDoor_Side_x`) — AIM-9 trapeze launcher
 
 | bone | parts |
 |---|---|
@@ -154,9 +163,55 @@ The part tables below are **reference material** (for hiding parts, swapping mat
 
 ---
 
-## 3. Timeline (the animation showcase)
+## 3. Animation clips
 
-A single action named `Scene` holds the whole showcase back to back. Slice it with this table.
+The blend ships **10 actions, one per mechanism**. Every clip is an *opening* motion:
+
+```
+first frame                 last frame
+CLOSED / REST  ──────────▶  OPEN
+                 reverse ◀
+```
+
+There is **no closing clip** — play the same action backwards (`timeScale = -1`, §6.2).
+
+| action / clip | what moves | rig(s) driven | animated nodes | duration | source frames |
+|---|---|---|---|---|---|
+| `Canopy_Open` | canopy up + hinge arm/bracket | `RIG_Canopy` | 3 | 2.708 s | 842 – 907 |
+| `WeaponBay_Main_L_Open` | **lower (main) bay door, left** — the whole door assembly (trim and ribs ride along, no nodes of their own) | `RIG_Bay_L` | 1 | 1.500 s | 221 – 257 |
+| `WeaponBay_Main_R_Open` | **lower (main) bay door, right** — the whole door assembly | `RIG_Bay_R` | 1 | 1.500 s | 221 – 257 |
+| `WeaponBay_Side_L_Open` | **left side bay: both door halves + AIM-9 swings out** on its trapeze | `RIG_Bay_L`, `RIG_Trapeze_L` | 6 | 1.167 s | 221 – 249 |
+| `WeaponBay_Side_R_Open` | **right side bay: both door halves + AIM-9 swings out** | `RIG_Bay_R`, `RIG_Trapeze_R` | 6 | 1.167 s | 221 – 249 |
+| `FlareDispenser_L_Open` | left flare dispenser doors (upper + lower) | `RIG_Bay_L` | 2 | 1.250 s | 221 – 251 |
+| `FlareDispenser_R_Open` | right flare dispenser doors (upper + lower) | `RIG_Bay_R` | 2 | 1.250 s | 221 – 251 |
+| `LandingGear_Deploy` | nose gear + both main gears down | `RIG_NoseGear`, `RIG_MainGear_L`, `RIG_MainGear_R` | 46 | 4.167 s | 741 – 841 |
+| `Tailhook_Deploy` | hook down + inter-nozzle panels | `RIG_Tail_Nozzle_Hook` (`Bone`, `.001`, `.002`, `.003`) | 4 | 3.167 s | 764 – 840 |
+| `Aero_Demo` | control-surface + thrust-vectoring showcase | `RIG_Tail_Nozzle_Hook` (`Bone.004` – `.021`) | 18 | 16.208 s | 345 – 734 |
+
+Guarantees, all checked against the exported GLB (`export/F22_master.glb`):
+
+1. Each clip carries tracks **only** for the bones of its own mechanism. Pairwise node overlap between the 10 clips is **0** ⇒ any combination may play simultaneously and they can never fight each other. The three mechanisms that share `RIG_Bay_L` (main bay / side bay / flare) are fully independent.
+2. No clip animates an armature object node or a rig it doesn't own.
+3. Every clip starts at **t = 0 s**; `duration = (lastFrame − firstFrame) / 24`.
+4. Frame 0 of each clip is the same pose as the closed/rest state of that mechanism in the showcase; the last frame is fully open. Worst world-space deviation from the Blender source: **1 µm**.
+
+Gotchas:
+
+* **Each bay clip is self-contained.** `WeaponBay_Side_L_Open` opens the side bay doors *and* swings the AIM-9 out (the doors live on `RIG_Bay_L`, the trapeze on `RIG_Trapeze_L`; the clip spans both). `WeaponBay_Main_L_Open` opens only the lower bay door. Neither carries any flare dispenser track.
+* `Bay_Center_Door_Seal_Fwd` is a single part spanning the full bay width at the forward bulkhead (X `0.504–0.516`, Y `−0.195…+0.195`) — **not part of either door leaf**. It used to be keyed to flip 180°; it is now static and does not move in any clip.
+* `LandingGear_Deploy` covers all three legs in one clip (nose leads, mains follow — that offset is baked in). `t = 0` is gear **up**, `t = duration` is gear **down**.
+* `Aero_Demo` is eye candy. In a game, drive those surfaces yourself (§7.1) — it is a separate clip precisely so it never touches the hook.
+* The glTF rest pose (Blender frame 1) is gear **down**, canopy **open**, hook **retracted**, bays **closed**. That is still not the state you want everywhere, so set every mechanism explicitly at load (§6.3).
+
+### 3.1 The original showcase timeline (reference only)
+
+The single `Scene` action is still in the .blend (fake user, unassigned, **not exported**). The clips above were cut from it using the ranges in this table.
+
+> ⚠️ **Do not delete the `Scene` action.** It is the source `F22_build_anim_clips.py` builds from (`SRC_NAME = "Scene"` plus the `RIG_SLOT` map onto slots `OBArmature.00x`). Delete it and the script cannot run.
+>
+> The tailhook keys in it (`Bone`, `.001`, `.002`, `.003` under slot `OBArmature.001`) were remapped `q' = q_retracted⁻¹ · q` to match the new rest pose. If you ever restore `Scene` from an older backup, remap it again before rebuilding.
+>
+> The old `Bone.003` / `.010` / `.011` / `.004` keys under slots `OBArmature.004` / `.006` (left/right bay) are still in there. `F22_build_anim_clips.py` filters them out (`BAY_MAIN_BONES = {"Bone.002"}`), but assigning `Scene` directly for playback will now double-rotate `Bone.011`, which is a child of `Bone.002`.
 
 `t = frame / 24`
 
@@ -166,10 +221,10 @@ A single action named `Scene` holds the whole showcase back to back. Slice it wi
 | 2 | **Main gear up** | 111 – 181 | 4.625 – 7.542 | `RIG_MainGear_L`, `_R` |
 | 3 | **Tailhook retract** | 116 – 188 | 4.833 – 7.833 | `RIG_Tail_Nozzle_Hook` |
 | 4 | **Nose gear up** | 172 – 214 | 7.167 – 8.917 | `RIG_NoseGear` |
-| 5 | **Weapon bay open** | 221 – 261 | 9.208 – 10.875 | `RIG_BayDoor_Center_L/R` |
-| 5b | ↳ AIM-9 trapeze extends | 236 – 249 | 9.833 – 10.375 | `RIG_BayDoor_Side_L/R` |
-| 6 | **Weapon bay close** | 301 – 342 | 12.542 – 14.250 | `RIG_BayDoor_Center_L/R` |
-| 6b | ↳ AIM-9 trapeze retracts | 313 – 326 | 13.042 – 13.583 | `RIG_BayDoor_Side_L/R` |
+| 5 | **Weapon bay open** | 221 – 261 | 9.208 – 10.875 | `RIG_Bay_L/R` |
+| 5b | ↳ AIM-9 trapeze extends | 236 – 249 | 9.833 – 10.375 | `RIG_Trapeze_L/R` |
+| 6 | **Weapon bay close** | 301 – 342 | 12.542 – 14.250 | `RIG_Bay_L/R` |
+| 6b | ↳ AIM-9 trapeze retracts | 313 – 326 | 13.042 – 13.583 | `RIG_Trapeze_L/R` |
 | 7 | **Aero demo** (control surfaces + thrust vectoring) | 345 – 734 | 14.375 – 30.583 | `RIG_Tail_Nozzle_Hook` |
 | 8 | **Nose gear down** | 741 – 781 | 30.875 – 32.542 | `RIG_NoseGear` |
 | 9 | **Tailhook deploy** | 764 – 840 | 31.833 – 35.000 | `RIG_Tail_Nozzle_Hook` |
@@ -192,7 +247,73 @@ Aero demo (row 7) broken down:
 
 Measured values: nozzles deflect to **+16° / −20°** in pitch; from frame 542 onward left and right deflect in opposite directions (roll vectoring).
 
-**State at frame 1:** canopy open (−20°), gear down, hook deployed, bays closed. There is no single frame where gear is down *and* hook is retracted, so don't rely on the glTF rest pose — set state explicitly at load (see §6.3).
+**State at frame 1:** canopy open (−20°), gear down, **hook retracted**, bays closed.
+
+The hook flipped from deployed to retracted when the rest pose was rebuilt (see §3.3). Canopy and gear are still in their open/down poses, so state still has to be set explicitly at load (see §6.3).
+
+### 3.2 Regenerating the clips
+
+`F22_build_anim_clips.py` rebuilds all 10 actions from the `Scene` action and pushes each one onto its own NLA track (the tracks are muted so the viewport stays clean — muting a *track* does not stop the exporter). It is idempotent: run it again and it deletes and rebuilds the clips.
+
+```python
+exec(open("/path/to/F22/F22_build_anim_clips.py").read())
+```
+
+Edit the `CLIPS` table at the top of that file to change a range or add a mechanism.
+
+⚠️ **Re-running deletes the existing clips and rebuilds them from `Scene`.** Before you run it, check that `BAY_MAIN_BONES = {"Bone.002"}` (§2.2) and that the hook keys inside `Scene` have been remapped (§3.1) — otherwise you bring back both the torn main bay door and a tailhook keyed against the wrong rest pose.
+
+### 3.3 Tailhook — the rest pose was swapped to retracted
+
+**Symptom:** load the GLB on the web and the tailhook is already hanging out before any clip has played. Playing `Tailhook_Deploy` looks like it barely moves, and "retract" puts it right back where it started.
+
+**Cause:** the rest pose of `RIG_Tail_Nozzle_Hook` matched the **last** frame of the clip exactly — bbox centres gave `d(rest, f76) = 0.00 mm` on all 8 parts, with the retracted pose sitting at f0, 174.6 mm away. glTF writes the bind pose from the rest pose, so loading the model *is* the deployed pose, and resetting to bind pose deploys it again.
+
+**Fix:** applied the f0 pose as the rest pose for 5 bones (`Bone`, `Bone.001`, `Bone.002`, `Bone.003`, **`Bone.022`** — `.022` has to be included because it carries the shank, point and actuator), then rewrote all 16 quaternion fcurves as `q' = q_f0⁻¹ · q`, baked on every frame 0–76.
+
+| | before | after |
+|---|---|---|
+| rest pose | deployed (= f76) | **retracted (= f0)** |
+| `d(rest, f0)` | 174.6 mm | **0.00 mm** |
+| `d(rest, f76)` | 0.00 mm | **174.6 mm** |
+| actual travel | 174.55 mm | 174.55 mm (unchanged) |
+
+World positions at f0 / f38 / f76 differ from the originals by at most **0.0004 mm** — the motion is identical, only the reference pose moved.
+
+Clip direction is unchanged: `t = 0` is **retracted**, `t = duration` is **deployed**.
+
+### 3.4 Trap: the Action Editor silently assigns actions
+
+If the Action Editor is open and not pinned 📌, Blender assigns whatever action it is showing to the next object you click. An active action **overrides the entire NLA stack**, so your tracks stop having any effect, and the stray action gets saved into the file.
+
+Seen for real in this project: `RIG_Tail_Nozzle_Hook` was left holding `FlareDispenser_L_Open`, so the hook bones were never animated at all and sat at rest; and the meshes `Bay_Side_DoorFrame_L_Upper` / `Flare_Dispenser_L_Lower` were holding armature actions (a mesh with `pose.bones[...]` fcurves does nothing, but it breaks the glTF export).
+
+Check before every export:
+
+```python
+import bpy
+print("stray active actions:",
+      [(o.name, o.animation_data.action.name)
+       for o in bpy.data.objects
+       if o.animation_data and o.animation_data.action])
+print("mesh with anim data:",
+      [o.name for o in bpy.data.objects
+       if o.type == 'MESH' and o.animation_data])
+```
+
+Both lines must print `[]`.
+
+### 3.5 `PlayClip.py` — preview one clip at a time in Blender
+
+The .blend carries a text block called `PlayClip.py` (fake user). Set `CLIP = "..."` on the top line and hit **Alt+P**. It will:
+
+* clear the active action on every object (the §3.4 problem)
+* unmute only the NLA tracks holding a strip of that clip, mute everything else
+* set `frame_start` / `frame_end` to the clip's range and jump to the first frame
+
+`CLIP = "*"` unmutes everything. A wrong name prints the list of valid ones.
+
+It matters because clips spanning multiple rigs (`WeaponBay_Side_L_Open` lives on both `RIG_Bay_L` and `RIG_Trapeze_L`) need the ★ solo toggled on each rig separately — miss one and the doors open while the AIM-9 arm stays put.
 
 ---
 
@@ -208,15 +329,24 @@ import bpy, os
 OUT = "/path/to/your/game/public/models"
 os.makedirs(OUT, exist_ok=True)
 
-bpy.context.scene.frame_set(1)          # pin the rest pose so re-exports are reproducible
+# Deterministic rest pose: no action assigned, every pose bone at rest.
+for o in (x for x in bpy.data.objects if x.type == 'ARMATURE'):
+    for pb in o.pose.bones:
+        pb.matrix_basis.identity()
+bpy.context.scene.frame_set(1)
 
 bpy.ops.export_scene.gltf(
     filepath=os.path.join(OUT, "F22_master.glb"),
     export_format='GLB',
     export_image_format='AUTO',          # embed textures in the file
     export_animations=True,
-    export_animation_mode='SCENE',
-    export_frame_range=True,
+    export_animation_mode='ACTIONS',     # one glTF animation per action
+    export_merge_animation='ACTION',     # merge same-named actions across armatures
+    export_anim_slide_to_zero=True,      # every clip starts at t = 0 s
+    export_force_sampling=True,
+    export_optimize_animation_size=True,
+    export_optimize_animation_keep_anim_armature=False,  # ⚠️ see below
+    export_frame_range=False,            # ⚠️ scene range starts at 1, clips start at 0
     export_bake_animation=False,
     export_def_bones=False,              # ⚠️ must be False or all non-deform bones are dropped
     export_apply=False,
@@ -227,11 +357,21 @@ bpy.ops.export_scene.gltf(
 )
 ```
 
-Actual result: **54.76 MB**, 265 meshes, 385 nodes, 7 materials, **19 images**, 9 animations, 0 skinned meshes (~13 s).
+Actual result: **53.52 MB**, 265 meshes, 385 nodes, 7 materials, 19 images, **10 animations**, 0 skinned meshes (~6 s).
 
 This is the **master** file — unoptimized. Never ship it directly; run it through §10 first.
 
+Three flags decide whether the clips stay independent:
+
+| flag | why |
+|---|---|
+| `export_optimize_animation_keep_anim_armature=False` | **The important one.** Left at its default `True`, the exporter writes a track for *every* bone of an armature the clip touches — `Tailhook_Deploy` would then also pin all 18 wing/nozzle bones and fight `Aero_Demo`. With `False`, bones that aren't animated by the action are dropped, and bones that *are* keyed keep their tracks (2 keys if they hold still). Verified: node overlap between the clips drops from 23 to 0. |
+| `export_animation_mode='ACTIONS'` + `export_merge_animation='ACTION'` | Each action becomes one glTF animation with the action's name; the three gear armatures that share `LandingGear_Deploy` merge into a single animation instead of three. |
+| `export_frame_range=False` | The scene range starts at frame 1, the clips at frame 0. Leaving this `True` clips the first frame of every animation. |
+
 > `export_def_bones=True` strips bones without vertex groups. This rig is pure bone-parenting with zero deform bones — so that flag wipes out every animation.
+
+> The rigs keep **no active action** — the clips live on muted NLA tracks (§3.2). Don't re-assign the `Scene` action before exporting, or you'll get a 9th, 40-second animation that keys everything.
 
 ### 4.2 What the exporter does to textures automatically
 
@@ -256,7 +396,7 @@ If you want per-texture control (resolution switching per device, streaming, swa
 export_image_format='NONE',
 ```
 
-That yields **3.46 MB** — all 7 materials still present with correct names, just no maps attached. Wire them up yourself per §8.
+That yields **2.22 MB** — all 7 materials still present with correct names, just no maps attached. Wire them up yourself per §8.
 
 ### 4.4 Verify the export
 
@@ -289,7 +429,24 @@ for m in j['materials']:
                    + [k for k in ('normalTexture','emissiveTexture') if k in m])
 ```
 
-You must see 9 animation lines and `skinned 0`.
+You must see 10 animation lines and `skinned 0`, and every animation must start at `0.0 s`.
+
+**Also check that no two clips drive the same node** — that check is what catches a bad export:
+
+```python
+import struct, json, sys, itertools
+d = open(sys.argv[1], 'rb').read()
+j = json.loads(d[20:20 + struct.unpack('<I', d[12:16])[0]])
+sets = {a['name']: {c['target']['node'] for c in a['channels']} for a in j['animations']}
+for x, y in itertools.combinations(sets, 2):
+    if sets[x] & sets[y]:
+        print('OVERLAP', x, y, len(sets[x] & sets[y]))
+print({k: len(v) for k, v in sets.items()})
+```
+
+Expected: no `OVERLAP` line, and node counts `Canopy 3 / Main L 1 / Main R 1 / Side L 6 / Side R 6 / Flare L 2 / Flare R 2 / Gear 46 / Hook 4 / Aero 18`.
+
+(Main L/R dropped from 5 nodes to 1 when the main bay door was collapsed onto `Bone.002` alone — see §2.2.)
 
 ### 4.5 ⚠️ Node names change once loaded into Three.js
 
@@ -326,8 +483,17 @@ const gltf = await new GLTFLoader().loadAsync('/models/F22_game.glb');
 const jet = gltf.scene;
 scene.add(jet);
 
-const clips = Object.fromEntries(gltf.animations.map(c => [c.name, c]));
-// clips['RIG_MainGear_L'], clips['RIG_Canopy'], ...
+// ONE mixer rooted at the loaded scene — LandingGear_Deploy spans three armatures,
+// so a per-armature mixer cannot bind it (§6.1).
+const mixer = new THREE.AnimationMixer(jet);
+
+const actions = Object.fromEntries(gltf.animations.map((clip) => {
+  const a = mixer.clipAction(clip);
+  a.loop = THREE.LoopOnce;
+  a.clampWhenFinished = true;     // hold the last frame instead of snapping back
+  return [clip.name, a];
+}));
+// actions.Canopy_Open, actions.LandingGear_Deploy, actions.Tailhook_Deploy, ...
 ```
 
 With the embedded-texture export (§4.1) **materials arrive ready to use.** Only three things need adjusting:
@@ -365,126 +531,148 @@ const loaderGLB = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(Meshopt
 
 ### 6.1 Principles
 
-- **One armature = one `AnimationMixer`**, rooted at that armature's node.
-  Bindings then resolve unambiguously despite bone names repeating across rigs.
-- Don't let clips play on their own. **Scrub** them: write `action.time`, then call `mixer.update(0)`.
-  That gives you a 0..1 progress value you can reverse mid-travel — exactly what gear and canopy need in a game.
-- `AnimationUtils.subclip()` **drops tracks with no keys in the range.** A tailhook subclip (frames 116–188) therefore contains only `Bone`, `Bone.001`, `Bone.002`, `Bone.003`; every wing and nozzle bone falls out. **That means the mixer will never fight the control-surface code you write by hand** — this is why the architecture below is safe.
+- **One `AnimationMixer`, rooted at `gltf.scene`.** `LandingGear_Deploy` drives three armatures at once, so a per-armature mixer physically cannot bind it. Bone names repeat across rigs, but `GLTFLoader` renames nodes to unique names at load and builds the tracks against those same names — bindings stay correct.
+- **No subclipping.** Each clip is already exactly one mechanism, closed → open. `AnimationUtils.subclip()` is no longer needed anywhere.
+- **Closing = playing backwards.** `timeScale = -1`. There is no separate close clip, so the two directions can never drift apart.
+- **Clips never collide.** The 10 clips share zero nodes (§3), so `actions.Canopy_Open.play()` and `actions.LandingGear_Deploy.play()` at the same time is safe, and neither touches the control surfaces you drive by hand (§7).
 
-### 6.2 Mechanism class
+### 6.2 Play, reverse, and hold
+
+The minimal form — open, then close by rewinding:
 
 ```js
-const FPS = 24;
+const action = actions.Canopy_Open;
 
-class Mechanism {
-  /**
-   * @param rigRoot  the armature Object3D (e.g. scene.getObjectByName('RIG_MainGear_L'))
-   * @param clip     AnimationClip
-   * @param range    [startFrame, endFrame] in Blender frames — null uses the whole clip
-   * @param seconds  how long the motion should take in game (seconds)
-   */
-  constructor(rigRoot, clip, range = null, seconds = null) {
-    this.mixer = new THREE.AnimationMixer(rigRoot);
+// open
+action.reset();
+action.timeScale = 1;
+action.play();
 
-    this.clip = range
-      // +1 because subclip treats endFrame as exclusive (frame >= endFrame is discarded)
-      ? THREE.AnimationUtils.subclip(clip.clone(), `${clip.name}_sub`, range[0], range[1] + 1, FPS)
-      : clip;
+// close (play backwards)
+action.time = action.getClip().duration;
+action.timeScale = -1;
+action.play();
+```
 
-    this.action = this.mixer.clipAction(this.clip);
-    this.action.loop = THREE.LoopOnce;
-    this.action.clampWhenFinished = true;
-    this.action.play();            // never pause — we drive time ourselves via update(0)
+In a game you want to reverse **mid-travel** too (gear retracting while it is still coming down). Then don't `reset()` — just flip `timeScale` and keep the current `time`. `drive()` is meant for *direction changes*: calling it again in the direction a mechanism has already finished travelling is a harmless no-op (the action replays the last fraction of a frame and finishes again).
 
-    this.duration = this.clip.duration;
-    this.rate = 1 / (seconds ?? this.duration);   // progress per second
-    this.t = 0;
-    this.target = 0;
-    this.#apply();
-  }
+> The JS in §6.2 and §6.3 is reference code — it was written against the verified clip layout, not executed in a browser here. The clip data itself *was* verified (§3).
 
-  #apply() {
-    this.action.time = Math.min(this.t * this.duration, this.duration - 1e-4);
-    this.mixer.update(0);          // delta 0 = don't advance time, just apply the pose
-  }
+```js
+function drive(name, open) {
+  const a = actions[name];
+  const d = a.getClip().duration;
 
-  set(v)   { this.target = THREE.MathUtils.clamp(v, 0, 1); }
-  open()   { this.set(1); }
-  close()  { this.set(0); }
-  toggle() { this.set(this.target > 0.5 ? 0 : 1); }
-  snap(v)  { this.t = this.target = THREE.MathUtils.clamp(v, 0, 1); this.#apply(); }
+  a.enabled  = true;
+  a.paused   = false;
+  a.timeScale = open ? 1 : -1;
+  // clampWhenFinished parked the action at an end; nudge it back inside the range
+  if (open  && a.time >= d) a.time = d - 1e-4;
+  if (!open && a.time <= 0) a.time = 1e-4;
+  a.play();
+}
 
-  get moving() { return this.t !== this.target; }
-  get progress() { return this.t; }
+const canopy = { open: () => drive('Canopy_Open', true), close: () => drive('Canopy_Open', false) };
+const gear   = { down: () => drive('LandingGear_Deploy', true), up: () => drive('LandingGear_Deploy', false) };
+const hook   = { down: () => drive('Tailhook_Deploy', true), up: () => drive('Tailhook_Deploy', false) };
+const bay    = {
+  set(open) {
+    for (const n of ['WeaponBay_Main_L_Open', 'WeaponBay_Main_R_Open',
+                     'WeaponBay_Side_L_Open', 'WeaponBay_Side_R_Open']) drive(n, open);
+  },
+};
+const flares  = {
+  set(open) {
+    for (const n of ['FlareDispenser_L_Open', 'FlareDispenser_R_Open']) drive(n, open);
+  },
+};
+```
 
-  update(dt) {
-    if (this.t === this.target) return;
-    const step = this.rate * dt;
-    this.t = this.t < this.target
-      ? Math.min(this.target, this.t + step)
-      : Math.max(this.target, this.t - step);
-    this.#apply();
-  }
+Progress of a mechanism, if you need it for logic (`gear.down === true` before spinning wheels, §7.3):
+
+```js
+const progress = (n) => actions[n].time / actions[n].getClip().duration;
+```
+
+Speed: change `timeScale` magnitude (`a.timeScale = open ? 2 : -2` = twice as fast). To match a wall-clock duration, use `duration / seconds` as the magnitude.
+
+### 6.2b Scrubbing instead of playing
+
+If you'd rather hold a 0..1 value yourself (physics-driven gear, a slider in a tools UI), keep the action paused and write `time` directly:
+
+```js
+function scrub(name, t01) {            // t01 in [0, 1]
+  const a = actions[name];
+  a.enabled = true;
+  a.paused  = true;
+  a.play();
+  a.time = THREE.MathUtils.clamp(t01, 0, 1) * (a.getClip().duration - 1e-4);
+}
+mixer.update(0);                       // delta 0 = apply the pose without advancing time
+```
+
+> `mixer.setTime(t)` moves **every** action at once and does nothing to paused ones (a paused action has an effective timeScale of 0). With 8 independent mechanisms, per-action `time` is what you want.
+
+### 6.3 State at load — do this, don't skip it
+
+The glTF rest pose is **gear down, canopy open, hook retracted, bays closed** (Blender frame 1). A clip only affects the model once its action has been applied at least once, so pin every mechanism explicitly right after loading:
+
+> `Tailhook_Deploy` already matches the rest pose after §3.3, but keep the `setState(..., CLOSED)` call: the rest of the code (`p()`, `drive()`) reads `action.time`, which is only meaningful once the action has been played.
+
+```js
+const CLOSED = 0, OPEN = 1;
+
+function setState(name, v) {
+  const a = actions[name];
+  const d = a.getClip().duration;
+  a.enabled = true;
+  a.paused  = true;
+  a.play();
+  a.time = v === OPEN ? d - 1e-4 : 0;
+}
+
+// Parked on the ramp: gear down, canopy open, everything else closed.
+setState('LandingGear_Deploy',    OPEN);
+setState('Canopy_Open',           OPEN);
+setState('Tailhook_Deploy',       CLOSED);
+setState('WeaponBay_Main_L_Open', CLOSED);
+setState('WeaponBay_Main_R_Open', CLOSED);
+setState('WeaponBay_Side_L_Open', CLOSED);
+setState('WeaponBay_Side_R_Open', CLOSED);
+setState('FlareDispenser_L_Open',  CLOSED);
+setState('FlareDispenser_R_Open',  CLOSED);
+setState('Aero_Demo',             CLOSED);   // frame 0 = neutral (within 0.33° of rest)
+
+mixer.update(0);                              // apply all of it in one go
+```
+
+Skip `Aero_Demo` here if you drive the control surfaces yourself (§7.1) — leave that action alone entirely and the surfaces stay yours.
+
+Then, in your frame loop:
+
+```js
+function animate(dt) {
+  mixer.update(dt);      // drives every mechanism that is currently in motion
 }
 ```
-
-> `mixer.setTime(t)` works as an alternative to `action.time` + `update(0)`, **but only if you never set `action.paused = true`** — a paused action has an effective timeScale of 0, so `setTime` moves nothing.
-
-### 6.3 Wiring up the whole aircraft
-
-```js
-const rig = (n) => jet.getObjectByName(n);
-const F   = (a, b) => [a, b];
-
-const M = {
-  // These rigs' clips contain only their own mechanism — subclipping is optional.
-  canopy:    new Mechanism(rig('RIG_Canopy'),           clips['RIG_Canopy'],           F(842, 907), 2.5),
-  noseGear:  new Mechanism(rig('RIG_NoseGear'),         clips['RIG_NoseGear'],         F(741, 781), 2.0),
-  mainGearL: new Mechanism(rig('RIG_MainGear_L'),       clips['RIG_MainGear_L'],       F(771, 841), 3.0),
-  mainGearR: new Mechanism(rig('RIG_MainGear_R'),       clips['RIG_MainGear_R'],       F(771, 841), 3.0),
-
-  bayL:      new Mechanism(rig('RIG_BayDoor_Center_L'), clips['RIG_BayDoor_Center_L'], F(221, 261), 1.6),
-  bayR:      new Mechanism(rig('RIG_BayDoor_Center_R'), clips['RIG_BayDoor_Center_R'], F(221, 261), 1.6),
-  railL:     new Mechanism(rig('RIG_BayDoor_Side_L'),   clips['RIG_BayDoor_Side_L'],   F(236, 249), 0.6),
-  railR:     new Mechanism(rig('RIG_BayDoor_Side_R'),   clips['RIG_BayDoor_Side_R'],   F(236, 249), 0.6),
-
-  // The tail rig mixes hook + wings + nozzles, so the hook must be subclipped out.
-  hook:      new Mechanism(rig('RIG_Tail_Nozzle_Hook'), clips['RIG_Tail_Nozzle_Hook'], F(764, 840), 1.8),
-};
-
-// Initial state: gear down, canopy closed, hook up, bays closed.
-M.noseGear.snap(1); M.mainGearL.snap(1); M.mainGearR.snap(1);
-M.canopy.snap(0); M.hook.snap(0);
-M.bayL.snap(0); M.bayR.snap(0); M.railL.snap(0); M.railR.snap(0);
-
-// Game-level API
-const gear = {
-  set(down) { M.noseGear.set(down ? 1 : 0); M.mainGearL.set(down ? 1 : 0); M.mainGearR.set(down ? 1 : 0); },
-  get down()   { return M.mainGearL.progress > 0.99; },
-  get moving() { return M.noseGear.moving || M.mainGearL.moving || M.mainGearR.moving; },
-};
-const bay = {
-  set(open) { for (const k of ['bayL', 'bayR', 'railL', 'railR']) M[k].set(open ? 1 : 0); },
-};
-
-function update(dt) { for (const m of Object.values(M)) m.update(dt); }
-```
-
-**Note on direction:** in the source showcase, frames 771→841 are gear *extension*, so `progress 1 = gear down`. If you'd rather have `1 = up`, use the retraction range (111–181) and flip the semantics.
 
 **Keyboard:**
 
 ```js
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
+  const p = (n) => actions[n].time / actions[n].getClip().duration;
   switch (e.code) {
-    case 'KeyG': gear.set(!gear.down); break;
-    case 'KeyB': bay.set(M.bayL.progress < 0.5); break;
-    case 'KeyC': M.canopy.toggle(); break;
-    case 'KeyH': M.hook.toggle(); break;
+    case 'KeyG': drive('LandingGear_Deploy', p('LandingGear_Deploy') < 0.5); break;
+    case 'KeyB': bay.set(p('WeaponBay_Main_L_Open') < 0.5); break;
+    case 'KeyC': drive('Canopy_Open',    p('Canopy_Open')    < 0.5); break;
+    case 'KeyH': drive('Tailhook_Deploy', p('Tailhook_Deploy') < 0.5); break;
+    case 'KeyF': flares.set(p('FlareDispenser_L_Open') < 0.5); break;
   }
 });
 ```
+
+**Note on direction:** every clip runs closed → open, so `progress 1` always means *deployed*: gear **down**, canopy **up**, hook **down**, bay doors **open**, trapeze **extended**.
 
 ---
 
@@ -492,10 +680,10 @@ addEventListener('keydown', (e) => {
 
 ### 7.1 Control surfaces — driven by input, not by playing a clip
 
-The aero demo (frames 345–734) is eye candy. **Don't play it in game.** Write angles onto the bones from your pitch/roll/yaw input instead.
+The `Aero_Demo` clip is eye candy. **Don't play it in game.** Write angles onto the bones from your pitch/roll/yaw input instead.
 
-These bones live in the same rig as the hook, but the hook subclip carries no tracks for them, so writing over them is safe.
-⚠️ That only holds for the per-armature export. If you loaded a build with a **single merged `Scene` clip**, that clip *does* key these bones and will fight you every frame — stop the mixer (or subclip the range you want) before writing angles by hand.
+These bones live in the same rig as the hook, but `Tailhook_Deploy` carries no tracks for them (checked: zero node overlap, §3), so writing over them is safe as long as you never start `Aero_Demo`.
+⚠️ If you loaded an older build with a **single merged `Scene` clip**, that clip *does* key these bones and will fight you every frame — stop the mixer before writing angles by hand.
 
 #### The hinge axis is the bone's own axis, not a world axis
 
@@ -666,7 +854,7 @@ function spinWheels(speed, dt) {
 
 **If a wheel spins in the wrong plane,** try `(1,0,0)` → `(0,1,0)` → `(0,0,1)` and keep whichever looks right. Thirty seconds of trial beats deriving it on paper.
 
-⚠️ Don't spin wheels while a gear clip is playing. The clip writes the bone (parent) and you write the mesh (child), so they don't collide — but accumulated spin looks wrong as the leg folds. Spin only when `gear.down === true`.
+⚠️ Don't spin wheels while a gear clip is playing. The clip writes the bone (parent) and you write the mesh (child), so they don't collide — but accumulated spin looks wrong as the leg folds. Spin only when `progress('LandingGear_Deploy') > 0.99`.
 
 ---
 
@@ -878,9 +1066,9 @@ function makeCanopyGlass() {
 
 ---
 
-## 10. Optimization — 54.76 MB is not shippable
+## 10. Optimization — 53.52 MB is not shippable
 
-The master export embeds PNGs and weighs **54.76 MB**, but the number that actually kills a game is VRAM:
+The master export embeds PNGs and weighs **53.52 MB**, but the number that actually kills a game is VRAM:
 **one uncompressed 4096×4096 RGBA texture is ~89 MB on the GPU** (mipmaps included), **each**.
 The file has 19 of them, mostly 4096² → over 1 GB of VRAM untouched. Mid-range hardware will not survive.
 
@@ -957,7 +1145,7 @@ cp -r node_modules/three/examples/jsm/libs/basis public/basis
 ```js
 const cockpit = [];
 jet.traverse(o => { if (o.isMesh && o.name.startsWith('Cockpit_')) cockpit.push(o); });
-// in the loop: cockpit.forEach(o => o.visible = M.canopy.progress > 0.01 || cameraIsClose);
+// in the loop: cockpit.forEach(o => o.visible = progress('Canopy_Open') > 0.01 || cameraIsClose);
 ```
 
 ### Disable frustum culling on bone-driven parts
@@ -979,10 +1167,10 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);   // guard against tab-switch spikes
 
-  update(dt);                                     // all mechanisms
+  mixer.update(dt);                               // all mechanisms
   applyControls(input);                           // control surfaces
   applyVector(input.pitch, input.roll * 0.5);     // nozzles
-  if (gear.down) spinWheels(groundSpeed, dt);
+  if (progress('LandingGear_Deploy') > 0.99) spinWheels(groundSpeed, dt);
 
   renderer.render(scene, camera);
 }
@@ -993,14 +1181,17 @@ animate();
 
 ## 12. Pre-ship checklist
 
-- [ ] `frame_set(1)` before every export (rest pose must be stable)
+- [ ] Reset pose bones + `frame_set(1)` before every export (rest pose must be stable)
 - [ ] `export_def_bones=False` — forget it and all animation is gone
-- [ ] Verify the GLB with the §4.4 script: expect 9 animations and `skinned 0`
+- [ ] `export_optimize_animation_keep_anim_armature=False` — otherwise clips on the same rig fight each other
+- [ ] `export_frame_range=False` — the clips start at frame 0, the scene range at frame 1
+- [ ] No active action on the rigs at export time (clips live on muted NLA tracks)
+- [ ] Verify the GLB with the §4.4 scripts: expect 10 animations, `skinned 0`, **no `OVERLAP` line**
 - [ ] Never look up bones by name — use `mesh.parent`
-- [ ] `subclip` endFrame needs **+1** (exclusive)
+- [ ] One `AnimationMixer` on `gltf.scene` — `LandingGear_Deploy` spans three armatures
 - [ ] Hinge control surfaces on the bone's own **local Y** (nozzles: local **X**) — never a world axis
-- [ ] Use the union ranges 221–261 / 301–342 for both bay door sides
-- [ ] Snap every mechanism to its initial state once loading completes
+- [ ] `WeaponBay_Side_*` already includes the missile trapeze — don't also drive the AIM-9 by hand
+- [ ] Pin every mechanism with `setState()` + `mixer.update(0)` once loading completes
 - [ ] `scene.environment` must exist or glass and metal render black
 - [ ] Override the `Glass_Canopy` material and set its `renderOrder`
 - [ ] Set `anisotropy` on textures (GLTFLoader doesn't)
@@ -1014,10 +1205,15 @@ animate();
 
 | file | what it is |
 |---|---|
-| `F22.blend` | main working file (textures + rig + showcase) |
+| `F22.blend` | main working file (textures + rig + 10 clips on NLA + the `Scene` showcase) |
 | `F22 no textures.blend` | pre-texturing version |
+| `F22_build_anim_clips.py` | rebuilds the 10 clips from the `Scene` action (§3.2) |
+| `F22_backup_before_clipsplit_*.blend` | backup taken before the clip split |
 | `F22_backup_before_rename_*.blend` | backup taken before the rename pass |
-| `F22_rename_map.json` | 278 old → new name mappings |
+| `F22_rename_map.json` | 278 old → new name mappings (does **not** include the 12 bay renames below) |
+| renamed with the clip split | `RIG_BayDoor_Center_L/R` → `RIG_Bay_L/R`, `RIG_BayDoor_Side_L/R` → `RIG_Trapeze_L/R`, `Bay_Side/Center_DoorHingeArm_x` (+ pins) → `Flare_Dispenser_x_Upper/Lower` |
 | `F22_revert_rename.py` | script to undo the rename |
+| `PlayClip.py` (text block **inside** `F22.blend`) | preview one clip at a time in Blender (§3.5) |
+| `export/F22_master.glb`, `F22_game.glb`, `F22_game_fast.glb` | **all stale** — exported before the main bay door and tailhook rest-pose fixes (§2.2, §3.3). Re-export before shipping. |
 | `source/Lockheed Martin F-22.fbx` | original source asset |
 | `textures/` | 28 PNG files (~85 MB) |

@@ -21,7 +21,7 @@ export default function LoaderScreen() {
         <strong>{hasError ? 'OFFLINE' : `${Math.round(progress)}%`}</strong>
         <span>
           {hasError
-            ? 'ตรวจสอบไฟล์ public/F22_optimize.glb และ public/basis แล้วลองรีเฟรชอีกครั้ง'
+            ? 'ตรวจสอบไฟล์ public/F22_model.glb และ public/basis แล้วลองรีเฟรชอีกครั้ง'
             : `${loaded}/${total || '—'} ASSETS`}
           </span>
       </div>

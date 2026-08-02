@@ -8,12 +8,14 @@ import {
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
   ACESFilmicToneMapping,
+  AnimationClip,
   Box3,
   Euler,
-  LoopRepeat,
+  LoopOnce,
   MathUtils,
   Mesh,
   PMREMGenerator,
+  PropertyBinding,
   Quaternion,
   Vector3,
 } from 'three'
@@ -22,8 +24,50 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js'
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
-const MODEL_URL = '/F22_optimize.glb'
+const MODEL_URL = '/F22_model.glb'
 const KTX2_TRANSCODER_PATH = '/basis/'
+const CLIP_METADATA = {
+  WeaponBay_Main_L_Open: {
+    label: 'Main weapon bay · left',
+    activeLabel: 'OPEN',
+    inactiveLabel: 'CLOSED',
+  },
+  WeaponBay_Main_R_Open: {
+    label: 'Main weapon bay · right',
+    activeLabel: 'OPEN',
+    inactiveLabel: 'CLOSED',
+  },
+  WeaponBay_Side_L_Open: {
+    label: 'Side weapon bay · left',
+    activeLabel: 'OPEN',
+    inactiveLabel: 'CLOSED',
+  },
+  WeaponBay_Side_R_Open: {
+    label: 'Side weapon bay · right',
+    activeLabel: 'OPEN',
+    inactiveLabel: 'CLOSED',
+  },
+  Canopy_Open: {
+    label: 'Canopy',
+    activeLabel: 'OPEN',
+    inactiveLabel: 'CLOSED',
+  },
+  LandingGear_Deploy: {
+    label: 'Landing gear',
+    activeLabel: 'DOWN',
+    inactiveLabel: 'UP',
+  },
+  Aero_Demo: {
+    label: 'Aerodynamic demo',
+    activeLabel: 'ACTIVE',
+    inactiveLabel: 'REST',
+  },
+  Tailhook_Deploy: {
+    label: 'Tail hook',
+    activeLabel: 'DOWN',
+    inactiveLabel: 'UP',
+  },
+}
 
 // Every control-surface bone hinges about its own local Y axis, and every nozzle bone
 // about its own local X. Those axes already carry the real geometry — 15 degrees of
@@ -94,10 +138,15 @@ function getKTX2Loader(renderer) {
   return ktx2Loaders.get(renderer)
 }
 
-function formatClipLabel(name, index) {
-  return (name || `Animation ${index + 1}`)
+function formatClipLabel(name) {
+  return name
     .replace(/[_-]+/g, ' ')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\bL\b/g, 'Left')
+    .replace(/\bR\b/g, 'Right')
+    .replace(/\bOpen\b/gi, '')
+    .replace(/\bDeploy\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 // Orientation of a bone relative to the aircraft body, independent of where the model
@@ -130,8 +179,76 @@ function makeHinge(model, meshName, hingeAxis, reference, limit) {
   }
 }
 
+function trackHasMotion(track) {
+  const valueSize = track.getValueSize()
+  if (track.times.length < 2 || !valueSize) return false
+
+  const first = track.values.slice(0, valueSize)
+  const isQuaternion = track.name.endsWith('.quaternion')
+
+  for (let offset = valueSize; offset < track.values.length; offset += valueSize) {
+    if (isQuaternion) {
+      let dot = 0
+      let firstLengthSq = 0
+      let sampleLengthSq = 0
+
+      for (let component = 0; component < valueSize; component += 1) {
+        const firstValue = first[component]
+        const sampleValue = track.values[offset + component]
+        dot += firstValue * sampleValue
+        firstLengthSq += firstValue * firstValue
+        sampleLengthSq += sampleValue * sampleValue
+      }
+
+      const length = Math.sqrt(firstLengthSq * sampleLengthSq)
+      const cosine = length
+        ? MathUtils.clamp(Math.abs(dot / length), -1, 1)
+        : 1
+      if (2 * Math.acos(cosine) > 0.0001) return true
+      continue
+    }
+
+    for (let component = 0; component < valueSize; component += 1) {
+      if (Math.abs(track.values[offset + component] - first[component]) > 0.00001) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+function prepareModelAnimations(model, animations) {
+  const appliedTracks = new Set()
+
+  // The exported bind pose has several doors deployed. Apply frame zero once so
+  // the viewer's true rest pose is the closed/stowed state before actions bind.
+  animations.forEach((clip) => {
+    clip.tracks.forEach((track) => {
+      if (appliedTracks.has(track.name)) return
+
+      const binding = PropertyBinding.create(model, track.name)
+      const value = track.createInterpolant().evaluate(0)
+      binding.setValue(value, 0)
+      binding.unbind()
+      appliedTracks.add(track.name)
+    })
+  })
+  model.updateMatrixWorld(true)
+
+  // Blender sampled every bone into several independent clips. Keeping those
+  // static tracks makes AnimationMixer average unrelated actions, which reduces
+  // the travel of doors and landing gear. Retain only properties that move.
+  return animations.map((clip) => new AnimationClip(
+    clip.name,
+    clip.duration,
+    clip.tracks.filter(trackHasMotion).map((track) => track.clone()),
+    clip.blendMode,
+  ))
+}
+
 function F22Model({
-  activeClip,
+  animationStates,
   isPlaying,
   playbackSpeed,
   seekRequest,
@@ -157,14 +274,14 @@ function F22Model({
     true,
     (loader) => loader.setKTX2Loader(ktx2Loader),
   )
-  const { actions, mixer } = useAnimations(animations, group)
   const baseAircraftQuaternion = useMemo(
     () => new Quaternion().setFromEuler(new Euler(0.04, -0.34, 0, 'XYZ')),
     [],
   )
 
-  const model = useMemo(() => {
+  const { model, playbackAnimations } = useMemo(() => {
     const clone = cloneSkeleton(scene)
+    const preparedAnimations = prepareModelAnimations(clone, animations)
     const box = new Box3().setFromObject(clone)
     const center = box.getCenter(new Vector3())
     const size = box.getSize(new Vector3())
@@ -193,8 +310,14 @@ function F22Model({
       child.receiveShadow = true
     })
 
-    return clone
-  }, [scene])
+    return { model: clone, playbackAnimations: preparedAnimations }
+  }, [animations, scene])
+
+  const { actions, mixer } = useAnimations(playbackAnimations, group)
+  const systemDuration = useMemo(
+    () => Math.max(0, ...playbackAnimations.map((clip) => clip.duration)),
+    [playbackAnimations],
+  )
 
   const controlSurfaces = useMemo(
     () =>
@@ -211,55 +334,58 @@ function F22Model({
 
   useEffect(() => {
     onClipsReady(
-      animations.map((clip, index) => ({
-        name: clip.name || 'Untitled clip',
-        label: formatClipLabel(clip.name, index),
+      playbackAnimations.map((clip) => ({
+        id: clip.name,
+        name: clip.name,
+        label: CLIP_METADATA[clip.name]?.label || formatClipLabel(clip.name),
+        activeLabel: CLIP_METADATA[clip.name]?.activeLabel || 'ACTIVE',
+        inactiveLabel: CLIP_METADATA[clip.name]?.inactiveLabel || 'REST',
         duration: clip.duration,
         tracks: clip.tracks.length,
       })),
     )
-  }, [animations, onClipsReady])
+  }, [onClipsReady, playbackAnimations])
 
   useEffect(() => {
     onModelBoundsReady(model.userData.viewerRadius)
   }, [model, onModelBoundsReady])
 
   useEffect(() => {
-    if (manualFlight) {
-      mixer.stopAllAction()
-      mixer.update(0)
-      onTimeUpdate(0)
-      return undefined
-    }
-
-    const action = actions[activeClip]
-    if (!action) return undefined
-
-    Object.values(actions).forEach((item) => {
-      if (item !== action) item.stop()
+    Object.values(actions).forEach((action) => {
+      action.reset()
+      action.enabled = true
+      action.clampWhenFinished = true
+      action.setLoop(LoopOnce, 1)
+      action.paused = true
+      action.play()
     })
-
-    action.reset().setLoop(LoopRepeat, Infinity).play()
-
-    return () => action.stop()
-  }, [actions, activeClip, manualFlight, mixer, onTimeUpdate])
-
-  useEffect(() => {
-    const action = actions[activeClip]
-    if (action) action.paused = manualFlight || !isPlaying
-  }, [actions, activeClip, isPlaying, manualFlight])
-
-  useEffect(() => {
-    mixer.timeScale = playbackSpeed
-  }, [mixer, playbackSpeed])
-
-  useEffect(() => {
-    const action = actions[activeClip]
-    if (!action || !seekRequest || manualFlight) return
-    action.time = MathUtils.clamp(seekRequest.time, 0, action.getClip().duration)
     mixer.update(0)
-    onTimeUpdate(action.time)
-  }, [actions, activeClip, manualFlight, mixer, onTimeUpdate, seekRequest])
+  }, [actions, mixer])
+
+  useEffect(() => {
+    Object.entries(actions).forEach(([systemId, action]) => {
+      const isActive = Boolean(animationStates[systemId])
+      const targetTime = isActive ? action.getClip().duration : 0
+      const atTarget = Math.abs(action.time - targetTime) < 0.001
+      action.enabled = !manualFlight
+      action.timeScale = isActive ? playbackSpeed : -playbackSpeed
+      action.paused = manualFlight || !isPlaying || atTarget
+      action.play()
+    })
+    mixer.update(0)
+  }, [actions, animationStates, isPlaying, manualFlight, mixer, playbackSpeed])
+
+  useEffect(() => {
+    if (!seekRequest || manualFlight || !systemDuration) return
+    const progress = MathUtils.clamp(seekRequest.time / systemDuration, 0, 1)
+    Object.entries(actions).forEach(([systemId, action]) => {
+      if (!animationStates[systemId]) return
+      action.time = action.getClip().duration * progress
+      action.paused = !isPlaying || progress === 1
+    })
+    mixer.update(0)
+    onTimeUpdate(seekRequest.time)
+  }, [actions, animationStates, isPlaying, manualFlight, mixer, onTimeUpdate, seekRequest, systemDuration])
 
   useFrame((state, delta) => {
     if (group.current) {
@@ -348,11 +474,27 @@ function F22Model({
     }
 
     if (manualFlight) return
-    const action = actions[activeClip]
-    if (!action) return
+
+    let furthestProgress = 0
+    Object.entries(actions).forEach(([systemId, action]) => {
+      const duration = action.getClip().duration
+      const targetTime = animationStates[systemId] ? duration : 0
+      const reachedTarget = animationStates[systemId]
+        ? action.time >= duration - 0.001
+        : action.time <= 0.001
+
+      if (reachedTarget) {
+        action.time = targetTime
+        action.paused = true
+      }
+      if (animationStates[systemId] && duration) {
+        furthestProgress = Math.max(furthestProgress, action.time / duration)
+      }
+    })
+
     if (state.clock.elapsedTime - reportFrame.current > 0.08) {
       reportFrame.current = state.clock.elapsedTime
-      onTimeUpdate(action.time)
+      onTimeUpdate(furthestProgress * systemDuration)
     }
   })
 
@@ -444,7 +586,7 @@ function CameraRig({
 }
 
 export default function Scene({
-  activeClip,
+  animationStates,
   isPlaying,
   playbackSpeed,
   seekRequest,
@@ -521,7 +663,7 @@ export default function Scene({
 
       <Suspense fallback={null}>
         <F22Model
-          activeClip={activeClip}
+          animationStates={animationStates}
           isPlaying={isPlaying}
           playbackSpeed={playbackSpeed}
           seekRequest={seekRequest}

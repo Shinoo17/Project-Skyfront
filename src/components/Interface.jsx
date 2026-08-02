@@ -6,7 +6,7 @@ import {
   Box,
   ChevronDown,
   Crosshair,
-  Expand,
+  Flame,
   Gauge,
   Lightbulb,
   Maximize,
@@ -40,6 +40,24 @@ function Toggle({ active, onClick, icon: Icon, children }) {
       <Icon size={16} strokeWidth={1.7} />
       <span>{children}</span>
       <i aria-hidden="true" />
+    </button>
+  )
+}
+
+function AnimationToggle({ clip, index, active, onToggle }) {
+  return (
+    <button
+      type="button"
+      className={`animation-toggle ${active ? 'is-active' : ''}`}
+      aria-pressed={active}
+      onClick={() => onToggle(clip.id)}
+    >
+      <span className="animation-index">{String(index + 1).padStart(2, '0')}</span>
+      <span className="animation-copy">
+        <strong>{clip.label}</strong>
+        <small>{active ? clip.activeLabel : clip.inactiveLabel}</small>
+      </span>
+      <i className="animation-switch" aria-hidden="true" />
     </button>
   )
 }
@@ -92,8 +110,8 @@ function FlightControlButton({
 
 function ControlPanel({
   clips,
-  activeClip,
-  onClipChange,
+  animationStates,
+  onAnimationToggle,
   playbackSpeed,
   onSpeedChange,
   autoRotate,
@@ -105,8 +123,12 @@ function ControlPanel({
   aircraftMotionEnabled,
   onAircraftMotionToggle,
   flightInput,
+  throttle,
+  afterburner,
   onManualFlightChange,
   onFlightInput,
+  onThrottleChange,
+  onAfterburnerToggle,
   onFlightReset,
   isOpen,
   onClose,
@@ -170,28 +192,22 @@ function ControlPanel({
         <section className="panel-section animation-section" role="tabpanel">
         <p className="section-label">
           <Scan size={13} />
-          Animation bank
-          <span className="clip-count">{clips.length} clips</span>
+          Airframe systems
+          <span className="clip-count">{clips.length} controls</span>
         </p>
         <div
-          className="clip-list"
+          className="animation-toggle-list"
           tabIndex={clips.length ? 0 : -1}
-          aria-label={`Animation clips: ${clips.length} รายการ`}
+          aria-label={`ระบบควบคุมเครื่องบิน ${clips.length} รายการ`}
         >
           {clips.length ? clips.map((clip, index) => (
-            <button
-              type="button"
-              key={`${clip.name}-${index}`}
-              className={`clip-button ${activeClip === clip.name ? 'is-active' : ''}`}
-              onClick={() => onClipChange(clip.name)}
-            >
-              <span>{String(index + 1).padStart(2, '0')}</span>
-              <div>
-                <strong>{clip.label || clip.name}</strong>
-                <small>{clip.tracks} CHANNELS · {clip.duration.toFixed(1)} SEC</small>
-              </div>
-              <i aria-hidden="true" />
-            </button>
+            <AnimationToggle
+              key={clip.id}
+              clip={clip}
+              index={index}
+              active={Boolean(animationStates[clip.id])}
+              onToggle={onAnimationToggle}
+            />
           )) : (
             <div className="clip-skeleton"><span /><span /></div>
           )}
@@ -282,7 +298,43 @@ function ControlPanel({
             <span>YAW <strong>{signedInput(flightInput.yaw)}</strong></span>
             <span>FLAPS <strong>{signedInput(flightInput.flaps)}</strong></span>
           </div>
-          <p className="flight-help">KEYS · ARROWS / Q E / F · HOLD TO CONTROL</p>
+
+          <div
+            className={`engine-control ${afterburner ? 'is-afterburner' : ''}`}
+            style={{ '--throttle-scale': throttle }}
+          >
+            <div className="engine-heading">
+              <span><Gauge size={12} /> Engine thrust</span>
+              <output aria-live="polite">{Math.round(throttle * 100)}%</output>
+            </div>
+            <div className="throttle-control">
+              <kbd>S</kbd>
+              <div className="throttle-track">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={throttle}
+                  aria-label="Engine throttle"
+                  onChange={(event) => onThrottleChange(Number(event.target.value))}
+                />
+              </div>
+              <kbd>W</kbd>
+            </div>
+            <button
+              type="button"
+              className="afterburner-button"
+              aria-pressed={afterburner}
+              onClick={onAfterburnerToggle}
+            >
+              <Flame size={15} strokeWidth={1.8} />
+              <span>Afterburner</span>
+              <small>{afterburner ? 'ENGAGED' : 'ARM'}</small>
+            </button>
+          </div>
+
+          <p className="flight-help">ARROWS · PITCH / ROLL · Q E YAW · F FLAPS · W S THROTTLE</p>
         </section>
       )}
 
@@ -354,8 +406,8 @@ function ControlPanel({
 
 export default function Interface({
   clips,
-  activeClip,
-  onClipChange,
+  animationStates,
+  onAnimationToggle,
   isPlaying,
   onPlayPause,
   currentTime,
@@ -375,16 +427,21 @@ export default function Interface({
   aircraftMotionEnabled,
   onAircraftMotionToggle,
   flightInput,
+  throttle,
+  afterburner,
   onManualFlightChange,
   onFlightInput,
+  onThrottleChange,
+  onAfterburnerToggle,
   onFlightReset,
   onPanelOpen,
   onPanelClose,
 }) {
   const progress = duration ? (currentTime / duration) * 100 : 0
-  const activeClipLabel =
-    clips.find((clip) => clip.name === activeClip)?.label || activeClip
-  const transportDisabled = !activeClip || manualFlight
+  const activeAnimationCount = clips.filter(
+    (clip) => animationStates[clip.id],
+  ).length
+  const transportDisabled = !clips.length || manualFlight
 
   return (
     <div className="interface">
@@ -399,7 +456,7 @@ export default function Interface({
 
         <div className="top-status">
           <span><i className="status-dot" /> MODEL ONLINE</span>
-          <span className="desktop-only">GLTF / 265 MESHES</span>
+          <span className="desktop-only">GLTF / 238 MESHES</span>
         </div>
 
         <button type="button" className="icon-button fullscreen-button" onClick={onFullscreen} aria-label="เต็มจอ">
@@ -416,7 +473,7 @@ export default function Interface({
       <div className="airframe-title" aria-hidden="true">
         <span>INTERACTIVE AIRFRAME</span>
         <strong>RAPTOR</strong>
-        <p>265 MESHES · 7 MATERIALS · FULL ANIMATION RIG</p>
+        <p>238 MESHES · 7 MATERIALS · 8 ANIMATION CLIPS</p>
       </div>
 
       <button type="button" className="open-panel" onClick={onPanelOpen}>
@@ -425,8 +482,8 @@ export default function Interface({
 
       <ControlPanel
         clips={clips}
-        activeClip={activeClip}
-        onClipChange={onClipChange}
+        animationStates={animationStates}
+        onAnimationToggle={onAnimationToggle}
         playbackSpeed={playbackSpeed}
         onSpeedChange={onSpeedChange}
         autoRotate={autoRotate}
@@ -438,8 +495,12 @@ export default function Interface({
         aircraftMotionEnabled={aircraftMotionEnabled}
         onAircraftMotionToggle={onAircraftMotionToggle}
         flightInput={flightInput}
+        throttle={throttle}
+        afterburner={afterburner}
         onManualFlightChange={onManualFlightChange}
         onFlightInput={onFlightInput}
+        onThrottleChange={onThrottleChange}
+        onAfterburnerToggle={onAfterburnerToggle}
         onFlightReset={onFlightReset}
         isOpen={isPanelOpen}
         onClose={onPanelClose}
@@ -457,7 +518,11 @@ export default function Interface({
 
         <div className="timeline">
           <div className="timeline-meta">
-            <span>{manualFlight ? 'MANUAL FLIGHT' : (activeClipLabel || 'LOADING CLIP')}</span>
+            <span>
+              {manualFlight
+                ? 'MANUAL FLIGHT'
+                : `${activeAnimationCount} SYSTEM${activeAnimationCount === 1 ? '' : 'S'} ACTIVE`}
+            </span>
             <strong>{formatTime(currentTime)} <i>/</i> {formatTime(duration)}</strong>
           </div>
           <div className="range-wrap" style={{ '--progress': `${progress}%` }}>
@@ -479,12 +544,12 @@ export default function Interface({
         </button>
       </div>
 
-      <div className="corner-data" aria-hidden="true">
+      {/* <div className="corner-data" aria-hidden="true">
         <Expand size={13} />
         <span>WEBGL / PBR</span>
         <i />
         <span>LIVE RENDER</span>
-      </div>
+      </div> */}
     </div>
   )
 }

@@ -15,7 +15,7 @@ The audience inspects the supplied F-22 model. The primary task is to orbit and 
 
 ## Content and constraints
 
-The supplied `public/F22.glb` and textures are the only factual artifacts. Do not add aircraft performance claims. The black theme is binding. Desktop and mobile must both keep the model unobstructed. Animation playback and direct Three.js surface control are mutually exclusive modes.
+The supplied `public/F22_model.glb` and textures are the only factual artifacts. Do not add aircraft performance claims. The black theme is binding. Desktop and mobile must both keep the model unobstructed. Animation playback and direct Three.js surface control are mutually exclusive modes.
 
 ## Chosen direction
 

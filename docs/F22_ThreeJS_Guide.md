@@ -17,12 +17,13 @@
 | Materials | 7 |
 | Armatures (rig) | 9 |
 | Scene FPS | **24** |
-| Timeline | frame 1 – 972 (40.5 s) |
+| Animation clip | 10 ตัว (เปิดอย่างเดียว เล่นย้อนได้ — ข้อ 3) |
+| Timeline showcase | frame 1 – 972 (40.5 s), ไว้อ้างอิง |
 | Unit scale | 1.0 |
 | Bounding box | X 4.29 × Y 3.10 × Z 1.06 (Blender units) |
 | Textures | 28 PNG, รวม ~85 MB (`textures/`) |
-| GLB (ฝัง texture) | 54.76 MB, 19 image |
-| GLB (ไม่ฝัง texture) | 3.46 MB |
+| GLB (ฝัง texture) | 53.52 MB, 19 image, 10 clip |
+| GLB (ไม่ฝัง texture) | 2.22 MB |
 
 **สเกล:** ลำจริงยาว 18.92 m แต่โมเดลยาว 4.29 units → คูณ **4.41** ถ้าอยากได้หน่วยเมตร
 (หรือปล่อยไว้แล้วปรับ camera/physics ตามสเกลโมเดลก็ได้ — แค่ต้องเลือกอย่างเดียวแล้วอยู่กับมัน)
@@ -50,7 +51,8 @@ Prefix ที่ใช้:
 | `Body_`, `Wing_`, `Tail_` | โครงสร้าง + control surface | 15 |
 | `MLG_*` | main landing gear ซ้าย/ขวา | 56 |
 | `NLG_*` | nose landing gear | 17 |
-| `Bay_*` | weapon bay + ประตู + ราง | 45 |
+| `Bay_*` | weapon bay + ประตู + ราง | 37 |
+| `Flare_Dispenser_*` | ประตู flare dispenser + สลัก ซ้าย/ขวา | 8 |
 | `Canopy_*` | ฝาครอบห้องนักบิน | 5 |
 | `Cockpit_*`, `Seat_*` | ภายใน | 90 |
 | `Engine_Nozzle_*` | ท่อท้าย (thrust vectoring) | 9 |
@@ -71,11 +73,10 @@ Prefix ที่ใช้:
 
 ### 2.1 ข้อเท็จจริงสำคัญจากการ export ทดสอบ
 
-1. **ได้ 9 AnimationClip** ชื่อตรงกับ armature: `RIG_NoseGear`, `RIG_MainGear_L`, `RIG_MainGear_R`, `RIG_BayDoor_Center_L/R`, `RIG_BayDoor_Side_L/R`, `RIG_Canopy`, `RIG_Tail_Nozzle_Hook`
-   (ถึงจะตั้ง export mode = `SCENE` ก็ยังแยกเป็น 9 clip เพราะ exporter แยกตาม armature)
-2. ทุก clip กินช่วง **0.042 – 40.5 s** เท่ากันหมด (= frame 1–972) แต่ **แต่ละ clip มี track เฉพาะ bone ของ rig ตัวเอง**
+1. **ได้ 10 AnimationClip** ชื่อตาม *กลไก* ไม่ใช่ชื่อ armature: `Canopy_Open`, `WeaponBay_Main_L_Open`, `WeaponBay_Main_R_Open`, `WeaponBay_Side_L_Open`, `WeaponBay_Side_R_Open`, `FlareDispenser_L_Open`, `FlareDispenser_R_Open`, `LandingGear_Deploy`, `Tailhook_Deploy`, `Aero_Demo` (ข้อ 3)
+2. ทุก clip เริ่มที่ **0 s** วิ่งจากปิด → เปิด และมี track **เฉพาะ bone ของกลไกตัวเอง** มี `LandingGear_Deploy` ตัวเดียวที่คุมหลาย armature (nose + main ทั้งสองข้าง) — ตั้งใจให้เป็นแบบนั้น
 3. **skinned mesh = 0** — mesh ทุกชิ้นเป็น node ธรรมดาที่เป็นลูกของ bone node ⇒ เขียน transform ใส่ node ตรงๆ ได้ (หมุนล้อ, ขยับ control surface) ไม่ต้องยุ่งกับ skinning
-4. `track time = frame / 24` เป๊ะๆ → frame 1 = 0.04167 s, frame 972 = 40.5 s
+4. `track time = frame / 24` เป๊ะๆ → 24 frame ต้นทาง = 1 s
 
 ### 2.2 rig → bone → mesh
 
@@ -124,18 +125,26 @@ Prefix ที่ใช้:
 | `Bone.007` / `.008` | ประตูขาหน้าฝั่ง R / L (`NLG_Door_Rail_x` + hinge pin ×3) |
 | `Control` | control bone |
 
-`RIG_BayDoor_Center_L` / `_R` — **คุมทั้งประตู center bay และ side bay ฝั่งเดียวกัน**
+`RIG_Bay_L` / `_R` (เปลี่ยนชื่อจาก `RIG_BayDoor_Center_x`) — **มี 3 กลไกอิสระอยู่บน rig เดียว** แยกเป็น 3 clip ตาม bone:
 
-| bone | ชิ้น |
-|---|---|
-| `Bone.002` | `Bay_Center_Door_x` + frame + hinge rod |
-| `Bone.003` | ขอบ/ซีล center door |
-| `Bone.009` `.010` `.011` `.004` | hinge arm, rib ใน, rib นอก, ซีลหน้า |
-| `Bone` | `Bay_Side_Door_x_Inner` + frame ล่าง |
-| `Bone.001` | `Bay_Side_Door_x_Outer` + frame บน |
-| `Bone.008` | side door hinge arm/pin |
+| bone | ชิ้น | กลไก |
+|---|---|---|
+| `Bone.002` | `Bay_Center_Door_x` + frame + hinge rod | ช่องล่าง (main bay) — **bone เดียวที่มี key** |
+| `Bone.003` | ขอบ/ซีล/seam/strip ของ center door | ลูกของ `Bone.002` **ไม่มี key** |
+| `Bone.010` / `.011` | `Bay_Center_Door_Rib_x_Inner` / `_Outer` | ลูกของ `Bone.002` **ไม่มี key** |
+| `Bone.004` | `Bay_Center_Door_Seal_Fwd` (**มีเฉพาะ rig ขวา**, ฝั่งซ้ายไม่มีชิ้น) | **static** ไม่มี key |
+| `Bone` | `Bay_Side_Door_x_Inner` + frame ล่าง + hinge rod | ช่องข้าง (side bay) |
+| `Bone.001` | `Bay_Side_Door_x_Outer` + frame บน + hinge rod | ช่องข้าง (side bay) |
+| `Bone.008` | `Flare_Dispenser_x_Upper` (+ สลัก) | flare dispenser |
+| `Bone.009` | `Flare_Dispenser_x_Lower` (+ สลัก) | flare dispenser |
 
-`RIG_BayDoor_Side_L` / `_R` — แขนกาง AIM-9 (trapeze)
+> ประตู flare dispenser 2 บานนี้ชื่อเดิมคือ `Bay_Side_DoorHingeArm_x` / `Bay_Center_DoorHingeArm_x` ซึ่งไม่ใช่แขนบานพับจริง — เป็นกล่องขนาด ~11 ซม. 2 ใบที่อยู่ **หลัง side bay ไป 0.43 หน่วย** มีบานพับของตัวเอง และหมุนคนละองศากับประตู (74° / 68° เทียบกับประตู 90° / 120°) จึงเปลี่ยนชื่อให้ตรงความจริง
+
+> **ประวัติการแก้ประตู main bay** เดิม `Bone.003`, `.010`, `.011`, `.004` ต่างมี key หมุนของตัวเอง (129.8° / 122.4° / 112.4° / 180°) และ `.003`→`.010` ยังต่อกันเป็น chain ให้มุมบวกทับ ผลคือบานประตูฉีกออกจากขอบและ rib ของตัวเองระหว่างเปิด — วัดระยะสัมพัทธ์ระหว่าง `Bay_Center_Door_L` กับชิ้นประกอบเพี้ยนไป 29.9–77.7 มม. ทำให้ขอบ/ซีล/rib ค้างคาปากช่องและดูเหมือน "เปิดไม่สุด"
+>
+> แก้แล้ว: `Bone.011` ย้ายมาเป็นลูกของ `Bone.002`, ลบ key ของทั้ง 4 bone ทิ้ง (คลิปละ 40 fcurve), `Bone.004` เป็น static ตอนนี้ประตูทั้งชุดหมุนแข็งชิ้นเดียวรอบ `Bone.002` ที่ 119.8° — drift = **0.00 มม.** ทุกคู่ และ BVH ไม่ทับผิวลำตัวที่เฟรมสุดท้าย ช่องข้างกับ flare ไม่มีปัญหานี้มาแต่แรก (drift 0.00 มม. อยู่แล้ว) จึงไม่ได้แตะ
+
+`RIG_Trapeze_L` / `_R` (เปลี่ยนชื่อจาก `RIG_BayDoor_Side_x`) — แขนกาง AIM-9 (trapeze)
 
 | bone | ชิ้น |
 |---|---|
@@ -152,9 +161,55 @@ Prefix ที่ใช้:
 
 ---
 
-## 3. Timeline (Animation showcase)
+## 3. Animation clips
 
-action เดียวชื่อ `Scene` ในไฟล์ blend เก็บ showcase ทั้งหมดเรียงต่อกัน ตัดเป็นท่อนตามตารางนี้
+ไฟล์ blend มี **10 action แยกตามกลไก** ทุก clip เป็นท่า *เปิด* อย่างเดียว:
+
+```
+เฟรมแรก                    เฟรมสุดท้าย
+CLOSED / REST  ──────────▶ OPEN
+                 reverse ◀
+```
+
+**ไม่มี clip ปิด** — ปิดโดยเล่น action เดิมย้อนกลับ (`timeScale = -1`, ข้อ 6.2)
+
+| action / clip | ขยับอะไร | rig ที่คุม | node ที่ animate | ความยาว | frame ต้นทาง |
+|---|---|---|---|---|---|
+| `Canopy_Open` | canopy ยกขึ้น + แขน/ขายึด | `RIG_Canopy` | 3 | 2.708 s | 842 – 907 |
+| `WeaponBay_Main_L_Open` | **ช่องล่างฝั่งซ้าย** — บานประตูทั้งชุด (ขอบ/ซีล/rib ห้อยตาม ไม่มี node ของตัวเอง) | `RIG_Bay_L` | 1 | 1.500 s | 221 – 257 |
+| `WeaponBay_Main_R_Open` | **ช่องล่างฝั่งขวา** — บานประตูทั้งชุด | `RIG_Bay_R` | 1 | 1.500 s | 221 – 257 |
+| `WeaponBay_Side_L_Open` | **ช่องข้างซ้าย: ประตู 2 บาน + AIM-9 กางออกมา** | `RIG_Bay_L`, `RIG_Trapeze_L` | 6 | 1.167 s | 221 – 249 |
+| `WeaponBay_Side_R_Open` | **ช่องข้างขวา: ประตู 2 บาน + AIM-9 กางออกมา** | `RIG_Bay_R`, `RIG_Trapeze_R` | 6 | 1.167 s | 221 – 249 |
+| `FlareDispenser_L_Open` | ประตู flare dispenser ซ้าย (บน + ล่าง) | `RIG_Bay_L` | 2 | 1.250 s | 221 – 251 |
+| `FlareDispenser_R_Open` | ประตู flare dispenser ขวา (บน + ล่าง) | `RIG_Bay_R` | 2 | 1.250 s | 221 – 251 |
+| `LandingGear_Deploy` | nose gear + main gear ทั้งสองข้างกางลง | `RIG_NoseGear`, `RIG_MainGear_L`, `RIG_MainGear_R` | 46 | 4.167 s | 741 – 841 |
+| `Tailhook_Deploy` | hook กางลง + แผ่นระหว่าง nozzle | `RIG_Tail_Nozzle_Hook` (`Bone`, `.001`, `.002`, `.003`) | 4 | 3.167 s | 764 – 840 |
+| `Aero_Demo` | โชว์ control surface + thrust vectoring | `RIG_Tail_Nozzle_Hook` (`Bone.004` – `.021`) | 18 | 16.208 s | 345 – 734 |
+
+สิ่งที่การันตี (ตรวจจาก GLB ที่ export จริง `export/F22_master.glb`):
+
+1. แต่ละ clip มี track **เฉพาะ bone ของกลไกตัวเอง** — node ที่ทับกันระหว่าง 10 clip = **0** ⇒ เล่นพร้อมกันกี่ตัวก็ได้ ไม่มีทางแย่ง bone กัน ทั้ง 3 กลไกที่อยู่บน `RIG_Bay_L` ร่วมกัน (ช่องล่าง / ช่องข้าง / flare) แยกขาดจากกันจริง
+2. ไม่มี clip ไหนไป animate node ของ armature object หรือ rig ที่ไม่ใช่ของตัวเอง
+3. ทุก clip เริ่มที่ **t = 0 s**, `duration = (เฟรมสุดท้าย − เฟรมแรก) / 24`
+4. เฟรม 0 ของแต่ละ clip = ท่าปิด/พักของกลไกนั้นใน showcase, เฟรมสุดท้าย = เปิดสุด คลาดเคลื่อนจากไฟล์ Blender สูงสุด **1 µm**
+
+จุดที่พลาดง่าย:
+
+* **แต่ละ clip ของ bay จบในตัวเอง** `WeaponBay_Side_L_Open` เปิดประตูช่องข้าง *พร้อม* กาง AIM-9 ออกมา (ประตูอยู่บน `RIG_Bay_L` ส่วน trapeze อยู่บน `RIG_Trapeze_L` — clip เดียวคุมทั้งสอง) ส่วน `WeaponBay_Main_L_Open` เปิดเฉพาะประตูช่องล่าง และไม่มีตัวไหนแตะ flare dispenser
+* `Bay_Center_Door_Seal_Fwd` เป็นชิ้นเดียวพาดขวางเต็มความกว้างที่ bulkhead หน้า (X `0.504–0.516`, Y `−0.195…+0.195`) **ไม่ใช่ชิ้นของบานประตู** — เดิมถูก key ให้พลิก 180° ตอนนี้เป็น static ไม่ขยับในทุก clip
+* `LandingGear_Deploy` รวมขาทั้งสามใน clip เดียว (nose ออกก่อน main ตามหลัง — offset ฝังมาแล้ว) `t = 0` คือ gear **เก็บ**, `t = duration` คือ gear **ลง**
+* `Aero_Demo` เป็นของโชว์ ในเกมให้เขียนมุมเอง (ข้อ 7.1) — ที่แยก clip ไว้ก็เพื่อไม่ให้มันไปแตะ hook
+* rest pose ของ glTF (frame 1 ใน Blender) คือ gear **ลง**, canopy **เปิด**, hook **เก็บ**, bay **ปิด** ซึ่งยังไม่ใช่สถานะที่ต้องการทั้งหมด ให้ set ทุกกลไกเองตอนโหลด (ข้อ 6.3)
+
+### 3.1 Timeline showcase เดิม (ไว้อ้างอิง)
+
+action `Scene` ตัวเดิมยังอยู่ในไฟล์ blend (ติด fake user, ไม่ได้ assign, **ไม่ถูก export**) — clip ทั้งหมดข้างบนตัดมาจากช่วงในตารางนี้
+
+> ⚠️ **ห้ามลบ action `Scene`** — เป็น source ของ `F22_build_anim_clips.py` (`SRC_NAME = "Scene"` + `RIG_SLOT` map ไป slot `OBArmature.00x` ทั้ง 9) ลบแล้วสคริปต์รันไม่ได้
+>
+> key ของ bone tailhook (`Bone`, `.001`, `.002`, `.003` ใน slot `OBArmature.001`) ถูก remap `q' = q_เก็บ⁻¹ · q` แล้วให้ตรงกับ rest pose ใหม่ ถ้าเอา `Scene` จาก backup เก่ามาทับ ต้อง remap ซ้ำก่อน rebuild
+>
+> ส่วน key ของ `Bone.003` / `.010` / `.011` / `.004` ใน slot `OBArmature.004` / `.006` (bay ซ้าย/ขวา) ยังค้างอยู่ในเวอร์ชันเก่า — `F22_build_anim_clips.py` กรองทิ้งแล้ว (`BAY_MAIN_BONES = {"Bone.002"}`) แต่ถ้าเอา `Scene` ไป assign เล่นตรงๆ `Bone.011` จะหมุนซ้ำเพราะตอนนี้มันเป็นลูกของ `Bone.002`
 
 `t = frame / 24`
 
@@ -164,10 +219,10 @@ action เดียวชื่อ `Scene` ในไฟล์ blend เก็บ
 | 2 | **Main gear ขึ้น** | 111 – 181 | 4.625 – 7.542 | `RIG_MainGear_L`, `_R` |
 | 3 | **Tailhook เก็บ** | 116 – 188 | 4.833 – 7.833 | `RIG_Tail_Nozzle_Hook` |
 | 4 | **Nose gear ขึ้น** | 172 – 214 | 7.167 – 8.917 | `RIG_NoseGear` |
-| 5 | **Weapon bay เปิด** | 221 – 261 | 9.208 – 10.875 | `RIG_BayDoor_Center_L/R` |
-| 5b | ↳ แขน AIM-9 กาง | 236 – 249 | 9.833 – 10.375 | `RIG_BayDoor_Side_L/R` |
-| 6 | **Weapon bay ปิด** | 301 – 342 | 12.542 – 14.250 | `RIG_BayDoor_Center_L/R` |
-| 6b | ↳ แขน AIM-9 หุบ | 313 – 326 | 13.042 – 13.583 | `RIG_BayDoor_Side_L/R` |
+| 5 | **Weapon bay เปิด** | 221 – 261 | 9.208 – 10.875 | `RIG_Bay_L/R` |
+| 5b | ↳ แขน AIM-9 กาง | 236 – 249 | 9.833 – 10.375 | `RIG_Trapeze_L/R` |
+| 6 | **Weapon bay ปิด** | 301 – 342 | 12.542 – 14.250 | `RIG_Bay_L/R` |
+| 6b | ↳ แขน AIM-9 หุบ | 313 – 326 | 13.042 – 13.583 | `RIG_Trapeze_L/R` |
 | 7 | **Aero demo** (control surface + thrust vectoring) | 345 – 734 | 14.375 – 30.583 | `RIG_Tail_Nozzle_Hook` |
 | 8 | **Nose gear ลง** | 741 – 781 | 30.875 – 32.542 | `RIG_NoseGear` |
 | 9 | **Tailhook กาง** | 764 – 840 | 31.833 – 35.000 | `RIG_Tail_Nozzle_Hook` |
@@ -190,7 +245,73 @@ action เดียวชื่อ `Scene` ในไฟล์ blend เก็บ
 
 ค่าที่วัดได้: nozzle เบนสูงสุด **+16° / −20°** (pitch), ช่วง 542+ ซ้ายขวาเบนสวนทางกัน (roll vectoring)
 
-**สถานะที่ frame 1:** canopy เปิด (−20°), gear ลง, hook กาง, bay ปิด — ไม่มี frame ไหนที่ "gear ลง + hook เก็บ" พร้อมกัน ดังนั้นอย่าหวังพึ่ง rest pose จาก glTF ให้ set state เองตอนโหลด (ดูข้อ 6.3)
+**สถานะที่ frame 1:** canopy เปิด (−20°), gear ลง, **hook เก็บ**, bay ปิด
+
+hook เปลี่ยนจาก "กาง" เป็น "เก็บ" ตั้งแต่ที่ apply rest pose ใหม่ (ดูข้อ 3.3) — ส่วน canopy กับ gear ยังเป็นท่าเปิด/ลงอยู่ ดังนั้นยังต้อง set state เองตอนโหลด (ดูข้อ 6.3)
+
+### 3.2 สร้าง clip ใหม่
+
+`F22_build_anim_clips.py` สร้าง action ทั้ง 10 ตัวใหม่จาก action `Scene` แล้ววางแต่ละตัวลง NLA track ของมันเอง (track ถูก mute ไว้ให้ viewport สะอาด — การ mute *track* ไม่ทำให้ exporter ข้าม) รันซ้ำได้ เพราะมันลบของเดิมแล้วสร้างใหม่
+
+⚠️ **รันซ้ำ = ลบ clip เดิมทิ้งแล้ว build ใหม่จาก `Scene`** ก่อนรัน ตรวจว่า `BAY_MAIN_BONES = {"Bone.002"}` (ข้อ 2.2) และ key hook ใน `Scene` ผ่านการ remap แล้ว (ข้อ 3.1) ไม่งั้นจะได้ประตู main bay ฉีกและ tailhook อ้างอิงผิดกลับมา
+
+```python
+exec(open("/path/to/F22/F22_build_anim_clips.py").read())
+```
+
+อยากเปลี่ยนช่วง frame หรือเพิ่มกลไก แก้ตาราง `CLIPS` ที่หัวไฟล์นั้น
+
+### 3.3 Tailhook — rest pose ถูกสลับเป็นท่าเก็บ
+
+**อาการเดิม:** โหลด GLB ขึ้นเว็บแล้ว tailhook กางห้อยอยู่ทันทีทั้งที่ยังไม่เล่น clip ไหนเลย พอเล่น `Tailhook_Deploy` ก็เหมือนขยับนิดเดียว พอสั่งปิดก็กลับมากางเหมือนเดิม
+
+**สาเหตุ:** rest pose ของ `RIG_Tail_Nozzle_Hook` ตรงกับ **เฟรมสุดท้าย** ของ clip พอดี — วัด bbox center ได้ `d(rest, f76) = 0.00 มม.` ทั้ง 8 ชิ้น ส่วนท่าเก็บอยู่ที่ f0 ห่างออกไป 174.6 มม. glTF เขียน bind pose จาก rest pose ⇒ โหลดมาก็คือท่ากาง และการ reset กลับ bind pose = กางอีก
+
+**แก้แล้ว:** apply ท่า f0 เป็น rest pose ของ 5 bone (`Bone`, `Bone.001`, `Bone.002`, `Bone.003`, **`Bone.022`** — ต้องรวม `.022` ด้วยเพราะมันถือชิ้น shank/point/actuator ทั้งหมด) แล้วเขียน quaternion fcurve ใหม่ทั้ง 16 เส้นด้วย `q' = q_f0⁻¹ · q` bake ทุกเฟรม 0–76
+
+| | ก่อน | หลัง |
+|---|---|---|
+| rest pose | กาง (= f76) | **เก็บ (= f0)** |
+| `d(rest, f0)` | 174.6 มม. | **0.00 มม.** |
+| `d(rest, f76)` | 0.00 มม. | **174.6 มม.** |
+| ระยะกางจริง | 174.55 มม. | 174.55 มม. (เท่าเดิม) |
+
+world position ที่ f0 / f38 / f76 เพี้ยนจากของเดิมสูงสุด **0.0004 มม.** — การเคลื่อนไหวไม่เปลี่ยน เปลี่ยนแค่จุดอ้างอิง
+
+ทิศทางของ clip ยังเหมือนเดิม: `t = 0` คือ **เก็บ**, `t = duration` คือ **กาง**
+
+### 3.4 กับดัก: Action Editor แอบ assign action ให้ object
+
+Blender จะยัด action ที่ค้างอยู่ใน **Action Editor** ให้ object ตัวใหม่ทันทีที่คลิกเลือก ถ้าไม่ได้กด pin 📌 — active action **ทับ NLA ทั้งหมด** ทำให้ track ที่ตั้งไว้ไม่มีผล และ action แปลกปลอมจะติดไปกับไฟล์
+
+ที่เคยเจอจริง: `RIG_Tail_Nozzle_Hook` มี active action `FlareDispenser_L_Open` ค้าง ⇒ bone hook ไม่ถูก animate เลย ค้างที่ rest, และ mesh `Bay_Side_DoorFrame_L_Upper` / `Flare_Dispenser_L_Lower` มี armature action ติดอยู่ (mesh มี `pose.bones[...]` fcurve ซึ่งไม่มีผลอะไร แต่พัง glTF export)
+
+เช็คก่อน export ทุกครั้ง:
+
+```python
+import bpy
+print("stray active actions:",
+      [(o.name, o.animation_data.action.name)
+       for o in bpy.data.objects
+       if o.animation_data and o.animation_data.action])
+print("mesh with anim data:",
+      [o.name for o in bpy.data.objects
+       if o.type == 'MESH' and o.animation_data])
+```
+
+ทั้งสองบรรทัดต้องพิมพ์ `[]`
+
+### 3.5 `PlayClip.py` — ดู clip ทีละอันใน Blender
+
+ไฟล์ blend มี text block ชื่อ `PlayClip.py` (ติด fake user) แก้ `CLIP = "..."` ที่บรรทัดบนสุดแล้วกด **Alt+P** มันจะ
+
+* เคลียร์ active action ทุก object (กันปัญหาข้อ 3.4)
+* unmute เฉพาะ NLA track ที่มี strip ของ clip นั้น mute ที่เหลือ
+* ตั้ง `frame_start` / `frame_end` ให้พอดี clip แล้วกระโดดไปเฟรมแรก
+
+`CLIP = "*"` เปิดทุก track พร้อมกัน พิมพ์ชื่อผิดมันจะ print รายชื่อที่มีให้
+
+จำเป็นเพราะ clip ที่กินหลาย rig (`WeaponBay_Side_L_Open` อยู่ทั้ง `RIG_Bay_L` และ `RIG_Trapeze_L`) ถ้า solo ★ มือเปล่าใน NLA ต้องกดทั้งสอง rig ไม่งั้นประตูเปิดแต่แขน AIM-9 ไม่กาง
 
 ---
 
@@ -206,15 +327,24 @@ import bpy, os
 OUT = "/path/to/your/game/public/models"
 os.makedirs(OUT, exist_ok=True)
 
-bpy.context.scene.frame_set(1)          # pin rest pose ให้ export ซ้ำได้ผลเดิม
+# rest pose ต้องนิ่ง: ไม่มี action ค้าง + pose bone ทุกตัวอยู่ท่า rest
+for o in (x for x in bpy.data.objects if x.type == 'ARMATURE'):
+    for pb in o.pose.bones:
+        pb.matrix_basis.identity()
+bpy.context.scene.frame_set(1)
 
 bpy.ops.export_scene.gltf(
     filepath=os.path.join(OUT, "F22_master.glb"),
     export_format='GLB',
     export_image_format='AUTO',          # ฝัง texture ลงไฟล์เลย
     export_animations=True,
-    export_animation_mode='SCENE',
-    export_frame_range=True,
+    export_animation_mode='ACTIONS',     # 1 action = 1 glTF animation
+    export_merge_animation='ACTION',     # action ชื่อเดียวกันข้าม armature ยุบเป็น clip เดียว
+    export_anim_slide_to_zero=True,      # ทุก clip เริ่มที่ t = 0 s
+    export_force_sampling=True,
+    export_optimize_animation_size=True,
+    export_optimize_animation_keep_anim_armature=False,  # ⚠️ ดูตารางข้างล่าง
+    export_frame_range=False,            # ⚠️ scene เริ่ม frame 1 แต่ clip เริ่ม frame 0
     export_bake_animation=False,
     export_def_bones=False,              # ⚠️ ต้อง False ไม่งั้น bone ที่ไม่ deform หายหมด
     export_apply=False,
@@ -225,9 +355,17 @@ bpy.ops.export_scene.gltf(
 )
 ```
 
-ผลที่ได้จริง: **54.76 MB**, 265 mesh, 385 node, 7 material, **19 image**, 9 animation, 0 skinned mesh (ใช้เวลา ~13 วิ)
+ผลที่ได้จริง: **53.52 MB**, 265 mesh, 385 node, 7 material, 19 image, **10 animation**, 0 skinned mesh (ใช้เวลา ~6 วิ)
 
 ไฟล์นี้คือ **master** ยังไม่ได้ optimize — ห้ามส่งเข้าเกมตรงๆ ให้ผ่านข้อ 10 ก่อน
+
+3 flag ที่ตัดสินว่า clip จะแยกกันจริงหรือไม่:
+
+| flag | เหตุผล |
+|---|---|
+| `export_optimize_animation_keep_anim_armature=False` | **ตัวสำคัญที่สุด** ถ้าปล่อย default `True` exporter จะเขียน track ให้ *ทุก* bone ของ armature ที่ clip นั้นแตะ — `Tailhook_Deploy` จะไปล็อก bone ปีก/nozzle อีก 18 ตัวแล้วตีกับ `Aero_Demo` พอตั้ง `False` bone ที่ action ไม่ได้ animate จะถูกตัดทิ้ง ส่วน bone ที่มี key อยู่ยังได้ track ครบ (ถ้าค่านิ่งก็เหลือ 2 key) ผลตรวจจริง: node ที่ทับกันลดจาก 23 เหลือ 0 |
+| `export_animation_mode='ACTIONS'` + `export_merge_animation='ACTION'` | แต่ละ action กลายเป็น glTF animation ชื่อเดียวกับ action และ armature 3 ตัวที่ใช้ `LandingGear_Deploy` ร่วมกันถูกยุบเป็น animation เดียว ไม่ใช่ 3 อัน |
+| `export_frame_range=False` | scene range เริ่ม frame 1 แต่ clip เริ่ม frame 0 ถ้าปล่อย `True` เฟรมแรกของทุก animation จะโดนตัด |
 
 ### 4.2 exporter จัดการ texture ให้อัตโนมัติ
 
@@ -252,7 +390,7 @@ PNG 26 ใบใน `textures/` ถูกยุบเหลือ **19 image** �
 export_image_format='NONE',
 ```
 
-ได้ **3.46 MB** — material ยังมีครบ 7 ตัวพร้อมชื่อ แค่ไม่มี map ผูกอยู่ แล้วไปผูกเองตามข้อ 8
+ได้ **2.22 MB** — material ยังมีครบ 7 ตัวพร้อมชื่อ แค่ไม่มี map ผูกอยู่ แล้วไปผูกเองตามข้อ 8
 
 ### 4.4 ตรวจไฟล์ที่ export แล้ว
 
@@ -285,7 +423,24 @@ for m in j['materials']:
                    + [k for k in ('normalTexture','emissiveTexture') if k in m])
 ```
 
-ต้องเห็น 9 บรรทัด animation และ `skinned 0`
+ต้องเห็น 10 บรรทัด animation, `skinned 0` และทุก animation ต้องเริ่มที่ `0.0 s`
+
+**ต้องเช็กด้วยว่าไม่มี clip ไหนคุม node ซ้ำกัน** — ตัวนี้แหละที่จับ export พังได้:
+
+```python
+import struct, json, sys, itertools
+d = open(sys.argv[1], 'rb').read()
+j = json.loads(d[20:20 + struct.unpack('<I', d[12:16])[0]])
+sets = {a['name']: {c['target']['node'] for c in a['channels']} for a in j['animations']}
+for x, y in itertools.combinations(sets, 2):
+    if sets[x] & sets[y]:
+        print('OVERLAP', x, y, len(sets[x] & sets[y]))
+print({k: len(v) for k, v in sets.items()})
+```
+
+ที่ถูกต้อง: ไม่มีบรรทัด `OVERLAP` และจำนวน node = `Canopy 3 / Main L 1 / Main R 1 / Side L 6 / Side R 6 / Flare L 2 / Flare R 2 / Gear 46 / Hook 4 / Aero 18`
+
+(Main L/R เหลือ node ละ 1 ตั้งแต่ยุบประตู main bay มาไว้บน `Bone.002` ตัวเดียว — ดูข้อ 2.2 ของเดิมคือ 5)
 
 ### 4.5 ⚠️ ชื่อ node หลังโหลดเข้า Three.js เปลี่ยน
 
@@ -321,8 +476,17 @@ const gltf = await new GLTFLoader().loadAsync('/models/F22_game.glb');
 const jet = gltf.scene;
 scene.add(jet);
 
-const clips = Object.fromEntries(gltf.animations.map(c => [c.name, c]));
-// clips['RIG_MainGear_L'], clips['RIG_Canopy'], ...
+// mixer ตัวเดียว root ที่ scene ที่โหลดมา — `LandingGear_Deploy` คุม 3 armature
+// ถ้าแยก mixer ตาม armature จะผูก clip นี้ไม่ได้ (ข้อ 6.1)
+const mixer = new THREE.AnimationMixer(jet);
+
+const actions = Object.fromEntries(gltf.animations.map((clip) => {
+  const a = mixer.clipAction(clip);
+  a.loop = THREE.LoopOnce;
+  a.clampWhenFinished = true;     // ค้างเฟรมสุดท้ายไว้ ไม่ดีดกลับ
+  return [clip.name, a];
+}));
+// actions.Canopy_Open, actions.LandingGear_Deploy, actions.Tailhook_Deploy, ...
 ```
 
 ถ้า export แบบฝัง texture (ข้อ 4.1) **material มาครบพร้อมใช้แล้ว** เหลือแค่ปรับ 3 อย่าง:
@@ -360,126 +524,148 @@ const loaderGLB = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(Meshopt
 
 ### 6.1 หลักการ
 
-- **1 armature = 1 `AnimationMixer`** โดยใช้ node ของ armature เป็น root
-  → ผูก track ได้ถูกตัวแน่นอน ไม่สับสนกับชื่อ bone ที่ซ้ำกันข้าม rig
-- ไม่ปล่อยให้ clip เล่นเอง แต่ **scrub** ด้วยการเขียน `action.time` แล้วเรียก `mixer.update(0)`
-  → ได้ค่า progress 0..1 ที่กด toggle กลางทางแล้วย้อนกลับได้ทันที (เหมาะกับ gear/canopy ในเกม)
-- `AnimationUtils.subclip()` **ตัด track ที่ไม่มี key ในช่วงนั้นทิ้ง** → subclip ของ tailhook (frame 116–188) จะมีแค่ `Bone`, `Bone.001`, `Bone.002`, `Bone.003` ส่วน bone ปีก/nozzle หลุดออกไปหมด **แปลว่า mixer จะไม่ไปแย่งเขียนค่ากับโค้ด control surface ที่เราคุมเอง** — นี่คือเหตุผลที่ออกแบบแบบนี้แล้วปลอดภัย
+- **ใช้ `AnimationMixer` ตัวเดียว root ที่ `gltf.scene`** เพราะ `LandingGear_Deploy` คุม 3 armature พร้อมกัน แยก mixer ตาม armature จะผูก clip นี้ไม่ได้เลย ส่วนชื่อ bone ที่ซ้ำกันข้าม rig ไม่เป็นปัญหา เพราะ `GLTFLoader` เปลี่ยนชื่อ node ให้ไม่ซ้ำตอนโหลด แล้วสร้าง track ตามชื่อชุดเดียวกันนั้น
+- **ไม่ต้อง subclip อีกแล้ว** แต่ละ clip = 1 กลไก ปิด → เปิด อยู่แล้ว `AnimationUtils.subclip()` ไม่ต้องใช้ที่ไหนเลย
+- **ปิด = เล่นย้อนกลับ** ตั้ง `timeScale = -1` ไม่มี clip ปิดแยก ท่าไป-กลับจึงไม่มีวันเพี้ยนจากกัน
+- **clip ไม่ชนกัน** ทั้ง 10 clip ไม่มี node ร่วมกันเลย (ข้อ 3) ⇒ `actions.Canopy_Open.play()` พร้อม `actions.LandingGear_Deploy.play()` ได้เลย และไม่มีตัวไหนไปแตะ control surface ที่เราคุมเอง (ข้อ 7)
 
-### 6.2 Mechanism class
+### 6.2 เล่น / ย้อนกลับ / ค้างท่า
+
+แบบสั้นที่สุด — เปิด แล้วปิดด้วยการถอยเวลา:
 
 ```js
-const FPS = 24;
+const action = actions.Canopy_Open
 
-class Mechanism {
-  /**
-   * @param rigRoot  Object3D ของ armature (เช่น scene.getObjectByName('RIG_MainGear_L'))
-   * @param clip     AnimationClip
-   * @param range    [startFrame, endFrame] ตาม Blender — ใส่ null = ใช้ทั้ง clip
-   * @param seconds  เวลาเปิด/ปิดจริงในเกม (วินาที)
-   */
-  constructor(rigRoot, clip, range = null, seconds = null) {
-    this.mixer = new THREE.AnimationMixer(rigRoot);
+// เปิด
+action.reset()
+action.timeScale = 1
+action.play()
 
-    this.clip = range
-      // +1 เพราะ subclip ตัดแบบ endFrame เป็น exclusive (frame >= endFrame จะถูกทิ้ง)
-      ? THREE.AnimationUtils.subclip(clip.clone(), `${clip.name}_sub`, range[0], range[1] + 1, FPS)
-      : clip;
+// ปิดโดยเล่นย้อนกลับ
+action.time = action.getClip().duration
+action.timeScale = -1
+action.play()
+```
 
-    this.action = this.mixer.clipAction(this.clip);
-    this.action.loop = THREE.LoopOnce;
-    this.action.clampWhenFinished = true;
-    this.action.play();            // ห้าม pause — เราคุมเวลาเองด้วย update(0)
+ในเกมมักต้องกลับทิศ **กลางทาง** ด้วย (กด gear เก็บตอนที่ยังกางไม่สุด) กรณีนี้อย่า `reset()` ให้สลับ `timeScale` แล้วคง `time` เดิมไว้ `drive()` มีไว้ *เปลี่ยนทิศ* ถ้าสั่งซ้ำในทิศที่กลไกไปสุดแล้วจะไม่เกิดอะไร (action เล่นเศษเฟรมสุดท้ายแล้วจบ):
 
-    this.duration = this.clip.duration;
-    this.rate = 1 / (seconds ?? this.duration);   // progress ต่อวินาที
-    this.t = 0;
-    this.target = 0;
-    this.#apply();
-  }
+> โค้ด JS ในข้อ 6.2 และ 6.3 เป็นโค้ดอ้างอิง เขียนตามโครงสร้าง clip ที่ตรวจแล้ว แต่ยังไม่ได้รันจริงในเบราว์เซอร์ ส่วนตัวข้อมูล clip นั้น**ตรวจแล้ว** (ข้อ 3)
 
-  #apply() {
-    this.action.time = Math.min(this.t * this.duration, this.duration - 1e-4);
-    this.mixer.update(0);          // delta 0 = ไม่เดินเวลาเอง แค่ apply pose
-  }
+```js
+function drive(name, open) {
+  const a = actions[name];
+  const d = a.getClip().duration;
 
-  set(v)   { this.target = THREE.MathUtils.clamp(v, 0, 1); }
-  open()   { this.set(1); }
-  close()  { this.set(0); }
-  toggle() { this.set(this.target > 0.5 ? 0 : 1); }
-  snap(v)  { this.t = this.target = THREE.MathUtils.clamp(v, 0, 1); this.#apply(); }
+  a.enabled  = true;
+  a.paused   = false;
+  a.timeScale = open ? 1 : -1;
+  // clampWhenFinished จอด action ไว้ที่ปลายทาง ต้องดันกลับเข้ามาในช่วงก่อน
+  if (open  && a.time >= d) a.time = d - 1e-4;
+  if (!open && a.time <= 0) a.time = 1e-4;
+  a.play();
+}
 
-  get moving() { return this.t !== this.target; }
-  get progress() { return this.t; }
+const canopy = { open: () => drive('Canopy_Open', true), close: () => drive('Canopy_Open', false) };
+const gear   = { down: () => drive('LandingGear_Deploy', true), up: () => drive('LandingGear_Deploy', false) };
+const hook   = { down: () => drive('Tailhook_Deploy', true), up: () => drive('Tailhook_Deploy', false) };
+const bay    = {
+  set(open) {
+    for (const n of ['WeaponBay_Main_L_Open', 'WeaponBay_Main_R_Open',
+                     'WeaponBay_Side_L_Open', 'WeaponBay_Side_R_Open']) drive(n, open);
+  },
+};
+const flares  = {
+  set(open) {
+    for (const n of ['FlareDispenser_L_Open', 'FlareDispenser_R_Open']) drive(n, open);
+  },
+};
+```
 
-  update(dt) {
-    if (this.t === this.target) return;
-    const step = this.rate * dt;
-    this.t = this.t < this.target
-      ? Math.min(this.target, this.t + step)
-      : Math.max(this.target, this.t - step);
-    this.#apply();
-  }
+อยากได้ progress ของกลไกไปใช้ตัดสินใจ (เช่นเช็กว่า gear ลงสุดหรือยังก่อนหมุนล้อ ข้อ 7.3):
+
+```js
+const progress = (n) => actions[n].time / actions[n].getClip().duration;
+```
+
+ความเร็ว: ปรับขนาดของ `timeScale` (`a.timeScale = open ? 2 : -2` = เร็วขึ้น 2 เท่า) ถ้าอยากล็อกเป็นวินาที ใช้ `duration / seconds` เป็นขนาด
+
+### 6.2b ถ้าอยาก scrub เองแทนการเล่น
+
+กรณีอยากถือค่า 0..1 เอง (gear ที่ขับด้วยฟิสิกส์, slider ในเครื่องมือ) ให้ค้าง action ไว้แล้วเขียน `time` ตรงๆ:
+
+```js
+function scrub(name, t01) {            // t01 อยู่ใน [0, 1]
+  const a = actions[name];
+  a.enabled = true;
+  a.paused  = true;
+  a.play();
+  a.time = THREE.MathUtils.clamp(t01, 0, 1) * (a.getClip().duration - 1e-4);
+}
+mixer.update(0);                       // delta 0 = ใส่ท่าอย่างเดียว ไม่เดินเวลา
+```
+
+> `mixer.setTime(t)` ขยับ **ทุก** action พร้อมกัน และไม่มีผลกับ action ที่ paused (effective timeScale = 0) มี 8 กลไกแยกกันแบบนี้ ใช้ `time` ราย action ตรงกว่า
+
+### 6.3 set state ตอนโหลด — ห้ามข้าม
+
+rest pose ของ glTF คือ **gear ลง, canopy เปิด, hook เก็บ, bay ปิด** (frame 1 ใน Blender) และ clip จะมีผลกับโมเดลก็ต่อเมื่อ action ถูก apply อย่างน้อยหนึ่งครั้ง ดังนั้นตรึงทุกกลไกให้ชัดทันทีหลังโหลด:
+
+> `Tailhook_Deploy` ตรงกับ rest pose อยู่แล้วตั้งแต่ข้อ 3.3 แต่ยังต้องเรียก `setState(..., CLOSED)` ไว้ เพราะโค้ดที่เหลือ (`p()`, `drive()`) อ่านค่าจาก `action.time` ถ้าไม่ได้ `play()` ไว้ก่อนจะได้สถานะไม่ตรง
+
+```js
+const CLOSED = 0, OPEN = 1;
+
+function setState(name, v) {
+  const a = actions[name];
+  const d = a.getClip().duration;
+  a.enabled = true;
+  a.paused  = true;
+  a.play();
+  a.time = v === OPEN ? d - 1e-4 : 0;
+}
+
+// จอดอยู่ที่ลาน: gear ลง, canopy เปิด, ที่เหลือปิดหมด
+setState('LandingGear_Deploy',    OPEN);
+setState('Canopy_Open',           OPEN);
+setState('Tailhook_Deploy',       CLOSED);
+setState('WeaponBay_Main_L_Open', CLOSED);
+setState('WeaponBay_Main_R_Open', CLOSED);
+setState('WeaponBay_Side_L_Open', CLOSED);
+setState('WeaponBay_Side_R_Open', CLOSED);
+setState('FlareDispenser_L_Open',  CLOSED);
+setState('FlareDispenser_R_Open',  CLOSED);
+setState('Aero_Demo',             CLOSED);   // เฟรม 0 = ท่ากลาง (ห่างจาก rest ไม่เกิน 0.33°)
+
+mixer.update(0);                              // apply ทีเดียวจบ
+```
+
+ถ้าคุม control surface เอง (ข้อ 7.1) ให้ข้ามบรรทัด `Aero_Demo` ไป — ไม่แตะ action ตัวนั้นเลย แล้ว bone ชุดนั้นเป็นของเราล้วนๆ
+
+จากนั้นใน loop:
+
+```js
+function animate(dt) {
+  mixer.update(dt);      // ขับทุกกลไกที่กำลังขยับอยู่
 }
 ```
-
-> ถ้าจะใช้ `mixer.setTime(t)` แทน `action.time + update(0)` ได้เหมือนกัน **แต่ห้ามตั้ง `action.paused = true`** — action ที่ paused มี effective timeScale = 0 ทำให้ `setTime` ไม่ขยับอะไรเลย
-
-### 6.3 ประกอบเป็นระบบทั้งลำ
-
-```js
-const rig  = (n) => jet.getObjectByName(n);
-const F    = (a, b) => [a, b];
-
-const M = {
-  // clip ของ rig พวกนี้มีแค่กลไกตัวเอง — ตัด subclip ก็ได้ ไม่ตัดก็ได้
-  canopy:    new Mechanism(rig('RIG_Canopy'),          clips['RIG_Canopy'],          F(842, 907), 2.5),
-  noseGear:  new Mechanism(rig('RIG_NoseGear'),        clips['RIG_NoseGear'],        F(741, 781), 2.0),
-  mainGearL: new Mechanism(rig('RIG_MainGear_L'),      clips['RIG_MainGear_L'],      F(771, 841), 3.0),
-  mainGearR: new Mechanism(rig('RIG_MainGear_R'),      clips['RIG_MainGear_R'],      F(771, 841), 3.0),
-
-  bayL:      new Mechanism(rig('RIG_BayDoor_Center_L'), clips['RIG_BayDoor_Center_L'], F(221, 261), 1.6),
-  bayR:      new Mechanism(rig('RIG_BayDoor_Center_R'), clips['RIG_BayDoor_Center_R'], F(221, 261), 1.6),
-  railL:     new Mechanism(rig('RIG_BayDoor_Side_L'),   clips['RIG_BayDoor_Side_L'],   F(236, 249), 0.6),
-  railR:     new Mechanism(rig('RIG_BayDoor_Side_R'),   clips['RIG_BayDoor_Side_R'],   F(236, 249), 0.6),
-
-  // rig ท้ายเครื่องรวม hook + ปีก + nozzle → ต้อง subclip เอาเฉพาะ hook
-  hook:      new Mechanism(rig('RIG_Tail_Nozzle_Hook'), clips['RIG_Tail_Nozzle_Hook'], F(764, 840), 1.8),
-};
-
-// state เริ่มต้น: gear ลง, canopy ปิด, hook เก็บ, bay ปิด
-M.noseGear.snap(1); M.mainGearL.snap(1); M.mainGearR.snap(1);
-M.canopy.snap(0); M.hook.snap(0);
-M.bayL.snap(0); M.bayR.snap(0); M.railL.snap(0); M.railR.snap(0);
-
-// API ระดับเกม
-const gear = {
-  set(down) { M.noseGear.set(down ? 1 : 0); M.mainGearL.set(down ? 1 : 0); M.mainGearR.set(down ? 1 : 0); },
-  get down() { return M.mainGearL.progress > 0.99; },
-  get moving() { return M.noseGear.moving || M.mainGearL.moving || M.mainGearR.moving; },
-};
-const bay = {
-  set(open) { for (const k of ['bayL','bayR','railL','railR']) M[k].set(open ? 1 : 0); },
-};
-
-function update(dt) { for (const m of Object.values(M)) m.update(dt); }
-```
-
-**หมายเหตุทิศทางเวลา:** ใน showcase ต้นฉบับ frame 771→841 คือ **gear ลง** ดังนั้น `progress 1 = gear down` ถ้าอยากให้ `1 = up` ใช้ช่วงขาเก็บ (111–181) แทน แล้วสลับความหมายเอง
 
 **คีย์บอร์ด:**
 
 ```js
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
+  const p = (n) => actions[n].time / actions[n].getClip().duration;
   switch (e.code) {
-    case 'KeyG': gear.set(!gear.down); break;
-    case 'KeyB': bay.set(M.bayL.progress < 0.5); break;
-    case 'KeyC': M.canopy.toggle(); break;
-    case 'KeyH': M.hook.toggle(); break;
+    case 'KeyG': drive('LandingGear_Deploy', p('LandingGear_Deploy') < 0.5); break;
+    case 'KeyB': bay.set(p('WeaponBay_Main_L_Open') < 0.5); break;
+    case 'KeyC': drive('Canopy_Open',     p('Canopy_Open')     < 0.5); break;
+    case 'KeyH': drive('Tailhook_Deploy', p('Tailhook_Deploy') < 0.5); break;
+    case 'KeyF': flares.set(p('FlareDispenser_L_Open') < 0.5); break;
   }
 });
 ```
+
+**หมายเหตุทิศทางเวลา:** ทุก clip วิ่งปิด → เปิด ดังนั้น `progress 1` แปลว่า *กางออก* เสมอ: gear **ลง**, canopy **เปิด**, hook **กาง**, ประตู bay **เปิด**, แขน AIM-9 **กาง**
 
 ---
 
@@ -487,10 +673,10 @@ addEventListener('keydown', (e) => {
 
 ### 7.1 Control surface — ขับด้วย input ไม่ใช่เล่น clip
 
-ท่อน aero demo (frame 345–734) เอาไว้ดูสวยๆ เฉยๆ **ในเกมอย่าเล่นมัน** ให้เขียนมุมลง bone ตรงๆ ตามค่า pitch/roll/yaw
+clip `Aero_Demo` เอาไว้ดูสวยๆ เฉยๆ **ในเกมอย่าเล่นมัน** ให้เขียนมุมลง bone ตรงๆ ตามค่า pitch/roll/yaw
 
-bone พวกนี้อยู่ใน rig เดียวกับ hook แต่ subclip ของ hook ไม่มี track ของมัน ⇒ เขียนทับได้ปลอดภัย
-⚠️ จริงเฉพาะ export แบบแยก armature ถ้าโหลดไฟล์ที่รวมเป็น **clip `Scene` ตัวเดียว** clip นั้น key bone พวกนี้ด้วย มันจะแย่งเขียนทุกเฟรม — ต้องหยุด mixer (หรือ subclip เฉพาะช่วงที่ต้องการ) ก่อนเขียนมุมเอง
+bone พวกนี้อยู่ใน rig เดียวกับ hook แต่ `Tailhook_Deploy` ไม่มี track ของมันเลย (ตรวจแล้ว node ไม่ทับกัน ข้อ 3) ⇒ เขียนทับได้ปลอดภัย ตราบใดที่ไม่ไปสั่งเล่น `Aero_Demo`
+⚠️ ถ้าโหลดไฟล์รุ่นเก่าที่รวมเป็น **clip `Scene` ตัวเดียว** clip นั้น key bone พวกนี้ด้วย มันจะแย่งเขียนทุกเฟรม — ต้องหยุด mixer ก่อนเขียนมุมเอง
 
 #### แกนบานพับคือแกนของ bone เอง ไม่ใช่แกน world
 
@@ -660,7 +846,7 @@ function spinWheels(speed, dt) {
 
 **ถ้าล้อหมุนผิดระนาบ** ลองไล่ `(1,0,0)` → `(0,1,0)` → `(0,0,1)` เอาอันที่ดูถูก (ใช้เวลา 30 วินาที เร็วกว่านั่งคำนวณ)
 
-⚠️ อย่าหมุนล้อขณะที่ gear clip กำลังเล่น — clip เขียน bone (parent) ส่วนเราเขียน mesh (child) ไม่ชนกันก็จริง แต่การหมุนสะสมจะดูแปลกตอนขาพับ ให้หมุนเฉพาะตอน `gear.down === true`
+⚠️ อย่าหมุนล้อขณะที่ gear clip กำลังเล่น — clip เขียน bone (parent) ส่วนเราเขียน mesh (child) ไม่ชนกันก็จริง แต่การหมุนสะสมจะดูแปลกตอนขาพับ ให้หมุนเฉพาะตอน `progress('LandingGear_Deploy') > 0.99`
 
 ---
 
@@ -873,9 +1059,9 @@ function makeCanopyGlass() {
 
 ---
 
-## 10. Optimize — 54.76 MB ส่งเข้าเกมตรงๆ ไม่ได้
+## 10. Optimize — 53.52 MB ส่งเข้าเกมตรงๆ ไม่ได้
 
-ไฟล์ master ที่ export ออกมามี texture PNG ฝังอยู่ **54.76 MB** แต่ตัวเลขที่ฆ่าเกมจริงคือ VRAM:
+ไฟล์ master ที่ export ออกมามี texture PNG ฝังอยู่ **53.52 MB** แต่ตัวเลขที่ฆ่าเกมจริงคือ VRAM:
 **texture 4096×4096 RGBA แบบไม่บีบอัด = ~89 MB บน GPU** (รวม mipmap ×1.33) **ต่อใบเดียว**
 ในไฟล์มี 19 ใบ ส่วนใหญ่ 4096² → เกิน 1 GB VRAM ถ้าไม่ทำอะไรเลย เครื่องระดับกลางตายแน่นอน
 
@@ -951,7 +1137,7 @@ cp -r node_modules/three/examples/jsm/libs/basis public/basis
 ```js
 const cockpit = [];
 jet.traverse(o => { if (o.isMesh && o.name.startsWith('Cockpit_')) cockpit.push(o); });
-// ในลูป: cockpit.forEach(o => o.visible = M.canopy.progress > 0.01 || cameraIsClose);
+// ในลูป: cockpit.forEach(o => o.visible = progress('Canopy_Open') > 0.01 || cameraIsClose);
 ```
 
 ### ปิด frustum culling ให้ชิ้นที่ขยับตาม bone
@@ -973,10 +1159,10 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);   // กัน dt กระโดดตอนสลับแท็บ
 
-  update(dt);                                     // mechanism ทั้งหมด
+  mixer.update(dt);                               // mechanism ทั้งหมด
   applyControls(input);                           // control surface
   applyVector(input.pitch, input.roll * 0.5);     // nozzle
-  if (gear.down) spinWheels(groundSpeed, dt);
+  if (progress('LandingGear_Deploy') > 0.99) spinWheels(groundSpeed, dt);
 
   renderer.render(scene, camera);
 }
@@ -987,14 +1173,17 @@ animate();
 
 ## 12. Checklist ก่อนส่งเข้าเกม
 
-- [ ] `frame_set(1)` ก่อน export ทุกครั้ง (rest pose ต้องคงที่)
+- [ ] reset pose bone + `frame_set(1)` ก่อน export ทุกครั้ง (rest pose ต้องคงที่)
 - [ ] `export_def_bones=False` — ถ้าลืม animation หายทั้งหมด
-- [ ] ตรวจ GLB ด้วย script ข้อ 4.4: ต้องได้ 9 animation, `skinned 0`
+- [ ] `export_optimize_animation_keep_anim_armature=False` — ไม่งั้น clip ที่อยู่ rig เดียวกันจะแย่ง bone กัน
+- [ ] `export_frame_range=False` — clip เริ่ม frame 0 แต่ scene range เริ่ม frame 1
+- [ ] ตอน export rig ต้องไม่มี active action (clip อยู่บน NLA track ที่ mute ไว้)
+- [ ] ตรวจ GLB ด้วย script ข้อ 4.4: ต้องได้ 10 animation, `skinned 0`, **ไม่มีบรรทัด `OVERLAP`**
 - [ ] อย่าหา bone ด้วยชื่อ ให้ใช้ `mesh.parent`
-- [ ] `subclip` endFrame ต้อง **+1** (exclusive)
+- [ ] ใช้ `AnimationMixer` ตัวเดียวที่ `gltf.scene` — `LandingGear_Deploy` คุม 3 armature
 - [ ] control surface หมุนรอบ **local Y** ของ bone เอง (nozzle: local **X**) — ห้ามใช้แกน world
-- [ ] bay door ใช้ช่วง union 221–261 / 301–342 ทั้งสองข้าง
-- [ ] snap state เริ่มต้นของทุก mechanism ตอนโหลดเสร็จ
+- [ ] `WeaponBay_Side_*` กาง trapeze มาให้แล้ว อย่าไปขยับ AIM-9 เองซ้ำ
+- [ ] ตรึงทุกกลไกด้วย `setState()` + `mixer.update(0)` ตอนโหลดเสร็จ
 - [ ] `scene.environment` ต้องมี ไม่งั้นกระจก + โลหะดำ
 - [ ] override material `Glass_Canopy` + ตั้ง `renderOrder`
 - [ ] ตั้ง `anisotropy` ให้ texture (GLTFLoader ไม่ตั้งให้)
@@ -1008,10 +1197,15 @@ animate();
 
 | ไฟล์ | คืออะไร |
 |---|---|
-| `F22.blend` | ไฟล์ทำงานหลัก (มี texture + rig + showcase) |
+| `F22.blend` | ไฟล์ทำงานหลัก (texture + rig + 10 clip บน NLA + showcase `Scene`) |
 | `F22 no textures.blend` | เวอร์ชันก่อนใส่ texture |
+| `F22_build_anim_clips.py` | สร้าง clip ทั้ง 10 ใหม่จาก action `Scene` (ข้อ 3.2) |
+| `F22_backup_before_clipsplit_*.blend` | สำรองก่อนแยก clip |
 | `F22_backup_before_rename_*.blend` | สำรองก่อน rename |
-| `F22_rename_map.json` | ชื่อเก่า → ชื่อใหม่ 278 รายการ |
+| `F22_rename_map.json` | ชื่อเก่า → ชื่อใหม่ 278 รายการ (**ไม่รวม** 12 ชื่อของ bay ด้านล่าง) |
+| ชื่อที่เปลี่ยนตอนแยก clip | `RIG_BayDoor_Center_L/R` → `RIG_Bay_L/R`, `RIG_BayDoor_Side_L/R` → `RIG_Trapeze_L/R`, `Bay_Side/Center_DoorHingeArm_x` (+ สลัก) → `Flare_Dispenser_x_Upper/Lower` |
 | `F22_revert_rename.py` | script ย้อน rename |
+| `PlayClip.py` (text block **ในไฟล์** `F22.blend`) | ดู clip ทีละอันใน Blender (ข้อ 3.5) |
+| `export/F22_master.glb`, `F22_game.glb`, `F22_game_fast.glb` | **ของเก่าทั้งหมด** export ก่อนแก้ประตู main bay และ rest pose tailhook (ข้อ 2.2, 3.3) ต้อง re-export ก่อนส่งเข้าเกม |
 | `source/Lockheed Martin F-22.fbx` | ไฟล์ต้นทาง |
 | `textures/` | PNG 28 ไฟล์ (~85 MB) |

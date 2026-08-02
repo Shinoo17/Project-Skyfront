@@ -20,12 +20,12 @@ The viewer is a React + Vite web application using Three.js. It is intended to w
 
 ## Capabilities and Constraints
 
-- Load `public/F22.glb` as the source model.
+- Load `public/F22_model.glb` as the source model.
 - Expose every embedded animation clip rather than hard-coding a single named action.
 - Provide direct orbit, zoom, animation playback, timeline, speed, auto-rotation, and view-reset controls.
 - Provide a clip-independent manual-flight mode that drives named control-surface nodes with Three.js quaternions and rotates the aircraft attitude from pitch, roll, and yaw input.
 - Keep the experience responsive across desktop and mobile layouts.
-- The supplied GLB currently contains 21 named clips, including canopy, control-surface, nozzle, tailhook, landing-gear, missile, weapon-bay, and master-timeline sequences. The viewer discovers future clips dynamically.
+- The supplied GLB contains 8 independent named clips: canopy, landing gear, tailhook, aerodynamic demo, and four left/right weapon-bay mechanisms. Open/deploy clips play in reverse when toggled off, and the viewer discovers future clips dynamically.
 
 ## Brand Commitments
 
@@ -34,7 +34,7 @@ The viewer is a React + Vite web application using Three.js. It is intended to w
 
 ## Evidence on Hand
 
-- `public/F22.glb`: the supplied aircraft, including its animation.
+- `public/F22_model.glb`: the supplied aircraft with 8 independent animation clips.
 - `public/textures/`: supplied original maps plus a web-optimized derivative set in `public/textures/web/` (2K for the main fuselage, 1K for supporting materials).
 - No commercial claims, attribution copy, or external brand assets were supplied and none should be fabricated.
 

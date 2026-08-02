@@ -14,7 +14,7 @@ import SceneErrorBoundary from './components/SceneErrorBoundary'
 
 export default function App() {
   const [clips, setClips] = useState([])
-  const [activeClip, setActiveClip] = useState('')
+  const [animationStates, setAnimationStates] = useState({})
   const [isPlaying, setIsPlaying] = useState(
     () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   )
@@ -33,24 +33,28 @@ export default function App() {
     yaw: 0,
     flaps: 0,
   })
+  const [throttle, setThrottle] = useState(0.32)
+  const [afterburner, setAfterburner] = useState(false)
   const [flightResetId, setFlightResetId] = useState(0)
   const pressedFlightKeys = useRef(new Set())
+  const manualFlightRef = useRef(manualFlight)
+  manualFlightRef.current = manualFlight
 
-  const activeDuration =
-    clips.find((clip) => clip.name === activeClip)?.duration || 0
+  const animationDuration = Math.max(0, ...clips.map((clip) => clip.duration))
 
   const handleClipsReady = useCallback((nextClips) => {
     setClips(nextClips)
-    setActiveClip((current) => current || nextClips[0]?.name || '')
   }, [])
 
-  const handleClipChange = useCallback((name) => {
+  const handleAnimationToggle = useCallback((systemId) => {
     setManualFlight(false)
+    setAfterburner(false)
     setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
-    setActiveClip(name)
-    setCurrentTime(0)
+    setAnimationStates((current) => ({
+      ...current,
+      [systemId]: !current[systemId],
+    }))
     setIsPlaying(true)
-    setIsPanelOpen(false)
   }, [])
 
   const handleSeek = useCallback((time) => {
@@ -85,6 +89,7 @@ export default function App() {
     setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
     setAutoRotate(false)
     setIsPlaying(!enabled)
+    if (!enabled) setAfterburner(false)
   }, [])
 
   const handleFlightInput = useCallback((axis, value) => {
@@ -102,6 +107,25 @@ export default function App() {
     setFlightResetId((value) => value + 1)
   }, [])
 
+  const handleThrottleChange = useCallback((value) => {
+    const nextThrottle = Math.min(1, Math.max(0, value))
+    setManualFlight(true)
+    setAutoRotate(false)
+    setIsPlaying(false)
+    setThrottle(nextThrottle)
+    if (nextThrottle < 0.65) setAfterburner(false)
+  }, [])
+
+  const handleAfterburnerToggle = useCallback(() => {
+    setManualFlight(true)
+    setAutoRotate(false)
+    setIsPlaying(false)
+    setAfterburner((enabled) => {
+      if (!enabled) setThrottle((value) => Math.max(value, 0.72))
+      return !enabled
+    })
+  }, [])
+
   useEffect(() => {
     const syncFlightKeys = () => {
       const keys = pressedFlightKeys.current
@@ -114,10 +138,13 @@ export default function App() {
     }
 
     const onKeyDown = (event) => {
-      if (
-        event.target instanceof HTMLElement &&
-        event.target.closest('button, input, .clip-list')
-      ) return
+      const target = event.target instanceof HTMLElement ? event.target : null
+      // Arrows and W/S belong to the throttle slider while it has focus, and to any text
+      // field. Everywhere else they fly the aircraft — including on a button, which is
+      // exactly where focus lands after the pilot taps the Flight tab or a flight pad key.
+      const isFieldFocused = Boolean(
+        target?.closest('input, textarea, select, [contenteditable="true"]'),
+      )
 
       const flightKeys = [
         'ArrowUp',
@@ -127,9 +154,12 @@ export default function App() {
         'KeyQ',
         'KeyE',
         'KeyF',
+        'KeyW',
+        'KeyS',
       ]
 
       if (flightKeys.includes(event.code)) {
+        if (isFieldFocused) return
         event.preventDefault()
         if (!pressedFlightKeys.current.has(event.code)) {
           pressedFlightKeys.current.add(event.code)
@@ -142,16 +172,21 @@ export default function App() {
       }
 
       if (event.code === 'Space') {
+        // Space still activates whatever control has focus rather than dropping flight mode.
+        if (isFieldFocused || target?.closest('button')) return
         event.preventDefault()
-        if (manualFlight) {
+        if (manualFlightRef.current) {
           setManualFlight(false)
+          setAfterburner(false)
           setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
           setIsPlaying(true)
         } else {
           setIsPlaying((value) => !value)
         }
       }
-      if (event.key.toLowerCase() === 'r') handleViewChange('perspective')
+      if (event.key.toLowerCase() === 'r' && !isFieldFocused) {
+        handleViewChange('perspective')
+      }
     }
 
     const onKeyUp = (event) => {
@@ -166,6 +201,18 @@ export default function App() {
       setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
     }
 
+    const throttleTimer = window.setInterval(() => {
+      const keys = pressedFlightKeys.current
+      const direction = Number(keys.has('KeyW')) - Number(keys.has('KeyS'))
+      if (!direction) return
+
+      setThrottle((value) => {
+        const nextThrottle = Math.min(1, Math.max(0, value + (direction * 0.025)))
+        if (nextThrottle < 0.65) setAfterburner(false)
+        return nextThrottle
+      })
+    }, 50)
+
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('blur', releaseFlightKeys)
@@ -173,8 +220,9 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', releaseFlightKeys)
+      window.clearInterval(throttleTimer)
     }
-  }, [handleViewChange, manualFlight])
+  }, [handleViewChange])
 
   return (
     <main className="viewer-shell">
@@ -184,7 +232,7 @@ export default function App() {
       >
         <SceneErrorBoundary>
           <Scene
-            activeClip={activeClip}
+            animationStates={animationStates}
             isPlaying={isPlaying}
             playbackSpeed={playbackSpeed}
             seekRequest={seekRequest}
@@ -206,12 +254,12 @@ export default function App() {
 
       <Interface
         clips={clips}
-        activeClip={activeClip}
-        onClipChange={handleClipChange}
+        animationStates={animationStates}
+        onAnimationToggle={handleAnimationToggle}
         isPlaying={isPlaying}
         onPlayPause={() => setIsPlaying((value) => !value)}
         currentTime={currentTime}
-        duration={activeDuration}
+        duration={animationDuration}
         onSeek={handleSeek}
         playbackSpeed={playbackSpeed}
         onSpeedChange={setPlaybackSpeed}
@@ -231,8 +279,12 @@ export default function App() {
           setAircraftMotionEnabled((enabled) => !enabled)
         }
         flightInput={flightInput}
+        throttle={throttle}
+        afterburner={afterburner}
         onManualFlightChange={handleManualFlightChange}
         onFlightInput={handleFlightInput}
+        onThrottleChange={handleThrottleChange}
+        onAfterburnerToggle={handleAfterburnerToggle}
         onFlightReset={handleFlightReset}
         onPanelOpen={() => setIsPanelOpen(true)}
         onPanelClose={() => setIsPanelOpen(false)}

@@ -313,7 +313,7 @@ input:focus-visible {
   position: absolute;
   top: 104px;
   right: 24px;
-  bottom: 130px;
+  bottom: 24px;
   width: 304px;
   min-height: 530px;
   display: flex;
@@ -407,7 +407,7 @@ input:focus-visible {
 }
 
 .animation-section {
-  min-height: 132px;
+  min-height: 220px;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -548,6 +548,208 @@ input:focus-visible {
   font-weight: 600;
 }
 
+.engine-control {
+  margin-top: 10px;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.engine-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.engine-heading span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.engine-heading output {
+  color: var(--fog);
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.throttle-control {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 7px;
+}
+
+.throttle-control kbd {
+  min-width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 8px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.throttle-track {
+  position: relative;
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.throttle-track::before,
+.throttle-track::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 3px;
+  content: "";
+}
+
+.throttle-track::before {
+  background: rgba(218, 226, 230, 0.12);
+}
+
+.throttle-track::after {
+  width: 100%;
+  background: var(--ice);
+  transform: scaleX(var(--throttle-scale));
+  transform-origin: left center;
+  transition: transform 100ms linear, background 160ms ease;
+}
+
+.engine-control.is-afterburner .throttle-track::after {
+  background: var(--amber);
+}
+
+.throttle-track input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.throttle-track input::-webkit-slider-runnable-track {
+  height: 3px;
+  background: transparent;
+}
+
+.throttle-track input::-webkit-slider-thumb {
+  width: 8px;
+  height: 18px;
+  margin-top: -7px;
+  appearance: none;
+  border: 1px solid var(--fog);
+  border-radius: 2px;
+  background: var(--carbon);
+}
+
+.throttle-track input::-moz-range-track {
+  height: 3px;
+  background: transparent;
+}
+
+.throttle-track input::-moz-range-thumb {
+  width: 8px;
+  height: 18px;
+  border: 1px solid var(--fog);
+  border-radius: 2px;
+  background: var(--carbon);
+}
+
+.afterburner-button {
+  position: relative;
+  width: 100%;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 183, 74, 0.32);
+  border-radius: 2px;
+  color: var(--fog);
+  background: rgba(255, 183, 74, 0.055);
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    transform 120ms var(--ease-out);
+}
+
+.afterburner-button::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--amber);
+  content: "";
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 220ms var(--ease-out);
+}
+
+.afterburner-button span,
+.afterburner-button small {
+  font-family: var(--display);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.afterburner-button span {
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-align: left;
+}
+
+.afterburner-button small {
+  color: var(--amber);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+}
+
+.afterburner-button:hover {
+  background: rgba(255, 183, 74, 0.1);
+}
+
+.afterburner-button:active {
+  transform: translateY(1px);
+}
+
+.afterburner-button[aria-pressed="true"] {
+  color: var(--void);
+  background: var(--amber);
+  box-shadow: 0 8px 20px rgba(255, 183, 74, 0.18);
+}
+
+.afterburner-button[aria-pressed="true"]::after {
+  transform: scaleX(1);
+}
+
+.afterburner-button[aria-pressed="true"] small {
+  color: rgba(5, 7, 9, 0.72);
+}
+
 .flight-help {
   margin: 8px 0 0;
   color: var(--dim);
@@ -564,6 +766,130 @@ input:focus-visible {
   font-size: 7px;
   font-weight: 600;
   letter-spacing: 0.1em;
+}
+
+.animation-toggle-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  padding-right: 7px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(154, 215, 232, 0.42) rgba(255, 255, 255, 0.035);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.animation-toggle-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.animation-toggle-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.animation-toggle-list::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: rgba(154, 215, 232, 0.42);
+}
+
+.animation-toggle-list:focus-visible {
+  outline: 1px solid var(--ice);
+  outline-offset: 3px;
+}
+
+.animation-toggle {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 2px;
+  color: var(--ash);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.animation-toggle:hover {
+  color: var(--fog);
+  background: rgba(154, 215, 232, 0.05);
+}
+
+.animation-toggle.is-active {
+  color: var(--fog);
+  background: rgba(154, 215, 232, 0.09);
+}
+
+.animation-index {
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+
+.animation-copy {
+  min-width: 0;
+}
+
+.animation-copy strong,
+.animation-copy small {
+  display: block;
+  overflow: hidden;
+  font-family: var(--display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.animation-copy strong {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.animation-copy small {
+  margin-top: 3px;
+  color: var(--dim);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+}
+
+.animation-toggle.is-active .animation-copy small {
+  color: var(--ice);
+}
+
+.animation-switch {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.animation-switch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dim);
+  content: "";
+  transition: transform 220ms var(--ease-out), background 160ms ease;
+}
+
+.animation-toggle.is-active .animation-switch {
+  border-color: rgba(154, 215, 232, 0.55);
+}
+
+.animation-toggle.is-active .animation-switch::after {
+  background: var(--ice);
+  transform: translateX(12px);
 }
 
 .clip-list {
@@ -1404,7 +1730,7 @@ input:focus-visible {
 @media (max-height: 720px) and (min-width: 761px) {
   .control-panel {
     top: 88px;
-    bottom: 106px;
+    bottom: 14px;
     min-height: 0;
     overflow-y: auto;
   }
