@@ -2,7 +2,7 @@
 THESIS: A radar test cell where the aircraft, not dashboard chrome, is the instrument.
 OWN-WORLD: Carbon black, cold steel type, ice-blue illumination, and one restrained amber signal.
 STORY: The viewer sees the complete Raptor, explores its airframe, then controls every embedded motion sequence.
-FIRST VIEWPORT: Full-bleed 3D aircraft, sparse identity at left, controls at right, and a low cinematic transport rail.
+FIRST VIEWPORT: Full-bleed 3D aircraft, sparse identity at left, and controls held to the right edge.
 FORM: Radar-scope test cell, direction 6/7, immersive center stage, seed 83862736.
 */
 
@@ -18,11 +18,9 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(
     () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   )
-  const [currentTime, setCurrentTime] = useState(0)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [autoRotate, setAutoRotate] = useState(false)
   const [lightingMode, setLightingMode] = useState('studio')
-  const [seekRequest, setSeekRequest] = useState(null)
   const [viewRequest, setViewRequest] = useState({ view: 'perspective', id: 0 })
   const [isPanelOpen, setIsPanelOpen] = useState(false)
   const [manualFlight, setManualFlight] = useState(false)
@@ -40,8 +38,6 @@ export default function App() {
   const manualFlightRef = useRef(manualFlight)
   manualFlightRef.current = manualFlight
 
-  const animationDuration = Math.max(0, ...clips.map((clip) => clip.duration))
-
   const handleClipsReady = useCallback((nextClips) => {
     setClips(nextClips)
   }, [])
@@ -56,16 +52,6 @@ export default function App() {
     }))
     setIsPlaying(true)
   }, [])
-
-  const handleSeek = useCallback((time) => {
-    setCurrentTime(time)
-    setSeekRequest({ time, id: performance.now() })
-  }, [])
-
-  const handleRestart = useCallback(() => {
-    handleSeek(0)
-    setIsPlaying(true)
-  }, [handleSeek])
 
   const handleViewChange = useCallback((view) => {
     setViewRequest({ view, id: performance.now() })
@@ -235,7 +221,6 @@ export default function App() {
             animationStates={animationStates}
             isPlaying={isPlaying}
             playbackSpeed={playbackSpeed}
-            seekRequest={seekRequest}
             autoRotate={autoRotate}
             viewRequest={viewRequest}
             lightingMode={lightingMode}
@@ -246,7 +231,6 @@ export default function App() {
             throttle={throttle}
             afterburner={afterburner}
             onClipsReady={handleClipsReady}
-            onTimeUpdate={setCurrentTime}
           />
         </SceneErrorBoundary>
       </div>
@@ -258,11 +242,6 @@ export default function App() {
         clips={clips}
         animationStates={animationStates}
         onAnimationToggle={handleAnimationToggle}
-        isPlaying={isPlaying}
-        onPlayPause={() => setIsPlaying((value) => !value)}
-        currentTime={currentTime}
-        duration={animationDuration}
-        onSeek={handleSeek}
         playbackSpeed={playbackSpeed}
         onSpeedChange={setPlaybackSpeed}
         autoRotate={autoRotate}
@@ -272,7 +251,6 @@ export default function App() {
           setLightingMode((value) => (value === 'studio' ? 'stealth' : 'studio'))
         }
         onViewChange={handleViewChange}
-        onRestart={handleRestart}
         onFullscreen={handleFullscreen}
         isPanelOpen={isPanelOpen}
         manualFlight={manualFlight}

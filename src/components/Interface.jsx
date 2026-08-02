@@ -10,24 +10,14 @@ import {
   Gauge,
   Lightbulb,
   Maximize,
-  Pause,
   Plane,
-  Play,
   Rotate3D,
   RotateCcw,
   RotateCw,
   Scan,
-  SkipBack,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-
-function formatTime(value = 0) {
-  const minutes = Math.floor(value / 60)
-  const seconds = Math.floor(value % 60)
-  const frames = Math.floor((value % 1) * 24)
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}:${String(frames).padStart(2, '0')}`
-}
 
 function Toggle({ active, onClick, icon: Icon, children }) {
   return (
@@ -408,11 +398,6 @@ export default function Interface({
   clips,
   animationStates,
   onAnimationToggle,
-  isPlaying,
-  onPlayPause,
-  currentTime,
-  duration,
-  onSeek,
   playbackSpeed,
   onSpeedChange,
   autoRotate,
@@ -420,7 +405,6 @@ export default function Interface({
   lightingMode,
   onLightingMode,
   onViewChange,
-  onRestart,
   onFullscreen,
   isPanelOpen,
   manualFlight,
@@ -437,12 +421,6 @@ export default function Interface({
   onPanelOpen,
   onPanelClose,
 }) {
-  const progress = duration ? (currentTime / duration) * 100 : 0
-  const activeAnimationCount = clips.filter(
-    (clip) => animationStates[clip.id],
-  ).length
-  const transportDisabled = !clips.length || manualFlight
-
   return (
     <div className="interface">
       <header className="topbar">
@@ -452,11 +430,6 @@ export default function Interface({
             <strong>F–22 <em>RAPTOR</em></strong>
             <small>TACTICAL AIRFRAME VIEWER</small>
           </div>
-        </div>
-
-        <div className="top-status">
-          <span><i className="status-dot" /> MODEL ONLINE</span>
-          <span className="desktop-only">GLTF / 238 MESHES</span>
         </div>
 
         <button type="button" className="icon-button fullscreen-button" onClick={onFullscreen} aria-label="เต็มจอ">
@@ -473,7 +446,7 @@ export default function Interface({
       <div className="airframe-title" aria-hidden="true">
         <span>INTERACTIVE AIRFRAME</span>
         <strong>RAPTOR</strong>
-        <p>238 MESHES · 7 MATERIALS · 8 ANIMATION CLIPS</p>
+        <p>5TH-GENERATION AIR-DOMINANCE FIGHTER · STEALTH · SUPERCRUISE</p>
       </div>
 
       <button type="button" className="open-panel" onClick={onPanelOpen}>
@@ -505,44 +478,6 @@ export default function Interface({
         isOpen={isPanelOpen}
         onClose={onPanelClose}
       />
-
-      <div className="transport">
-        <div className="transport-controls">
-          <button type="button" className="transport-main" onClick={onPlayPause} disabled={transportDisabled} aria-label={isPlaying ? 'หยุด animation ชั่วคราว' : 'เล่น animation'}>
-            {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
-          </button>
-          <button type="button" className="transport-secondary" onClick={onRestart} disabled={transportDisabled} aria-label="เริ่ม animation ใหม่">
-            <SkipBack size={17} />
-          </button>
-        </div>
-
-        <div className="timeline">
-          <div className="timeline-meta">
-            <span>
-              {manualFlight
-                ? 'MANUAL FLIGHT'
-                : `${activeAnimationCount} SYSTEM${activeAnimationCount === 1 ? '' : 'S'} ACTIVE`}
-            </span>
-            <strong>{formatTime(currentTime)} <i>/</i> {formatTime(duration)}</strong>
-          </div>
-          <div className="range-wrap" style={{ '--progress': `${progress}%` }}>
-            <input
-              type="range"
-              min="0"
-              max={duration || 1}
-              value={Math.min(currentTime, duration || 1)}
-              step="0.01"
-              disabled={transportDisabled}
-              aria-label="Animation timeline"
-              onChange={(event) => onSeek(Number(event.target.value))}
-            />
-          </div>
-        </div>
-
-        <button type="button" className="reset-view" onClick={() => onViewChange('perspective')}>
-          <RotateCcw size={15} /> RESET VIEW
-        </button>
-      </div>
 
       {/* <div className="corner-data" aria-hidden="true">
         <Expand size={13} />

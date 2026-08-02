@@ -32,6 +32,10 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 const MODEL_URL = '/F22_model.glb'
 const KTX2_TRANSCODER_PATH = '/basis/'
+const REMOVED_MODEL_OBJECTS = [
+  'MLG_Bay_Fitting_01',
+  'MLG_Bay_Fitting_02',
+]
 const CLIP_METADATA = {
   WeaponBay_Main_L_Open: {
     label: 'Main weapon bay · left',
@@ -154,8 +158,8 @@ const EXHAUST_VERTEX_SHADER = /* glsl */ `
     // Turbulent breathing of the plume boundary, growing downstream so the
     // exit ring stays anchored to the nozzle petals.
     float wobble =
-      sin(position.z * 16.0 - uTime * 21.0) * 0.05 +
-      sin(position.z * 6.5 - uTime * 12.0 + position.x * 3.0) * 0.05;
+      sin(position.z * 11.0 - uTime * 8.5) * 0.03 +
+      sin(position.z * 4.5 - uTime * 5.0 + position.x * 3.0) * 0.035;
     vec3 displaced = position;
     displaced.xy *= 1.0 + wobble * position.z;
 
@@ -201,10 +205,10 @@ const PLUME_FRAGMENT_SHADER = /* glsl */ `
     float tail = pow(clamp(1.0 - axial, 0.0, 1.0), mix(2.5, 1.7, uAb));
 
     float flicker = mix(
-      0.72,
-      1.25,
-      noise1(axial * 4.0 - uTime * (5.0 + 9.0 * uAb) + uSeed) * 0.6 +
-        noise1(axial * 9.0 - uTime * (9.0 + 14.0 * uAb) + uSeed * 2.0) * 0.4
+      0.84,
+      1.12,
+      noise1(axial * 4.0 - uTime * (2.2 + 3.5 * uAb) + uSeed) * 0.6 +
+        noise1(axial * 9.0 - uTime * (3.6 + 5.5 * uAb) + uSeed * 2.0) * 0.4
     );
 
     // Shock diamonds stand still relative to the nozzle and wash out
@@ -358,10 +362,10 @@ function EngineExhaust({ engine, spool }) {
     temps.direction.applyQuaternion(temps.parentQuaternion.invert())
 
     const flicker =
-      0.9 + 0.2 * Math.sin(time * 43 + engine.seed) * Math.sin(time * 17.7 + engine.seed * 1.7)
+      0.94 + 0.11 * Math.sin(time * 14 + engine.seed) * Math.sin(time * 6.1 + engine.seed * 1.7)
     const length =
       radius *
-      (1.6 + mil * 5.5 + ab * (12.5 + 1.4 * Math.sin(time * 31 + engine.seed)))
+      (1.6 + mil * 5.5 + ab * (12.5 + 0.7 * Math.sin(time * 3 + engine.seed)))
     const width = radius * (1 + 0.3 * ab)
 
     plume.current.position
@@ -415,14 +419,16 @@ function EngineExhaust({ engine, spool }) {
 
 function ExhaustPlumes({ model, throttle, afterburner, manualFlight }) {
   const spool = useRef({ mil: 0, ab: 0 })
+  const invalidate = useThree((state) => state.invalidate)
   const engines = useMemo(
     () =>
       ['L', 'R']
-        .map((side, index) => {
+        .map((side) => {
           const flapUpper = model.getObjectByName(`Engine_Nozzle_${side}_Flap_Upper`)
           const flapLower = model.getObjectByName(`Engine_Nozzle_${side}_Flap_Lower`)
+          // Shared seed keeps both engines breathing in phase.
           if (!flapUpper?.parent || !flapLower?.parent) return null
-          return { side, flapUpper, flapLower, seed: index * 7.31 }
+          return { side, flapUpper, flapLower, seed: 0 }
         })
         .filter(Boolean),
     [model],
@@ -439,6 +445,15 @@ function ExhaustPlumes({ model, throttle, afterburner, manualFlight }) {
     state.ab +=
       (abTarget - state.ab) *
       (1 - Math.exp(-(abTarget > state.ab ? 3.6 : 5.5) * step))
+
+    // Keep demand rendering alive just long enough to finish the spool-down
+    // after flight mode exits, instead of freezing a half-visible exhaust.
+    if (
+      Math.abs(milTarget - state.mil) > 0.001 ||
+      Math.abs(abTarget - state.ab) > 0.001
+    ) {
+      invalidate()
+    }
   })
 
   return engines.map((engine) => (
@@ -574,10 +589,8 @@ function F22Model({
   animationStates,
   isPlaying,
   playbackSpeed,
-  seekRequest,
   onClipsReady,
   onModelBoundsReady,
-  onTimeUpdate,
   manualFlight,
   aircraftMotionEnabled,
   flightInput,
@@ -586,12 +599,12 @@ function F22Model({
   afterburner,
 }) {
   const group = useRef()
-  const reportFrame = useRef(0)
   const attitude = useRef(new Quaternion())
   const attitudeStep = useRef(new Quaternion())
   const attitudeEuler = useRef(new Euler(0, 0, 0, 'XYZ'))
   const previousFlightResetId = useRef(flightResetId)
   const renderer = useThree((state) => state.gl)
+  const invalidate = useThree((state) => state.invalidate)
   const ktx2Loader = useMemo(() => getKTX2Loader(renderer), [renderer])
   const { scene, animations } = useGLTF(
     MODEL_URL,
@@ -606,6 +619,11 @@ function F22Model({
 
   const { model, playbackAnimations } = useMemo(() => {
     const clone = cloneSkeleton(scene)
+
+    REMOVED_MODEL_OBJECTS.forEach((name) => {
+      clone.getObjectByName(name)?.removeFromParent()
+    })
+
     const preparedAnimations = prepareModelAnimations(clone, animations)
     const box = new Box3().setFromObject(clone)
     const center = box.getCenter(new Vector3())
@@ -639,10 +657,6 @@ function F22Model({
   }, [animations, scene])
 
   const { actions, mixer } = useAnimations(playbackAnimations, group)
-  const systemDuration = useMemo(
-    () => Math.max(0, ...playbackAnimations.map((clip) => clip.duration)),
-    [playbackAnimations],
-  )
 
   const controlSurfaces = useMemo(
     () =>
@@ -685,7 +699,8 @@ function F22Model({
       action.play()
     })
     mixer.update(0)
-  }, [actions, mixer])
+    invalidate()
+  }, [actions, invalidate, mixer])
 
   useEffect(() => {
     Object.entries(actions).forEach(([systemId, action]) => {
@@ -698,19 +713,8 @@ function F22Model({
       action.play()
     })
     mixer.update(0)
-  }, [actions, animationStates, isPlaying, manualFlight, mixer, playbackSpeed])
-
-  useEffect(() => {
-    if (!seekRequest || manualFlight || !systemDuration) return
-    const progress = MathUtils.clamp(seekRequest.time / systemDuration, 0, 1)
-    Object.entries(actions).forEach(([systemId, action]) => {
-      if (!animationStates[systemId]) return
-      action.time = action.getClip().duration * progress
-      action.paused = !isPlaying || progress === 1
-    })
-    mixer.update(0)
-    onTimeUpdate(seekRequest.time)
-  }, [actions, animationStates, isPlaying, manualFlight, mixer, onTimeUpdate, seekRequest, systemDuration])
+    invalidate()
+  }, [actions, animationStates, invalidate, isPlaying, manualFlight, mixer, playbackSpeed])
 
   useFrame((state, delta) => {
     if (group.current) {
@@ -800,7 +804,7 @@ function F22Model({
 
     if (manualFlight) return
 
-    let furthestProgress = 0
+    let hasMovingAction = false
     Object.entries(actions).forEach(([systemId, action]) => {
       const duration = action.getClip().duration
       const targetTime = animationStates[systemId] ? duration : 0
@@ -811,16 +815,12 @@ function F22Model({
       if (reachedTarget) {
         action.time = targetTime
         action.paused = true
-      }
-      if (animationStates[systemId] && duration) {
-        furthestProgress = Math.max(furthestProgress, action.time / duration)
+      } else if (isPlaying) {
+        hasMovingAction = true
       }
     })
 
-    if (state.clock.elapsedTime - reportFrame.current > 0.08) {
-      reportFrame.current = state.clock.elapsedTime
-      onTimeUpdate(furthestProgress * systemDuration)
-    }
+    if (hasMovingAction) invalidate()
   })
 
   return (
@@ -837,6 +837,58 @@ function F22Model({
         manualFlight={manualFlight}
       />
     </group>
+  )
+}
+
+function ContinuousRender({ active }) {
+  const invalidate = useThree((state) => state.invalidate)
+
+  useEffect(() => {
+    invalidate()
+  }, [active, invalidate])
+
+  useFrame(() => {
+    if (active) invalidate()
+  })
+
+  return null
+}
+
+function FrameCounter({ meter }) {
+  useFrame(() => {
+    meter.current.frames += 1
+  })
+
+  return null
+}
+
+function FpsReadout({ meter }) {
+  const output = useRef()
+
+  useEffect(() => {
+    let previousSample = performance.now()
+
+    const sample = () => {
+      const now = performance.now()
+      const elapsed = now - previousSample
+      const fps = elapsed > 0
+        ? Math.round((meter.current.frames * 1000) / elapsed)
+        : 0
+
+      if (output.current) output.current.value = String(fps)
+      meter.current.frames = 0
+      previousSample = now
+    }
+
+    const interval = window.setInterval(sample, 500)
+    return () => window.clearInterval(interval)
+  }, [meter])
+
+  return (
+    <div className="fps-readout" aria-label="WebGL rendering performance">
+      <span>FPS</span>
+      <output ref={output}>0</output>
+    </div>
   )
 }
 
@@ -920,7 +972,6 @@ export default function Scene({
   animationStates,
   isPlaying,
   playbackSpeed,
-  seekRequest,
   autoRotate,
   viewRequest,
   lightingMode,
@@ -931,120 +982,124 @@ export default function Scene({
   throttle,
   afterburner,
   onClipsReady,
-  onTimeUpdate,
 }) {
   const controls = useRef()
+  const fpsMeter = useRef({ frames: 0 })
   const [modelRadius, setModelRadius] = useState(5.3)
   const isStealth = lightingMode === 'stealth'
 
   return (
-    <Canvas
-      dpr={[1, 1.8]}
-      shadows
-      gl={{
-        antialias: true,
-        alpha: false,
-        powerPreference: 'high-performance',
-      }}
-      onCreated={({ gl }) => {
-        gl.toneMapping = ACESFilmicToneMapping
-        gl.toneMappingExposure = isStealth ? 0.9 : 1.28
-        gl.setClearColor('#050709')
-      }}
-    >
-      <PerspectiveCamera makeDefault position={[9.4, 4.7, 10.8]} fov={34} />
-      <fog attach="fog" args={['#050709', 30, 90]} />
-      <StudioEnvironment isStealth={isStealth} />
-
-      <hemisphereLight
-        args={['#d9f1f7', '#11161a', isStealth ? 0.55 : 1.35]}
-      />
-      <ambientLight intensity={isStealth ? 0.38 : 0.8} color="#b8d7df" />
-      <directionalLight
-        castShadow
-        position={[7, 9, 4]}
-        intensity={isStealth ? 3.2 : 5.8}
-        color="#bdeaff"
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-near={0.5}
-        shadow-camera-far={32}
-        shadow-camera-left={-12}
-        shadow-camera-right={12}
-        shadow-camera-top={12}
-        shadow-camera-bottom={-12}
-        shadow-bias={-0.0004}
-        shadow-normalBias={0.035}
-        shadow-radius={4}
-      />
-      <directionalLight
-        position={[-6, 2, 8]}
-        intensity={isStealth ? 1.1 : 3.4}
-        color="#789caf"
-      />
-      <spotLight
-        position={[-8, 3, -6]}
-        angle={0.6}
-        penumbra={0.72}
-        intensity={isStealth ? 4.5 : 7.5}
-        color="#ffb15c"
-      />
-      <pointLight
-        position={[0, -2, 5]}
-        intensity={isStealth ? 2.4 : 5.2}
-        color="#4b7d95"
-      />
-
-      <Suspense fallback={null}>
-        <F22Model
-          animationStates={animationStates}
-          isPlaying={isPlaying}
-          playbackSpeed={playbackSpeed}
-          seekRequest={seekRequest}
-          manualFlight={manualFlight}
-          aircraftMotionEnabled={aircraftMotionEnabled}
-          flightInput={flightInput}
-          flightResetId={flightResetId}
-          throttle={throttle}
-          afterburner={afterburner}
-          onClipsReady={onClipsReady}
-          onModelBoundsReady={setModelRadius}
-          onTimeUpdate={onTimeUpdate}
-        />
-      </Suspense>
-
-      <Grid
-        position={[0, -2.07, 0]}
-        args={[36, 36]}
-        cellSize={0.65}
-        cellThickness={0.7}
-        cellColor="#40484d"
-        sectionSize={3.25}
-        sectionThickness={1.15}
-        sectionColor="#6f7a80"
-        fadeDistance={64}
-        fadeStrength={1.2}
-        infiniteGrid
-      />
-      <mesh
-        position={[0, -2.045, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        receiveShadow
-        renderOrder={2}
+    <>
+      <Canvas
+        frameloop="demand"
+        dpr={[1, 1.25]}
+        shadows
+        gl={{
+          antialias: true,
+          alpha: false,
+          powerPreference: 'default',
+        }}
+        onCreated={({ gl }) => {
+          gl.toneMapping = ACESFilmicToneMapping
+          gl.toneMappingExposure = isStealth ? 0.9 : 1.28
+          gl.setClearColor('#050709')
+        }}
       >
-        <planeGeometry args={[80, 80]} />
-        <shadowMaterial
-          transparent
-          opacity={isStealth ? 0.28 : 0.42}
-          depthWrite={false}
+        <PerspectiveCamera makeDefault position={[9.4, 4.7, 10.8]} fov={34} />
+        <fog attach="fog" args={['#050709', 30, 90]} />
+        <StudioEnvironment isStealth={isStealth} />
+
+        <hemisphereLight
+          args={['#d9f1f7', '#11161a', isStealth ? 0.55 : 1.35]}
         />
-      </mesh>
-      <CameraRig
-        autoRotate={autoRotate}
-        viewRequest={viewRequest}
-        controlsRef={controls}
-        lightingMode={lightingMode}
-        modelRadius={modelRadius}
-      />
-    </Canvas>
+        <ambientLight intensity={isStealth ? 0.38 : 0.8} color="#b8d7df" />
+        <directionalLight
+          castShadow
+          position={[7, 9, 4]}
+          intensity={isStealth ? 3.2 : 5.8}
+          color="#bdeaff"
+          shadow-mapSize={[1024, 1024]}
+          shadow-camera-near={0.5}
+          shadow-camera-far={32}
+          shadow-camera-left={-12}
+          shadow-camera-right={12}
+          shadow-camera-top={12}
+          shadow-camera-bottom={-12}
+          shadow-bias={-0.0004}
+          shadow-normalBias={0.035}
+          shadow-radius={4}
+        />
+        <directionalLight
+          position={[-6, 2, 8]}
+          intensity={isStealth ? 1.1 : 3.4}
+          color="#789caf"
+        />
+        <spotLight
+          position={[-8, 3, -6]}
+          angle={0.6}
+          penumbra={0.72}
+          intensity={isStealth ? 4.5 : 7.5}
+          color="#ffb15c"
+        />
+        <pointLight
+          position={[0, -2, 5]}
+          intensity={isStealth ? 2.4 : 5.2}
+          color="#4b7d95"
+        />
+
+        <Suspense fallback={null}>
+          <F22Model
+            animationStates={animationStates}
+            isPlaying={isPlaying}
+            playbackSpeed={playbackSpeed}
+            manualFlight={manualFlight}
+            aircraftMotionEnabled={aircraftMotionEnabled}
+            flightInput={flightInput}
+            flightResetId={flightResetId}
+            throttle={throttle}
+            afterburner={afterburner}
+            onClipsReady={onClipsReady}
+            onModelBoundsReady={setModelRadius}
+          />
+        </Suspense>
+
+        <Grid
+          position={[0, -2.07, 0]}
+          args={[36, 36]}
+          cellSize={0.65}
+          cellThickness={0.7}
+          cellColor="#40484d"
+          sectionSize={3.25}
+          sectionThickness={1.15}
+          sectionColor="#6f7a80"
+          fadeDistance={64}
+          fadeStrength={1.2}
+          infiniteGrid
+        />
+        <mesh
+          position={[0, -2.045, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          receiveShadow
+          renderOrder={2}
+        >
+          <planeGeometry args={[80, 80]} />
+          <shadowMaterial
+            transparent
+            opacity={isStealth ? 0.28 : 0.42}
+            depthWrite={false}
+          />
+        </mesh>
+        <CameraRig
+          autoRotate={autoRotate}
+          viewRequest={viewRequest}
+          controlsRef={controls}
+          lightingMode={lightingMode}
+          modelRadius={modelRadius}
+        />
+        <ContinuousRender active={autoRotate || manualFlight} />
+        <FrameCounter meter={fpsMeter} />
+      </Canvas>
+      <FpsReadout meter={fpsMeter} />
+    </>
   )
 }
