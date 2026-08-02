@@ -20,6 +20,7 @@ import { makeHinges } from '../../three/hinge'
 import { getKTX2Loader, withKTX2 } from '../../three/ktx2'
 import { applyClosedRestPose } from '../../three/pose'
 import { applySurfaceTargets } from '../flight/surfaces'
+import { readAxes, readThrottleDirection } from '../flight/useFlightControls'
 
 const TERRAIN_URL = '/Mountain_Valley_Colorado.glb'
 const RANGE_SPAN = 4800
@@ -27,10 +28,6 @@ const RANGE_EDGE_MARGIN = 70
 const TARGET_FPS = 30
 const FORWARD = new Vector3(1, 0, 0)
 const LOCAL_UP = new Vector3(0, 1, 0)
-
-function inputAmount(pressed, positive, negative) {
-  return Number(pressed.has(positive)) - Number(pressed.has(negative))
-}
 
 function EcoFrameLoop() {
   const invalidate = useThree((state) => state.invalidate)
@@ -182,11 +179,9 @@ function FlightAircraft({
 
     const step = Math.min(delta, 0.05)
     const pressed = controls.current.pressed
-    const pitch = inputAmount(pressed, 'pitch-up', 'pitch-down')
-    const roll = inputAmount(pressed, 'roll-right', 'roll-left')
-    const yaw = inputAmount(pressed, 'yaw-right', 'yaw-left')
-    const flaps = Number(pressed.has('flaps'))
-    const throttleDirection = inputAmount(pressed, 'throttle-up', 'throttle-down')
+    const input = readAxes(pressed)
+    const { pitch, roll, yaw } = input
+    const throttleDirection = readThrottleDirection(pressed)
     controls.current.throttle = MathUtils.clamp(
       controls.current.throttle + (throttleDirection * step * envelope.throttleRate),
       envelope.minThrottle,
@@ -221,7 +216,7 @@ function FlightAircraft({
     // enough to pay for the extra hinge work.
     applySurfaceTargets(
       surfaces,
-      aircraft.mixControlSurfaces({ pitch, roll, yaw, flaps }),
+      aircraft.mixControlSurfaces(input),
       1 - Math.exp(-10 * step),
     )
 

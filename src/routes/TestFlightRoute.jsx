@@ -17,26 +17,15 @@ import {
   RotateCcw,
   RotateCw,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { getAircraft } from '../aircraft'
+import useFlightControls from '../features/flight/useFlightControls'
 import TestFlightScene from '../features/test-flight/TestFlightScene'
 import LoaderScreen from '../ui/LoaderScreen'
 import SceneErrorBoundary from '../ui/SceneErrorBoundary'
 import Topbar from '../ui/Topbar'
 import useFullscreen from '../ui/useFullscreen'
-
-const KEY_BINDINGS = {
-  ArrowUp: 'pitch-up',
-  ArrowDown: 'pitch-down',
-  ArrowLeft: 'roll-left',
-  ArrowRight: 'roll-right',
-  KeyQ: 'yaw-left',
-  KeyE: 'yaw-right',
-  KeyW: 'throttle-up',
-  KeyS: 'throttle-down',
-  KeyF: 'flaps',
-}
 
 function HoldControl({ control, label, icon: Icon, controls, children }) {
   const release = useCallback(() => {
@@ -77,7 +66,6 @@ export default function TestFlightRoute() {
   const handleFullscreen = useFullscreen()
   const aircraft = getAircraft()
   const { idleThrottle, minThrottle } = aircraft.flight.envelope
-  const controls = useRef({ pressed: new Set(), throttle: idleThrottle })
   const [resetId, setResetId] = useState(0)
   const [telemetry, setTelemetry] = useState({
     altitude: 0,
@@ -86,41 +74,14 @@ export default function TestFlightRoute() {
     throttle: idleThrottle,
   })
 
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      const target = event.target instanceof HTMLElement ? event.target : null
-      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
-
-      const control = KEY_BINDINGS[event.code]
-      if (control) {
-        event.preventDefault()
-        controls.current.pressed.add(control)
-        return
-      }
-
-      if (event.code === 'KeyR') {
-        event.preventDefault()
-        setResetId((value) => value + 1)
-      }
-    }
-
-    const onKeyUp = (event) => {
-      const control = KEY_BINDINGS[event.code]
-      if (!control) return
+  const keyActions = useMemo(() => ({
+    KeyR: (event) => {
       event.preventDefault()
-      controls.current.pressed.delete(control)
-    }
+      setResetId((value) => value + 1)
+    },
+  }), [])
 
-    const releaseControls = () => controls.current.pressed.clear()
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('keyup', onKeyUp)
-    window.addEventListener('blur', releaseControls)
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('keyup', onKeyUp)
-      window.removeEventListener('blur', releaseControls)
-    }
-  }, [])
+  const controls = useFlightControls({ throttle: idleThrottle, keyActions })
 
   const handleTelemetry = useCallback((nextTelemetry) => {
     setTelemetry(nextTelemetry)

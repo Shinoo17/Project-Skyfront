@@ -6,8 +6,9 @@ FIRST VIEWPORT: Full-bleed 3D aircraft, sparse identity at left, and controls he
 FORM: Radar-scope test cell, direction 6/7, immersive center stage, seed 83862736.
 */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import useFlightControls, { readAxes, readThrottleDirection } from '../features/flight/useFlightControls'
 import Interface from '../features/viewer/Interface'
 import Scene from '../features/viewer/Scene'
 import LoaderScreen from '../ui/LoaderScreen'
@@ -36,7 +37,6 @@ export default function ViewerRoute() {
   const [throttle, setThrottle] = useState(0.32)
   const [afterburner, setAfterburner] = useState(false)
   const [flightResetId, setFlightResetId] = useState(0)
-  const pressedFlightKeys = useRef(new Set())
   const manualFlightRef = useRef(manualFlight)
   manualFlightRef.current = manualFlight
   const handleFullscreen = useFullscreen()
@@ -103,84 +103,43 @@ export default function ViewerRoute() {
     })
   }, [])
 
-  useEffect(() => {
-    const syncFlightKeys = () => {
-      const keys = pressedFlightKeys.current
-      setFlightInput({
-        pitch: Number(keys.has('ArrowUp')) - Number(keys.has('ArrowDown')),
-        roll: Number(keys.has('ArrowRight')) - Number(keys.has('ArrowLeft')),
-        yaw: Number(keys.has('KeyE')) - Number(keys.has('KeyQ')),
-        flaps: Number(keys.has('KeyF')),
-      })
-    }
-
-    const onKeyDown = (event) => {
+  const keyActions = useMemo(() => ({
+    Space: (event, { fieldFocused }) => {
+      // Space still activates whatever control has focus rather than dropping flight mode.
       const target = event.target instanceof HTMLElement ? event.target : null
-      // Arrows and W/S belong to the throttle slider while it has focus, and to any text
-      // field. Everywhere else they fly the aircraft — including on a button, which is
-      // exactly where focus lands after the pilot taps the Flight tab or a flight pad key.
-      const isFieldFocused = Boolean(
-        target?.closest('input, textarea, select, [contenteditable="true"]'),
-      )
-
-      const flightKeys = [
-        'ArrowUp',
-        'ArrowDown',
-        'ArrowLeft',
-        'ArrowRight',
-        'KeyQ',
-        'KeyE',
-        'KeyF',
-        'KeyW',
-        'KeyS',
-      ]
-
-      if (flightKeys.includes(event.code)) {
-        if (isFieldFocused) return
-        event.preventDefault()
-        if (!pressedFlightKeys.current.has(event.code)) {
-          pressedFlightKeys.current.add(event.code)
-          setManualFlight(true)
-          setAutoRotate(false)
-          setIsPlaying(false)
-          syncFlightKeys()
-        }
-        return
-      }
-
-      if (event.code === 'Space') {
-        // Space still activates whatever control has focus rather than dropping flight mode.
-        if (isFieldFocused || target?.closest('button')) return
-        event.preventDefault()
-        if (manualFlightRef.current) {
-          setManualFlight(false)
-          setAfterburner(false)
-          setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
-          setIsPlaying(true)
-        } else {
-          setIsPlaying((value) => !value)
-        }
-      }
-      if (event.key.toLowerCase() === 'r' && !isFieldFocused) {
-        handleViewChange('perspective')
-      }
-    }
-
-    const onKeyUp = (event) => {
-      if (!pressedFlightKeys.current.has(event.code)) return
+      if (fieldFocused || target?.closest('button')) return
       event.preventDefault()
-      pressedFlightKeys.current.delete(event.code)
-      syncFlightKeys()
-    }
+      if (manualFlightRef.current) {
+        setManualFlight(false)
+        setAfterburner(false)
+        setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
+        setIsPlaying(true)
+      } else {
+        setIsPlaying((value) => !value)
+      }
+    },
+    KeyR: (event, { fieldFocused }) => {
+      if (fieldFocused) return
+      handleViewChange('perspective')
+    },
+  }), [handleViewChange])
 
-    const releaseFlightKeys = () => {
-      pressedFlightKeys.current.clear()
-      setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
-    }
+  const flightControls = useFlightControls({
+    // Any flight key drops the viewer out of clip playback and into direct control.
+    onPress: () => {
+      setManualFlight(true)
+      setAutoRotate(false)
+      setIsPlaying(false)
+    },
+    onChange: (pressed) => setFlightInput(readAxes(pressed)),
+    keyActions,
+  })
 
-    const throttleTimer = window.setInterval(() => {
-      const keys = pressedFlightKeys.current
-      const direction = Number(keys.has('KeyW')) - Number(keys.has('KeyS'))
+  // Held W/S ramp the throttle rather than setting it, so this reads the keys on a
+  // timer instead of on the keydown.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const direction = readThrottleDirection(flightControls.current.pressed)
       if (!direction) return
 
       setThrottle((value) => {
@@ -190,16 +149,8 @@ export default function ViewerRoute() {
       })
     }, 50)
 
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('keyup', onKeyUp)
-    window.addEventListener('blur', releaseFlightKeys)
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('keyup', onKeyUp)
-      window.removeEventListener('blur', releaseFlightKeys)
-      window.clearInterval(throttleTimer)
-    }
-  }, [handleViewChange])
+    return () => window.clearInterval(timer)
+  }, [flightControls])
 
   return (
     <>
