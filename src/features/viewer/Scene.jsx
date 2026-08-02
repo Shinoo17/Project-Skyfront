@@ -9,7 +9,6 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
   ACESFilmicToneMapping,
   AdditiveBlending,
-  AnimationClip,
   Box3,
   Color,
   CylinderGeometry,
@@ -19,19 +18,20 @@ import {
   MathUtils,
   Mesh,
   PMREMGenerator,
-  PropertyBinding,
   Quaternion,
   ShaderMaterial,
   SphereGeometry,
   Vector3,
 } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js'
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
+import { makeHinges } from '../../three/hinge'
+import { getKTX2Loader, withKTX2 } from '../../three/ktx2'
+import { prepareModelAnimations } from '../../three/pose'
+
 const MODEL_URL = '/F22_model.glb'
-const KTX2_TRANSCODER_PATH = '/basis/'
 const REMOVED_MODEL_OBJECTS = [
   'MLG_Bay_Fitting_01',
   'MLG_Bay_Fitting_02',
@@ -461,21 +461,6 @@ function ExhaustPlumes({ model, throttle, afterburner, manualFlight }) {
   ))
 }
 
-const ktx2Loaders = new WeakMap()
-
-function getKTX2Loader(renderer) {
-  if (!ktx2Loaders.has(renderer)) {
-    ktx2Loaders.set(
-      renderer,
-      new KTX2Loader()
-        .setTranscoderPath(KTX2_TRANSCODER_PATH)
-        .detectSupport(renderer),
-    )
-  }
-
-  return ktx2Loaders.get(renderer)
-}
-
 function formatClipLabel(name) {
   return name
     .replace(/[_-]+/g, ' ')
@@ -485,104 +470,6 @@ function formatClipLabel(name) {
     .replace(/\bDeploy\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-// Orientation of a bone relative to the aircraft body, independent of where the model
-// currently sits in the scene graph.
-function bodyQuaternion(bone, root) {
-  const quaternion = new Quaternion()
-  for (let node = bone; node; node = node.parent) {
-    quaternion.premultiply(node.quaternion)
-    if (node === root) break
-  }
-  return quaternion
-}
-
-function makeHinge(model, meshName, hingeAxis, reference, limit) {
-  const mesh = model.getObjectByName(meshName)
-  const bone = mesh?.parent
-  if (!bone) return null
-
-  const localAxis = hingeAxis.clone()
-  const bodyAxis = localAxis.clone().applyQuaternion(bodyQuaternion(bone, model))
-  if (bodyAxis.dot(reference) < 0) localAxis.negate()
-
-  return {
-    bone,
-    localAxis,
-    limit,
-    rest: bone.quaternion.clone(),
-    rotation: new Quaternion(),
-    target: new Quaternion(),
-  }
-}
-
-function trackHasMotion(track) {
-  const valueSize = track.getValueSize()
-  if (track.times.length < 2 || !valueSize) return false
-
-  const first = track.values.slice(0, valueSize)
-  const isQuaternion = track.name.endsWith('.quaternion')
-
-  for (let offset = valueSize; offset < track.values.length; offset += valueSize) {
-    if (isQuaternion) {
-      let dot = 0
-      let firstLengthSq = 0
-      let sampleLengthSq = 0
-
-      for (let component = 0; component < valueSize; component += 1) {
-        const firstValue = first[component]
-        const sampleValue = track.values[offset + component]
-        dot += firstValue * sampleValue
-        firstLengthSq += firstValue * firstValue
-        sampleLengthSq += sampleValue * sampleValue
-      }
-
-      const length = Math.sqrt(firstLengthSq * sampleLengthSq)
-      const cosine = length
-        ? MathUtils.clamp(Math.abs(dot / length), -1, 1)
-        : 1
-      if (2 * Math.acos(cosine) > 0.0001) return true
-      continue
-    }
-
-    for (let component = 0; component < valueSize; component += 1) {
-      if (Math.abs(track.values[offset + component] - first[component]) > 0.00001) {
-        return true
-      }
-    }
-  }
-
-  return false
-}
-
-function prepareModelAnimations(model, animations) {
-  const appliedTracks = new Set()
-
-  // The exported bind pose has several doors deployed. Apply frame zero once so
-  // the viewer's true rest pose is the closed/stowed state before actions bind.
-  animations.forEach((clip) => {
-    clip.tracks.forEach((track) => {
-      if (appliedTracks.has(track.name)) return
-
-      const binding = PropertyBinding.create(model, track.name)
-      const value = track.createInterpolant().evaluate(0)
-      binding.setValue(value, 0)
-      binding.unbind()
-      appliedTracks.add(track.name)
-    })
-  })
-  model.updateMatrixWorld(true)
-
-  // Blender sampled every bone into several independent clips. Keeping those
-  // static tracks makes AnimationMixer average unrelated actions, which reduces
-  // the travel of doors and landing gear. Retain only properties that move.
-  return animations.map((clip) => new AnimationClip(
-    clip.name,
-    clip.duration,
-    clip.tracks.filter(trackHasMotion).map((track) => track.clone()),
-    clip.blendMode,
-  ))
 }
 
 function F22Model({
@@ -606,12 +493,7 @@ function F22Model({
   const renderer = useThree((state) => state.gl)
   const invalidate = useThree((state) => state.invalidate)
   const ktx2Loader = useMemo(() => getKTX2Loader(renderer), [renderer])
-  const { scene, animations } = useGLTF(
-    MODEL_URL,
-    false,
-    true,
-    (loader) => loader.setKTX2Loader(ktx2Loader),
-  )
+  const { scene, animations } = useGLTF(MODEL_URL, false, true, withKTX2(ktx2Loader))
   const baseAircraftQuaternion = useMemo(
     () => new Quaternion().setFromEuler(new Euler(0.04, -0.34, 0, 'XYZ')),
     [],
@@ -658,18 +540,7 @@ function F22Model({
 
   const { actions, mixer } = useAnimations(playbackAnimations, group)
 
-  const controlSurfaces = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.entries(CONTROL_SURFACE_MESHES).map(
-          ([controlName, [meshName, hingeAxis, reference, limit]]) => [
-            controlName,
-            makeHinge(model, meshName, hingeAxis, reference, limit),
-          ],
-        ),
-      ),
-    [model],
-  )
+  const controlSurfaces = useMemo(() => makeHinges(model, CONTROL_SURFACE_MESHES), [model])
 
   useEffect(() => {
     onClipsReady(

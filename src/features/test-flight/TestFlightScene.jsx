@@ -9,17 +9,18 @@ import {
   MathUtils,
   Mesh,
   PerspectiveCamera,
-  PropertyBinding,
   Quaternion,
   Vector3,
 } from 'three'
-import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js'
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 
+import { makeHinges } from '../../three/hinge'
+import { getKTX2Loader, withKTX2 } from '../../three/ktx2'
+import { applyClosedRestPose } from '../../three/pose'
+
 const AIRCRAFT_URL = '/F22_model.glb'
 const TERRAIN_URL = '/Mountain_Valley_Colorado.glb'
-const KTX2_TRANSCODER_PATH = '/basis/'
 const RANGE_SPAN = 4800
 const RANGE_EDGE_MARGIN = 70
 const TARGET_FPS = 30
@@ -40,64 +41,6 @@ const FLIGHT_SURFACES = {
   leadingEdgeFlapRight: ['Wing_LEFlap_R', SPAR_AXIS, STARBOARD_REFERENCE, 11.4],
   rudderLeft: ['Tail_VerticalFin_L', SPAR_AXIS, UP_REFERENCE, 22.6],
   rudderRight: ['Tail_VerticalFin_R', SPAR_AXIS, UP_REFERENCE, 22.6],
-}
-
-const ktx2Loaders = new WeakMap()
-
-function getKTX2Loader(renderer) {
-  if (!ktx2Loaders.has(renderer)) {
-    ktx2Loaders.set(
-      renderer,
-      new KTX2Loader()
-        .setTranscoderPath(KTX2_TRANSCODER_PATH)
-        .detectSupport(renderer),
-    )
-  }
-
-  return ktx2Loaders.get(renderer)
-}
-
-function applyClosedRestPose(model, animations) {
-  const appliedTracks = new Set()
-
-  animations.forEach((clip) => {
-    clip.tracks.forEach((track) => {
-      if (appliedTracks.has(track.name)) return
-      const binding = PropertyBinding.create(model, track.name)
-      binding.setValue(track.createInterpolant().evaluate(0), 0)
-      binding.unbind()
-      appliedTracks.add(track.name)
-    })
-  })
-
-  model.updateMatrixWorld(true)
-}
-
-function bodyQuaternion(bone, root) {
-  const quaternion = new Quaternion()
-  for (let node = bone; node; node = node.parent) {
-    quaternion.premultiply(node.quaternion)
-    if (node === root) break
-  }
-  return quaternion
-}
-
-function makeHinge(model, meshName, hingeAxis, reference, limit) {
-  const bone = model.getObjectByName(meshName)?.parent
-  if (!bone) return null
-
-  const localAxis = hingeAxis.clone()
-  const bodyAxis = localAxis.clone().applyQuaternion(bodyQuaternion(bone, model))
-  if (bodyAxis.dot(reference) < 0) localAxis.negate()
-
-  return {
-    bone,
-    localAxis,
-    limit,
-    rest: bone.quaternion.clone(),
-    rotation: new Quaternion(),
-    target: new Quaternion(),
-  }
 }
 
 function shouldHideFlightDetail(name) {
@@ -213,17 +156,7 @@ function FlightAircraft({
     return clone
   }, [animations, scene])
 
-  const surfaces = useMemo(
-    () => Object.fromEntries(
-      Object.entries(FLIGHT_SURFACES).map(
-        ([name, [meshName, axis, reference, limit]]) => [
-          name,
-          makeHinge(model, meshName, axis, reference, limit),
-        ],
-      ),
-    ),
-    [model],
-  )
+  const surfaces = useMemo(() => makeHinges(model, FLIGHT_SURFACES), [model])
 
   const flight = useRef({
     position: new Vector3(-260, spawnAltitude, 0),
@@ -368,18 +301,8 @@ function FlightAircraft({
 function FlightWorld({ controls, resetId, onTelemetry }) {
   const renderer = useThree((state) => state.gl)
   const ktx2Loader = useMemo(() => getKTX2Loader(renderer), [renderer])
-  const terrainGltf = useGLTF(
-    TERRAIN_URL,
-    false,
-    true,
-    (loader) => loader.setKTX2Loader(ktx2Loader),
-  )
-  const aircraftGltf = useGLTF(
-    AIRCRAFT_URL,
-    false,
-    true,
-    (loader) => loader.setKTX2Loader(ktx2Loader),
-  )
+  const terrainGltf = useGLTF(TERRAIN_URL, false, true, withKTX2(ktx2Loader))
+  const aircraftGltf = useGLTF(AIRCRAFT_URL, false, true, withKTX2(ktx2Loader))
 
   const rangeMetrics = useMemo(() => {
     terrainGltf.scene.updateMatrixWorld(true)
