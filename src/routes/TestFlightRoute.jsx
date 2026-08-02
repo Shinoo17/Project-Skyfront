@@ -18,8 +18,12 @@ import {
   RotateCw,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Topbar } from './Interface'
-import TestFlightScene from './TestFlightScene'
+
+import TestFlightScene from '../features/test-flight/TestFlightScene'
+import LoaderScreen from '../ui/LoaderScreen'
+import SceneErrorBoundary from '../ui/SceneErrorBoundary'
+import Topbar from '../ui/Topbar'
+import useFullscreen from '../ui/useFullscreen'
 
 const KEY_BINDINGS = {
   ArrowUp: 'pitch-up',
@@ -68,7 +72,8 @@ function HoldControl({ control, label, icon: Icon, controls, children }) {
   )
 }
 
-export default function TestFlight({ onSurfaceChange, onFullscreen }) {
+export default function TestFlightRoute() {
+  const handleFullscreen = useFullscreen()
   const controls = useRef({ pressed: new Set(), throttle: 0.42 })
   const [resetId, setResetId] = useState(0)
   const [telemetry, setTelemetry] = useState({
@@ -129,20 +134,18 @@ export default function TestFlight({ onSurfaceChange, onFullscreen }) {
   return (
     <section className="test-flight-surface" aria-label="Test flight over Mountain Valley Colorado">
       <div className="flight-canvas-stage">
-        <TestFlightScene
-          controls={controls}
-          resetId={resetId}
-          onTelemetry={handleTelemetry}
-        />
+        <SceneErrorBoundary>
+          <TestFlightScene
+            controls={controls}
+            resetId={resetId}
+            onTelemetry={handleTelemetry}
+          />
+        </SceneErrorBoundary>
       </div>
 
       <div className="flight-vignette" aria-hidden="true" />
       <div className="flight-interface">
-        <Topbar
-          activeSurface="test-flight"
-          onSurfaceChange={onSurfaceChange}
-          onFullscreen={onFullscreen}
-        />
+        <Topbar onFullscreen={handleFullscreen} />
 
         <div className="flight-telemetry" aria-live="polite">
           <span>HDG <strong>{String(Math.round(telemetry.heading)).padStart(3, '0')}°</strong></span>
@@ -211,6 +214,8 @@ export default function TestFlight({ onSurfaceChange, onFullscreen }) {
           ARROWS PITCH / ROLL <i /> Q E YAW <i /> W S THROTTLE <i /> F FLAPS <i /> R RESET
         </p>
       </div>
+
+      <LoaderScreen mode="test-flight" />
     </section>
   )
 }
