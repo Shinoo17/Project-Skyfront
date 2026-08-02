@@ -243,6 +243,8 @@ export default function App() {
             aircraftMotionEnabled={aircraftMotionEnabled}
             flightInput={flightInput}
             flightResetId={flightResetId}
+            throttle={throttle}
+            afterburner={afterburner}
             onClipsReady={handleClipsReady}
             onTimeUpdate={setCurrentTime}
           />
