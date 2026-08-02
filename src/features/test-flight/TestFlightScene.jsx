@@ -16,6 +16,7 @@ import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 
 import { getAircraft } from '../../aircraft'
+import { useGraphicsProfile } from '../../three/graphics'
 import { makeHinges } from '../../three/hinge'
 import { getKTX2Loader, withKTX2 } from '../../three/ktx2'
 import { applyClosedRestPose } from '../../three/pose'
@@ -25,20 +26,23 @@ import { readAxes, readThrottleDirection } from '../flight/useFlightControls'
 const TERRAIN_URL = '/Mountain_Valley_Colorado.glb'
 const RANGE_SPAN = 4800
 const RANGE_EDGE_MARGIN = 70
-const TARGET_FPS = 30
 const FORWARD = new Vector3(1, 0, 0)
 const LOCAL_UP = new Vector3(0, 1, 0)
 
-function EcoFrameLoop() {
+// Demand rendering with a fixed tick: the range never idles, so this is what caps the
+// frame rate instead of letting it run as fast as the GPU will go.
+function CappedFrameLoop({ targetFps }) {
   const invalidate = useThree((state) => state.invalidate)
 
   useEffect(() => {
     invalidate()
+    if (!targetFps) return undefined
+
     const interval = window.setInterval(() => {
       if (!document.hidden) invalidate()
-    }, 1000 / TARGET_FPS)
+    }, 1000 / targetFps)
     return () => window.clearInterval(interval)
-  }, [invalidate])
+  }, [invalidate, targetFps])
 
   return null
 }
@@ -303,18 +307,20 @@ export default function TestFlightScene({
   aircraftId,
 }) {
   const aircraft = getAircraft(aircraftId)
+  const graphics = useGraphicsProfile('eco')
 
   return (
     <Canvas
       frameloop="demand"
-      dpr={1}
+      dpr={graphics.dpr}
+      shadows={graphics.shadows}
       camera={{ position: [-286, 480, 0], fov: 48, near: 0.3, far: 3600 }}
       gl={{
-        antialias: false,
+        antialias: graphics.antialias,
         alpha: false,
         depth: true,
         stencil: false,
-        powerPreference: 'low-power',
+        powerPreference: graphics.powerPreference,
       }}
       onCreated={({ gl, scene, camera }) => {
         gl.setClearColor(new Color('#688293'))
@@ -333,7 +339,7 @@ export default function TestFlightScene({
           onTelemetry={onTelemetry}
         />
       </Suspense>
-      <EcoFrameLoop />
+      <CappedFrameLoop targetFps={graphics.targetFps} />
     </Canvas>
   )
 }

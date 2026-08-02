@@ -29,6 +29,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 import { getAircraft } from '../../aircraft'
 import { applySurfaceTargets } from '../flight/surfaces'
+import { useGraphicsProfile } from '../../three/graphics'
 import { makeHinges } from '../../three/hinge'
 import { getKTX2Loader, withKTX2 } from '../../three/ktx2'
 import { prepareModelAnimations } from '../../three/pose'
@@ -723,17 +724,18 @@ export default function Scene({
   const [modelRadius, setModelRadius] = useState(5.3)
   const isStealth = lightingMode === 'stealth'
   const aircraft = getAircraft(aircraftId)
+  const graphics = useGraphicsProfile('studio')
 
   return (
     <>
       <Canvas
         frameloop="demand"
-        dpr={[1, 1.25]}
-        shadows
+        dpr={graphics.dpr}
+        shadows={graphics.shadows}
         gl={{
-          antialias: true,
+          antialias: graphics.antialias,
           alpha: false,
-          powerPreference: 'default',
+          powerPreference: graphics.powerPreference,
         }}
         onCreated={({ gl }) => {
           gl.toneMapping = ACESFilmicToneMapping
@@ -743,18 +745,18 @@ export default function Scene({
       >
         <PerspectiveCamera makeDefault position={[9.4, 4.7, 10.8]} fov={34} />
         <fog attach="fog" args={['#050709', 30, 90]} />
-        <StudioEnvironment isStealth={isStealth} />
+        {graphics.environment && <StudioEnvironment isStealth={isStealth} />}
 
         <hemisphereLight
           args={['#d9f1f7', '#11161a', isStealth ? 0.55 : 1.35]}
         />
         <ambientLight intensity={isStealth ? 0.38 : 0.8} color="#b8d7df" />
         <directionalLight
-          castShadow
+          castShadow={graphics.shadows}
           position={[7, 9, 4]}
           intensity={isStealth ? 3.2 : 5.8}
           color="#bdeaff"
-          shadow-mapSize={[1024, 1024]}
+          shadow-mapSize={graphics.shadowMapSize ?? [512, 512]}
           shadow-camera-near={0.5}
           shadow-camera-far={32}
           shadow-camera-left={-12}
