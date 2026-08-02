@@ -15,41 +15,18 @@ import {
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 
+import { getAircraft } from '../../aircraft'
 import { makeHinges } from '../../three/hinge'
 import { getKTX2Loader, withKTX2 } from '../../three/ktx2'
 import { applyClosedRestPose } from '../../three/pose'
+import { applySurfaceTargets } from '../flight/surfaces'
 
-const AIRCRAFT_URL = '/F22_model.glb'
 const TERRAIN_URL = '/Mountain_Valley_Colorado.glb'
 const RANGE_SPAN = 4800
 const RANGE_EDGE_MARGIN = 70
 const TARGET_FPS = 30
 const FORWARD = new Vector3(1, 0, 0)
 const LOCAL_UP = new Vector3(0, 1, 0)
-const SPAR_AXIS = new Vector3(0, 1, 0)
-const STARBOARD_REFERENCE = new Vector3(0, 0, 1)
-const UP_REFERENCE = new Vector3(0, 1, 0)
-
-const FLIGHT_SURFACES = {
-  stabilatorLeft: ['Tail_Stabilator_L', SPAR_AXIS, STARBOARD_REFERENCE, 20],
-  stabilatorRight: ['Tail_Stabilator_R', SPAR_AXIS, STARBOARD_REFERENCE, 20],
-  flaperonLeft: ['Wing_Flaperon_L', SPAR_AXIS, STARBOARD_REFERENCE, 22.6],
-  flaperonRight: ['Wing_Flaperon_R', SPAR_AXIS, STARBOARD_REFERENCE, 22.6],
-  aileronLeft: ['Wing_Aileron_L', SPAR_AXIS, STARBOARD_REFERENCE, 25],
-  aileronRight: ['Wing_Aileron_R', SPAR_AXIS, STARBOARD_REFERENCE, 25],
-  leadingEdgeFlapLeft: ['Wing_LEFlap_L', SPAR_AXIS, STARBOARD_REFERENCE, 11.4],
-  leadingEdgeFlapRight: ['Wing_LEFlap_R', SPAR_AXIS, STARBOARD_REFERENCE, 11.4],
-  rudderLeft: ['Tail_VerticalFin_L', SPAR_AXIS, UP_REFERENCE, 22.6],
-  rudderRight: ['Tail_VerticalFin_R', SPAR_AXIS, UP_REFERENCE, 22.6],
-}
-
-function shouldHideFlightDetail(name) {
-  if (/^(Cockpit_|Seat_|Wpn_)/.test(name)) return true
-  if (/^(MLG_|NLG_)/.test(name) && !/(Door|BayFairing)/.test(name)) return true
-  if (/^Bay_/.test(name) && !/(Door|Fairing|Seam|Edge|Seal|Strip)/.test(name)) return true
-  if (/^Hook_(Actuator|Point|Shank|Pivot|Trunnion)/.test(name)) return true
-  return /Launcher(Arm|Rail)/.test(name)
-}
 
 function inputAmount(pressed, positive, negative) {
   return Number(pressed.has(positive)) - Number(pressed.has(negative))
@@ -117,6 +94,7 @@ function Terrain({ scene }) {
 }
 
 function FlightAircraft({
+  aircraft,
   scene,
   animations,
   controls,
@@ -125,6 +103,7 @@ function FlightAircraft({
   flightBounds,
   onTelemetry,
 }) {
+  const envelope = aircraft.flight.envelope
   const group = useRef()
   const previousResetId = useRef(resetId)
   const telemetryCallback = useRef(onTelemetry)
@@ -135,28 +114,32 @@ function FlightAircraft({
     const clone = cloneSkeleton(scene)
     applyClosedRestPose(clone, animations)
 
-    clone.getObjectByName('MLG_Bay_Fitting_01')?.removeFromParent()
-    clone.getObjectByName('MLG_Bay_Fitting_02')?.removeFromParent()
+    aircraft.removedObjects.forEach((name) => {
+      clone.getObjectByName(name)?.removeFromParent()
+    })
 
     const bounds = new Box3().setFromObject(clone)
     const center = bounds.getCenter(new Vector3())
     const size = bounds.getSize(new Vector3())
-    const scale = 7 / Math.max(size.x, size.y, size.z)
+    const scale = aircraft.flight.scale / Math.max(size.x, size.y, size.z)
     clone.scale.setScalar(scale)
     clone.position.copy(center).multiplyScalar(-scale)
 
     clone.traverse((child) => {
       if (!(child instanceof Mesh)) return
-      if (shouldHideFlightDetail(child.name)) child.visible = false
+      if (aircraft.flight.isFlightDetail(child.name)) child.visible = false
       child.castShadow = false
       child.receiveShadow = false
       child.frustumCulled = true
     })
 
     return clone
-  }, [animations, scene])
+  }, [aircraft, animations, scene])
 
-  const surfaces = useMemo(() => makeHinges(model, FLIGHT_SURFACES), [model])
+  const surfaces = useMemo(
+    () => makeHinges(model, aircraft.controlSurfaces),
+    [aircraft, model],
+  )
 
   const flight = useRef({
     position: new Vector3(-260, spawnAltitude, 0),
@@ -174,7 +157,7 @@ function FlightAircraft({
     const state = flight.current
     state.position.set(-260, spawnAltitude, 0)
     state.orientation.identity()
-    if (!keepThrottle) controls.current.throttle = 0.42
+    if (!keepThrottle) controls.current.throttle = envelope.idleThrottle
     if (group.current) {
       group.current.position.copy(state.position)
       group.current.quaternion.identity()
@@ -205,22 +188,22 @@ function FlightAircraft({
     const flaps = Number(pressed.has('flaps'))
     const throttleDirection = inputAmount(pressed, 'throttle-up', 'throttle-down')
     controls.current.throttle = MathUtils.clamp(
-      controls.current.throttle + (throttleDirection * step * 0.34),
-      0.08,
+      controls.current.throttle + (throttleDirection * step * envelope.throttleRate),
+      envelope.minThrottle,
       1,
     )
 
     const current = flight.current
     current.rotationEuler.set(
-      roll * MathUtils.degToRad(66) * step,
-      -yaw * MathUtils.degToRad(42) * step,
-      pitch * MathUtils.degToRad(48) * step,
+      roll * MathUtils.degToRad(envelope.rollRate) * step,
+      -yaw * MathUtils.degToRad(envelope.yawRate) * step,
+      pitch * MathUtils.degToRad(envelope.pitchRate) * step,
       'XYZ',
     )
     current.rotationStep.setFromEuler(current.rotationEuler)
     current.orientation.multiply(current.rotationStep).normalize()
 
-    const speed = 16 + (controls.current.throttle * 94)
+    const speed = envelope.minSpeed + (controls.current.throttle * envelope.speedRange)
     current.forward.copy(FORWARD).applyQuaternion(current.orientation).normalize()
     current.position.addScaledVector(current.forward, speed * step)
 
@@ -234,33 +217,13 @@ function FlightAircraft({
     group.current.position.copy(current.position)
     group.current.quaternion.copy(current.orientation)
 
-    const flapSetting = MathUtils.clamp(flaps, 0, 1)
-    const targetAngles = {
-      stabilatorLeft: (pitch * -20) + (roll * 8),
-      stabilatorRight: (pitch * -20) - (roll * 8),
-      aileronLeft: roll * 25,
-      aileronRight: -roll * 25,
-      flaperonLeft: (pitch * -10) + (roll * 15) + (flapSetting * 22),
-      flaperonRight: (pitch * -10) - (roll * 15) + (flapSetting * 22),
-      leadingEdgeFlapLeft: flapSetting * -11,
-      leadingEdgeFlapRight: flapSetting * -11,
-      rudderLeft: yaw * 22,
-      rudderRight: yaw * 22,
-    }
-    const surfaceBlend = 1 - Math.exp(-10 * step)
-    Object.entries(targetAngles).forEach(([name, degrees]) => {
-      const surface = surfaces[name]
-      if (!surface) return
-      surface.target
-        .copy(surface.rest)
-        .multiply(
-          surface.rotation.setFromAxisAngle(
-            surface.localAxis,
-            MathUtils.degToRad(MathUtils.clamp(degrees, -surface.limit, surface.limit)),
-          ),
-        )
-      surface.bone.quaternion.slerp(surface.target, surfaceBlend)
-    })
+    // The nozzles are not driven out here: the chase camera never frames them closely
+    // enough to pay for the extra hinge work.
+    applySurfaceTargets(
+      surfaces,
+      aircraft.mixControlSurfaces({ pitch, roll, yaw, flaps }),
+      1 - Math.exp(-10 * step),
+    )
 
     current.cameraPosition
       .set(-25, 8, 0)
@@ -298,11 +261,11 @@ function FlightAircraft({
   )
 }
 
-function FlightWorld({ controls, resetId, onTelemetry }) {
+function FlightWorld({ aircraft, controls, resetId, onTelemetry }) {
   const renderer = useThree((state) => state.gl)
   const ktx2Loader = useMemo(() => getKTX2Loader(renderer), [renderer])
   const terrainGltf = useGLTF(TERRAIN_URL, false, true, withKTX2(ktx2Loader))
-  const aircraftGltf = useGLTF(AIRCRAFT_URL, false, true, withKTX2(ktx2Loader))
+  const aircraftGltf = useGLTF(aircraft.url, false, true, withKTX2(ktx2Loader))
 
   const rangeMetrics = useMemo(() => {
     terrainGltf.scene.updateMatrixWorld(true)
@@ -325,6 +288,7 @@ function FlightWorld({ controls, resetId, onTelemetry }) {
     <>
       <Terrain scene={terrainGltf.scene} />
       <FlightAircraft
+        aircraft={aircraft}
         scene={aircraftGltf.scene}
         animations={aircraftGltf.animations}
         controls={controls}
@@ -337,7 +301,14 @@ function FlightWorld({ controls, resetId, onTelemetry }) {
   )
 }
 
-export default function TestFlightScene({ controls, resetId, onTelemetry }) {
+export default function TestFlightScene({
+  controls,
+  resetId,
+  onTelemetry,
+  aircraftId,
+}) {
+  const aircraft = getAircraft(aircraftId)
+
   return (
     <Canvas
       frameloop="demand"
@@ -360,7 +331,12 @@ export default function TestFlightScene({ controls, resetId, onTelemetry }) {
       <hemisphereLight args={['#dbe9ee', '#26352f', 2.2]} />
       <directionalLight position={[-180, 260, 120]} intensity={2.8} color="#fff2d4" />
       <Suspense fallback={null}>
-        <FlightWorld controls={controls} resetId={resetId} onTelemetry={onTelemetry} />
+        <FlightWorld
+          aircraft={aircraft}
+          controls={controls}
+          resetId={resetId}
+          onTelemetry={onTelemetry}
+        />
       </Suspense>
       <EcoFrameLoop />
     </Canvas>

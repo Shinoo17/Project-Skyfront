@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { getAircraft } from '../aircraft'
 import TestFlightScene from '../features/test-flight/TestFlightScene'
 import LoaderScreen from '../ui/LoaderScreen'
 import SceneErrorBoundary from '../ui/SceneErrorBoundary'
@@ -74,13 +75,15 @@ function HoldControl({ control, label, icon: Icon, controls, children }) {
 
 export default function TestFlightRoute() {
   const handleFullscreen = useFullscreen()
-  const controls = useRef({ pressed: new Set(), throttle: 0.42 })
+  const aircraft = getAircraft()
+  const { idleThrottle, minThrottle } = aircraft.flight.envelope
+  const controls = useRef({ pressed: new Set(), throttle: idleThrottle })
   const [resetId, setResetId] = useState(0)
   const [telemetry, setTelemetry] = useState({
     altitude: 0,
     heading: 0,
     speed: 0,
-    throttle: 0.42,
+    throttle: idleThrottle,
   })
 
   useEffect(() => {
@@ -136,6 +139,7 @@ export default function TestFlightRoute() {
       <div className="flight-canvas-stage">
         <SceneErrorBoundary>
           <TestFlightScene
+            aircraftId={aircraft.id}
             controls={controls}
             resetId={resetId}
             onTelemetry={handleTelemetry}
@@ -197,7 +201,7 @@ export default function TestFlightRoute() {
                 <HoldControl control="throttle-down" label="Reduce throttle" icon={Minus} controls={controls}>S</HoldControl>
                 <input
                   type="range"
-                  min="0.08"
+                  min={minThrottle}
                   max="1"
                   step="0.01"
                   value={telemetry.throttle}
