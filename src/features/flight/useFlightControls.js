@@ -69,8 +69,10 @@ export default function useFlightControls({
         // Arrows and W/S belong to the throttle slider while it has focus, and to any
         // text field. Everywhere else they fly the aircraft — including on a button,
         // which is exactly where focus lands after the pilot taps a flight pad key.
-        if (fieldFocused || pressed.has(control)) return
+        if (fieldFocused) return
+        // Repeats have to be swallowed too, or a held arrow key scrolls the page.
         event.preventDefault()
+        if (pressed.has(control)) return
         pressed.add(control)
         handlers.current.onPress?.(control, event)
         handlers.current.onChange?.(pressed)
