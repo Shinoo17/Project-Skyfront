@@ -249,6 +249,54 @@ input:focus-visible {
   gap: 9px;
 }
 
+.test-flight-button {
+  position: relative;
+  min-width: 142px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  color: var(--fog);
+  font-family: var(--display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: rgba(154, 215, 232, 0.045);
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.test-flight-button i {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--dim);
+}
+
+.test-flight-button:hover {
+  color: var(--ice);
+  border-color: rgba(154, 215, 232, 0.48);
+  background: rgba(154, 215, 232, 0.09);
+}
+
+.test-flight-button.is-active {
+  color: var(--void);
+  border-color: var(--ice);
+  background: var(--ice);
+}
+
+.test-flight-button.is-active i {
+  background: var(--void);
+}
+
 .icon-button {
   width: 42px;
   height: 42px;
@@ -1179,6 +1227,355 @@ input:focus-visible {
   display: none;
 }
 
+.test-flight-surface,
+.flight-canvas-stage,
+.flight-interface,
+.flight-vignette {
+  position: absolute;
+  inset: 0;
+}
+
+.test-flight-surface {
+  overflow: hidden;
+  background: var(--dim);
+}
+
+.flight-canvas-stage {
+  z-index: 0;
+}
+
+.flight-canvas-stage canvas {
+  display: block;
+}
+
+.flight-vignette {
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(5, 7, 9, 0.42) 0, transparent 22%, transparent 72%, rgba(5, 7, 9, 0.46) 100%),
+    linear-gradient(90deg, rgba(5, 7, 9, 0.18), transparent 19%, transparent 81%, rgba(5, 7, 9, 0.18));
+}
+
+.flight-interface {
+  z-index: 2;
+  pointer-events: none;
+}
+
+.flight-interface button,
+.flight-interface input {
+  pointer-events: auto;
+}
+
+.flight-telemetry {
+  position: absolute;
+  top: 104px;
+  left: 32px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(70px, auto));
+  border: 1px solid rgba(218, 226, 230, 0.28);
+  background: rgba(5, 7, 9, 0.72);
+}
+
+.flight-telemetry span {
+  min-height: 48px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 0 13px;
+  border-right: 1px solid var(--line);
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+
+.flight-telemetry span:last-child {
+  border-right: 0;
+}
+
+.flight-telemetry strong {
+  color: var(--fog);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+.range-label {
+  position: absolute;
+  top: 108px;
+  right: 32px;
+  text-align: right;
+  font-family: var(--display);
+}
+
+.range-label span,
+.range-label small {
+  display: block;
+  color: rgba(218, 226, 230, 0.64);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.range-label strong {
+  display: block;
+  margin: 5px 0 6px;
+  color: var(--fog);
+  font-size: 19px;
+  letter-spacing: 0.08em;
+}
+
+.range-label small {
+  color: rgba(218, 226, 230, 0.48);
+  font-size: 7px;
+}
+
+.flight-reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(218, 226, 230, 0.42);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.flight-reticle::before,
+.flight-reticle::after,
+.flight-reticle i {
+  position: absolute;
+  background: rgba(218, 226, 230, 0.52);
+  content: "";
+}
+
+.flight-reticle::before {
+  top: 50%;
+  left: -14px;
+  width: 68px;
+  height: 1px;
+}
+
+.flight-reticle::after {
+  top: -7px;
+  left: 50%;
+  width: 1px;
+  height: 56px;
+}
+
+.flight-reticle i:first-child {
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.flight-reticle i:last-child {
+  right: 8px;
+  bottom: -15px;
+  left: 8px;
+  height: 1px;
+}
+
+.range-controls {
+  position: absolute;
+  right: 32px;
+  bottom: 32px;
+  left: 32px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+}
+
+.range-stick {
+  width: 184px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+}
+
+.range-stick > span {
+  min-height: 50px;
+}
+
+.range-control-button,
+.range-reset-button {
+  min-height: 50px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(218, 226, 230, 0.28);
+  border-radius: 2px;
+  color: var(--fog);
+  background: rgba(5, 7, 9, 0.72);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  transition: color 120ms ease, background 120ms ease, transform 120ms var(--ease-out);
+}
+
+.range-control-button span,
+.range-reset-button span {
+  font-family: var(--display);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.range-control-button:hover,
+.range-reset-button:hover {
+  color: var(--ice);
+  background: rgba(5, 7, 9, 0.86);
+}
+
+.range-control-button:active {
+  color: var(--void);
+  background: var(--ice);
+  transform: translateY(1px);
+}
+
+.range-reset-button {
+  color: var(--amber);
+}
+
+.range-engine {
+  width: 272px;
+  display: grid;
+  gap: 5px;
+}
+
+.range-yaw {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.range-yaw .range-control-button {
+  min-height: 45px;
+  flex-direction: row;
+  gap: 7px;
+}
+
+.range-throttle {
+  padding: 11px 12px 12px;
+  border: 1px solid rgba(218, 226, 230, 0.28);
+  border-radius: 2px;
+  background: rgba(5, 7, 9, 0.72);
+}
+
+.range-throttle > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+
+.range-throttle > div:first-child span,
+.range-throttle output {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.range-throttle output {
+  color: var(--fog);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.range-throttle-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
+}
+
+.range-throttle-row .range-control-button {
+  min-height: 38px;
+}
+
+.range-throttle-row input {
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.range-throttle-row input::-webkit-slider-runnable-track {
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--ice) 0 calc(var(--range-throttle) * 100%),
+    rgba(218, 226, 230, 0.18) calc(var(--range-throttle) * 100%) 100%
+  );
+}
+
+.range-throttle-row input::-webkit-slider-thumb {
+  width: 8px;
+  height: 18px;
+  margin-top: -7px;
+  appearance: none;
+  border: 1px solid var(--fog);
+  border-radius: 2px;
+  background: var(--carbon);
+}
+
+.range-throttle-row input::-moz-range-track {
+  height: 3px;
+  background: rgba(218, 226, 230, 0.18);
+}
+
+.range-throttle-row input::-moz-range-progress {
+  height: 3px;
+  background: var(--ice);
+}
+
+.range-throttle-row input::-moz-range-thumb {
+  width: 8px;
+  height: 18px;
+  border: 1px solid var(--fog);
+  border-radius: 2px;
+  background: var(--carbon);
+}
+
+.range-keymap {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  color: rgba(218, 226, 230, 0.58);
+  font-family: var(--display);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.range-keymap i {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
 .loader-screen {
   position: fixed;
   inset: 0;
@@ -1414,6 +1811,107 @@ input:focus-visible {
     height: 38px;
   }
 
+  .test-flight-button {
+    min-width: 104px;
+    height: 38px;
+    gap: 7px;
+    padding: 0 9px;
+    font-size: 8px;
+    letter-spacing: 0.09em;
+  }
+
+  .flight-telemetry {
+    top: 78px;
+    right: 12px;
+    left: 12px;
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .flight-telemetry span {
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 8px;
+    font-size: 7px;
+  }
+
+  .flight-telemetry strong {
+    font-size: 11px;
+  }
+
+  .range-label,
+  .range-keymap {
+    display: none;
+  }
+
+  .flight-reticle {
+    top: 46%;
+    width: 34px;
+    height: 34px;
+  }
+
+  .flight-reticle::before {
+    width: 58px;
+  }
+
+  .flight-reticle::after {
+    height: 48px;
+  }
+
+  .range-controls {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    align-items: end;
+    gap: 14px;
+  }
+
+  .range-stick {
+    width: 136px;
+    flex: 0 0 136px;
+  }
+
+  .range-stick > span,
+  .range-control-button,
+  .range-reset-button {
+    min-height: 42px;
+  }
+
+  .range-control-button span,
+  .range-reset-button span {
+    font-size: 7px;
+  }
+
+  .range-engine {
+    width: min(148px, calc(100vw - 172px));
+  }
+
+  .range-yaw .range-control-button {
+    min-height: 40px;
+    gap: 4px;
+  }
+
+  .range-throttle {
+    padding: 8px;
+  }
+
+  .range-throttle > div:first-child {
+    margin-bottom: 6px;
+  }
+
+  .range-throttle > div:first-child span {
+    font-size: 7px;
+    letter-spacing: 0.08em;
+  }
+
+  .range-throttle-row {
+    grid-template-columns: 36px minmax(26px, 1fr) 36px;
+    gap: 5px;
+  }
+
+  .range-throttle-row .range-control-button {
+    min-height: 34px;
+  }
+
   .control-panel {
     position: fixed;
     z-index: 9;
@@ -1523,6 +2021,16 @@ input:focus-visible {
   .corner-data {
     bottom: 14px;
     height: 74px;
+  }
+
+  .range-controls {
+    bottom: 18px;
+    transform: scale(0.82);
+    transform-origin: bottom center;
+  }
+
+  .range-keymap {
+    display: none;
   }
 
 }

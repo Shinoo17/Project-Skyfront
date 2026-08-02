@@ -11,6 +11,7 @@ import {
   Lightbulb,
   Maximize,
   Plane,
+  PlaneTakeoff,
   Rotate3D,
   RotateCcw,
   RotateCw,
@@ -18,6 +19,37 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+
+export function Topbar({ activeSurface, onSurfaceChange, onFullscreen }) {
+  const isTestFlight = activeSurface === 'test-flight'
+
+  return (
+    <header className="topbar">
+      <div className="brand-lockup">
+        <span className="brand-mark" aria-hidden="true"><i /><i /></span>
+        <div>
+          <strong>F–22 <em>RAPTOR</em></strong>
+          <small>{isTestFlight ? 'MOUNTAIN FLIGHT RANGE' : 'TACTICAL AIRFRAME VIEWER'}</small>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className={`test-flight-button ${isTestFlight ? 'is-active' : ''}`}
+        aria-pressed={isTestFlight}
+        onClick={() => onSurfaceChange(isTestFlight ? 'viewer' : 'test-flight')}
+      >
+        <PlaneTakeoff size={16} strokeWidth={1.7} />
+        <span>{isTestFlight ? 'Airframe view' : 'Test flight'}</span>
+        <i aria-hidden="true" />
+      </button>
+
+      <button type="button" className="icon-button fullscreen-button" onClick={onFullscreen} aria-label="เต็มจอ">
+        <Maximize size={18} />
+      </button>
+    </header>
+  )
+}
 
 function Toggle({ active, onClick, icon: Icon, children }) {
   return (
@@ -420,22 +452,16 @@ export default function Interface({
   onFlightReset,
   onPanelOpen,
   onPanelClose,
+  activeSurface,
+  onSurfaceChange,
 }) {
   return (
     <div className="interface">
-      <header className="topbar">
-        <div className="brand-lockup">
-          <span className="brand-mark" aria-hidden="true"><i /><i /></span>
-          <div>
-            <strong>F–22 <em>RAPTOR</em></strong>
-            <small>TACTICAL AIRFRAME VIEWER</small>
-          </div>
-        </div>
-
-        <button type="button" className="icon-button fullscreen-button" onClick={onFullscreen} aria-label="เต็มจอ">
-          <Maximize size={18} />
-        </button>
-      </header>
+      <Topbar
+        activeSurface={activeSurface}
+        onSurfaceChange={onSurfaceChange}
+        onFullscreen={onFullscreen}
+      />
 
       <div className="left-readout" aria-hidden="true">
         <span>05</span>

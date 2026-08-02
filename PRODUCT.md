@@ -24,6 +24,7 @@ The viewer is a React + Vite web application using Three.js. It is intended to w
 - Expose every embedded animation clip rather than hard-coding a single named action.
 - Provide direct orbit, zoom, animation playback, timeline, speed, auto-rotation, and view-reset controls.
 - Provide a clip-independent manual-flight mode that drives named control-surface nodes with Three.js quaternions and rotates the aircraft attitude from pitch, roll, and yaw input.
+- Provide a separate Test Flight range using `Mountain_Valley_Colorado.glb`, chase-camera aircraft movement, keyboard and touch controls, and an explicitly low-resource render profile.
 - Keep the experience responsive across desktop and mobile layouts.
 - The supplied GLB contains 8 independent named clips: canopy, landing gear, tailhook, aerodynamic demo, and four left/right weapon-bay mechanisms. Open/deploy clips play in reverse when toggled off, and the viewer discovers future clips dynamically.
 

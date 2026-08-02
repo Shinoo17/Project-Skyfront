@@ -11,8 +11,14 @@ import Interface from './components/Interface'
 import LoaderScreen from './components/LoaderScreen'
 import Scene from './components/Scene'
 import SceneErrorBoundary from './components/SceneErrorBoundary'
+import TestFlight from './components/TestFlight'
+
+function surfaceFromLocation() {
+  return window.location.hash === '#test-flight' ? 'test-flight' : 'viewer'
+}
 
 export default function App() {
+  const [activeSurface, setActiveSurface] = useState(surfaceFromLocation)
   const [clips, setClips] = useState([])
   const [animationStates, setAnimationStates] = useState({})
   const [isPlaying, setIsPlaying] = useState(
@@ -70,6 +76,26 @@ export default function App() {
     }
   }, [])
 
+  const handleSurfaceChange = useCallback((nextSurface) => {
+    const nextUrl = nextSurface === 'test-flight'
+      ? `${window.location.pathname}${window.location.search}#test-flight`
+      : `${window.location.pathname}${window.location.search}`
+    window.history.pushState({ surface: nextSurface }, '', nextUrl)
+    setActiveSurface(nextSurface)
+    setIsPanelOpen(false)
+    pressedFlightKeys.current.clear()
+  }, [])
+
+  useEffect(() => {
+    const syncSurface = () => setActiveSurface(surfaceFromLocation())
+    window.addEventListener('popstate', syncSurface)
+    window.addEventListener('hashchange', syncSurface)
+    return () => {
+      window.removeEventListener('popstate', syncSurface)
+      window.removeEventListener('hashchange', syncSurface)
+    }
+  }, [])
+
   const handleManualFlightChange = useCallback((enabled) => {
     setManualFlight(enabled)
     setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
@@ -113,6 +139,8 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (activeSurface !== 'viewer') return undefined
+
     const syncFlightKeys = () => {
       const keys = pressedFlightKeys.current
       setFlightInput({
@@ -208,69 +236,82 @@ export default function App() {
       window.removeEventListener('blur', releaseFlightKeys)
       window.clearInterval(throttleTimer)
     }
-  }, [handleViewChange])
+  }, [activeSurface, handleViewChange])
 
   return (
-    <main className="viewer-shell">
-      <div
-        className="canvas-stage"
-        onDoubleClick={() => handleViewChange('perspective')}
-      >
-        <SceneErrorBoundary>
-          <Scene
+    <main className={`viewer-shell ${activeSurface === 'test-flight' ? 'is-test-flight' : ''}`}>
+      {activeSurface === 'viewer' ? (
+        <>
+          <div
+            className="canvas-stage"
+            onDoubleClick={() => handleViewChange('perspective')}
+          >
+            <SceneErrorBoundary>
+              <Scene
+                animationStates={animationStates}
+                isPlaying={isPlaying}
+                playbackSpeed={playbackSpeed}
+                autoRotate={autoRotate}
+                viewRequest={viewRequest}
+                lightingMode={lightingMode}
+                manualFlight={manualFlight}
+                aircraftMotionEnabled={aircraftMotionEnabled}
+                flightInput={flightInput}
+                flightResetId={flightResetId}
+                throttle={throttle}
+                afterburner={afterburner}
+                onClipsReady={handleClipsReady}
+              />
+            </SceneErrorBoundary>
+          </div>
+
+          <div className="atmosphere" aria-hidden="true" />
+          <div className="scanline" aria-hidden="true" />
+
+          <Interface
+            clips={clips}
             animationStates={animationStates}
-            isPlaying={isPlaying}
+            onAnimationToggle={handleAnimationToggle}
             playbackSpeed={playbackSpeed}
+            onSpeedChange={setPlaybackSpeed}
             autoRotate={autoRotate}
-            viewRequest={viewRequest}
+            onAutoRotate={() => setAutoRotate((value) => !value)}
             lightingMode={lightingMode}
+            onLightingMode={() =>
+              setLightingMode((value) => (value === 'studio' ? 'stealth' : 'studio'))
+            }
+            onViewChange={handleViewChange}
+            onFullscreen={handleFullscreen}
+            isPanelOpen={isPanelOpen}
             manualFlight={manualFlight}
             aircraftMotionEnabled={aircraftMotionEnabled}
+            onAircraftMotionToggle={() =>
+              setAircraftMotionEnabled((enabled) => !enabled)
+            }
             flightInput={flightInput}
-            flightResetId={flightResetId}
             throttle={throttle}
             afterburner={afterburner}
-            onClipsReady={handleClipsReady}
+            onManualFlightChange={handleManualFlightChange}
+            onFlightInput={handleFlightInput}
+            onThrottleChange={handleThrottleChange}
+            onAfterburnerToggle={handleAfterburnerToggle}
+            onFlightReset={handleFlightReset}
+            onPanelOpen={() => setIsPanelOpen(true)}
+            onPanelClose={() => setIsPanelOpen(false)}
+            activeSurface={activeSurface}
+            onSurfaceChange={handleSurfaceChange}
+          />
+        </>
+      ) : (
+        <SceneErrorBoundary>
+          <TestFlight
+            onSurfaceChange={handleSurfaceChange}
+            onFullscreen={handleFullscreen}
           />
         </SceneErrorBoundary>
-      </div>
+      )}
 
-      <div className="atmosphere" aria-hidden="true" />
-      <div className="scanline" aria-hidden="true" />
-
-      <Interface
-        clips={clips}
-        animationStates={animationStates}
-        onAnimationToggle={handleAnimationToggle}
-        playbackSpeed={playbackSpeed}
-        onSpeedChange={setPlaybackSpeed}
-        autoRotate={autoRotate}
-        onAutoRotate={() => setAutoRotate((value) => !value)}
-        lightingMode={lightingMode}
-        onLightingMode={() =>
-          setLightingMode((value) => (value === 'studio' ? 'stealth' : 'studio'))
-        }
-        onViewChange={handleViewChange}
-        onFullscreen={handleFullscreen}
-        isPanelOpen={isPanelOpen}
-        manualFlight={manualFlight}
-        aircraftMotionEnabled={aircraftMotionEnabled}
-        onAircraftMotionToggle={() =>
-          setAircraftMotionEnabled((enabled) => !enabled)
-        }
-        flightInput={flightInput}
-        throttle={throttle}
-        afterburner={afterburner}
-        onManualFlightChange={handleManualFlightChange}
-        onFlightInput={handleFlightInput}
-        onThrottleChange={handleThrottleChange}
-        onAfterburnerToggle={handleAfterburnerToggle}
-        onFlightReset={handleFlightReset}
-        onPanelOpen={() => setIsPanelOpen(true)}
-        onPanelClose={() => setIsPanelOpen(false)}
-      />
-
-      <LoaderScreen />
+      <LoaderScreen mode={activeSurface} />
     </main>
   )
 }

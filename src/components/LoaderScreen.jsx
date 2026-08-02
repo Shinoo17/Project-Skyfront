@@ -1,8 +1,9 @@
 import { useProgress } from '@react-three/drei'
 
-export default function LoaderScreen() {
+export default function LoaderScreen({ mode = 'viewer' }) {
   const { active, progress, loaded, total, errors } = useProgress()
   const hasError = errors.length > 0
+  const isTestFlight = mode === 'test-flight'
 
   if (!active && progress === 100 && !hasError) return null
 
@@ -12,7 +13,9 @@ export default function LoaderScreen() {
         <span />
       </div>
       <p className="loader-kicker">
-        {hasError ? 'MODEL LINK ERROR' : 'INITIALIZING AIRFRAME'}
+        {hasError
+          ? 'MODEL LINK ERROR'
+          : isTestFlight ? 'LOADING MOUNTAIN RANGE' : 'INITIALIZING AIRFRAME'}
       </p>
       <div className="loader-progress">
         <span style={{ transform: `scaleX(${Math.max(progress, 0) / 100})` }} />
@@ -21,7 +24,9 @@ export default function LoaderScreen() {
         <strong>{hasError ? 'OFFLINE' : `${Math.round(progress)}%`}</strong>
         <span>
           {hasError
-            ? 'ตรวจสอบไฟล์ public/F22_model.glb และ public/basis แล้วลองรีเฟรชอีกครั้ง'
+            ? isTestFlight
+              ? 'ตรวจสอบไฟล์ Mountain_Valley_Colorado.glb, F22_model.glb และ public/basis แล้วลองใหม่'
+              : 'ตรวจสอบไฟล์ public/F22_model.glb และ public/basis แล้วลองรีเฟรชอีกครั้ง'
             : `${loaded}/${total || '—'} ASSETS`}
           </span>
       </div>
@@ -31,7 +36,7 @@ export default function LoaderScreen() {
           className="loader-retry"
           onClick={() => window.location.reload()}
         >
-          RETRY VIEWER
+          {isTestFlight ? 'RETRY TEST FLIGHT' : 'RETRY VIEWER'}
         </button>
       )}
     </div>
