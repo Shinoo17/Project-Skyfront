@@ -19,17 +19,36 @@ export const GRAPHICS_PROFILES = {
     targetFps: 0,
   },
 
-  // Flight range: a full terrain mesh on whatever GPU the phone has. Deliberately
-  // starved — DPR 1, 30 FPS, no AA, no shadows, no environment map, no post.
-  eco: {
+  // Flight range: keep pixel and lighting costs low, but ask the browser for the
+  // performant GPU path and follow a 60 Hz display for more responsive controls.
+  low: {
     dpr: 1,
     antialias: false,
     shadows: false,
     shadowMapSize: null,
     environment: false,
-    powerPreference: 'low-power',
+    powerPreference: 'high-performance',
     targetFps: 30,
   },
+  medium: {
+    dpr: [1, 1.5],
+    antialias: true,
+    shadows: true,
+    shadowMapSize: [512, 512],
+    environment: true,
+    powerPreference: 'high-performance',
+    targetFps: 60,
+  },
+  high: {
+    dpr: [1, 1.5],
+    antialias: true,
+    shadows: true,
+    shadowMapSize: [512, 512],
+    environment: true,
+    powerPreference: 'high-performance',
+    targetFps: 120,
+  }
+
 }
 
 export const DEFAULT_GRAPHICS_PROFILE = 'studio'

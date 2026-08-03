@@ -187,15 +187,66 @@ const f22 = {
   flight: {
     scale: 7,
     isFlightDetail,
-    // Arcade envelope for the flight range. Speed is minSpeed + throttle * speedRange in
-    // world units per second; rates are degrees per second at full deflection. Dogfight
-    // balance between two airframes is tuned here.
+    // Flight-range envelope. Published airspeed follows the supplied F-22 performance
+    // table; kmhPerWorldUnitPerSecond maps it back onto the compact arcade terrain without
+    // making a Mach 2 pass cross the entire range in a few seconds.
     envelope: {
       idleThrottle: 0.42,
       minThrottle: 0.08,
       throttleRate: 0.34,
-      minSpeed: 16,
-      speedRange: 94,
+      // Reheat is a fuel state, not a switch. The F119 pushes roughly three times its dry
+      // fuel flow in afterburner, so the airframe carries a burst of it rather than
+      // minutes of it: hold the burner, watch the reserve drain, and get it back only
+      // after the nozzle has been cold long enough to matter. Draining the reserve to
+      // zero blows the burner out and locks it until enough has come back to relight,
+      // which is what stops reheat from being held on permanently by tapping it.
+      afterburner: {
+        // Reheat lights at any throttle, from any speed. It is a burst of thrust bolted on
+        // top of whatever the core is already doing, so it is worth most exactly where the
+        // dry engine is worth least — slow, low, and needing speed now.
+        burnSeconds: 8,
+        recoverySeconds: 22,
+        // The nozzle has to be cold before the tanks start giving anything back, or
+        // chattering the key would refill it for free.
+        recoveryDelaySeconds: 1.5,
+        // After a burnout the reserve has to climb this far before it will relight, which
+        // with the dwell above is the cooldown the third gauge counts down.
+        relightReserve: 0.32,
+        // Light-off is quick, shutdown quicker: about 1.2 s up and 0.6 s down.
+        spoolUpPerSecond: 0.85,
+        spoolDownPerSecond: 1.7,
+      },
+      performance: {
+        minKmh: 260,
+        kmhPerWorldUnitPerSecond: 22,
+        // Compressed the same way the terrain is: a real Raptor takes tens of seconds to
+        // do what the range does in a few. The ratio between dry and reheat is the honest
+        // part — excess thrust in afterburner is roughly double what military power has
+        // left over once drag is paid for.
+        accelerationKmhPerSecond: 130,
+        afterburnerAccelerationKmhPerSecond: 265,
+        decelerationKmhPerSecond: 190,
+        // Drag climbs with speed, so acceleration falls away toward the limit rather than
+        // holding one flat figure, and a jet coasting down after the burner cuts sheds the
+        // gap it is carrying instead of braking at a constant rate.
+        dragFalloff: 0.45,
+        dragDecayPerSecond: 0.55,
+        seaLevel: {
+          dryKmh: 1100,
+          dryMach: 0.95,
+          afterburnerKmh: 1482,
+          afterburnerMach: 1.2,
+        },
+        highAltitude: {
+          worldUnits: 800,
+          supercruiseMinKmh: 1850,
+          supercruiseMinMach: 1.5,
+          dryKmh: 2230,
+          dryMach: 1.82,
+          afterburnerKmh: 2414,
+          afterburnerMach: 2.25,
+        },
+      },
       pitchRate: 48,
       rollRate: 66,
       yawRate: 42,

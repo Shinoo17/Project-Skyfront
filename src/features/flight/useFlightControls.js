@@ -12,6 +12,8 @@ export const FLIGHT_BINDINGS = {
   KeyW: 'throttle-up',
   KeyS: 'throttle-down',
   KeyF: 'flaps',
+  ShiftLeft: 'afterburner',
+  ShiftRight: 'afterburner',
 }
 
 function axis(pressed, positive, negative) {
@@ -32,6 +34,12 @@ export function readThrottleDirection(pressed) {
   return axis(pressed, 'throttle-up', 'throttle-down')
 }
 
+// Reheat is held, not latched: this only reports that the pilot is asking for it. Whether
+// the burner actually lights is the flight model's answer, not the keyboard's.
+export function readAfterburnerCommand(pressed) {
+  return pressed.has('afterburner')
+}
+
 function isFieldFocused(event) {
   const target = event.target instanceof HTMLElement ? event.target : null
   return Boolean(target?.closest('input, textarea, select, [contenteditable="true"]'))
@@ -43,6 +51,9 @@ frame, and a dogfight will read two of these per frame. Only the surfaces that s
 input in the DOM re-render, and they do it from onChange.
 
   controls.current = { pressed: Set<controlName>, throttle: number }
+
+Every binding is a held control, including the afterburner: the pilot holds it for as long
+as they want the burner, and releasing is what shuts it down. Nothing here latches.
 
 `keyActions` handles the keys that are events rather than held axes (reset, pause).
 Each handler receives (event, { fieldFocused }) and does its own preventDefault.

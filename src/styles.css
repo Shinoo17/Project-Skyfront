@@ -266,6 +266,7 @@ input:focus-visible {
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  white-space: nowrap;
   background: rgba(154, 215, 232, 0.045);
   cursor: pointer;
   transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
@@ -376,6 +377,103 @@ input:focus-visible {
   font-size: 8px;
   line-height: 1.5;
   letter-spacing: 0.13em;
+}
+
+.viewer-status-rail {
+  position: absolute;
+  top: 96px;
+  left: 32px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(82px, auto));
+  border: 1px solid var(--line);
+  background: rgba(5, 7, 9, 0.68);
+  backdrop-filter: blur(10px);
+}
+
+.viewer-status-rail > span {
+  min-height: 44px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 0 12px;
+  border-right: 1px solid var(--line);
+  font-family: var(--display);
+  font-variant-numeric: tabular-nums;
+}
+
+.viewer-status-rail > span:last-child {
+  border-right: 0;
+}
+
+.viewer-status-rail small {
+  color: var(--dim);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.viewer-status-rail strong {
+  color: var(--fog);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.viewer-sight {
+  position: absolute;
+  top: 50%;
+  left: calc((100% - 352px) / 2);
+  width: min(32vw, 440px);
+  height: min(38vh, 320px);
+  transform: translate(-50%, -50%);
+  opacity: 0.32;
+}
+
+.viewer-sight::before,
+.viewer-sight::after,
+.viewer-sight i::before,
+.viewer-sight i::after {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-color: var(--ice);
+  border-style: solid;
+  content: "";
+}
+
+.viewer-sight::before {
+  top: 0;
+  left: 0;
+  border-width: 1px 0 0 1px;
+}
+
+.viewer-sight::after {
+  top: 0;
+  right: 0;
+  border-width: 1px 1px 0 0;
+}
+
+.viewer-sight i:first-child::before {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 1px 1px;
+}
+
+.viewer-sight i:first-child::after {
+  right: 0;
+  bottom: 0;
+  border-width: 0 1px 1px 0;
+}
+
+.viewer-sight b {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border: 1px solid var(--ice);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .control-panel {
@@ -1266,314 +1364,402 @@ input:focus-visible {
   pointer-events: auto;
 }
 
-.flight-telemetry {
+/*
+Test Flight HUD.
+
+Two materials, and the split is the whole design. `.hud-glass` is projected symbology,
+drawn on one canvas: one colour, no fills, no boxes, sitting on the sightline. `.deck` is
+cockpit bezel: opaque carbon clamped to the frame edges, deliberately quiet.
+
+Legibility over a bright sky is bought with a dark halo on every glyph and stroke rather
+than by dimming the world behind it, because the range runs from a sunlit sky (#688293)
+down to shadowed rock and no single scrim serves both. On the glass the halo is painted
+into the canvas; in the DOM it is text-shadow. No `filter` touches an element that
+animates every frame.
+
+The sightline geometry is declared twice on purpose: `hud.js` computes it in canvas pixels,
+and these two custom properties restate the same expression so the advisory — the one
+symbol that stays in the DOM, because it is announced — can hang off the bottom of the
+status block without JavaScript measuring anything.
+*/
+.hud {
   position: absolute;
-  top: 104px;
-  left: 32px;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(70px, auto));
-  border: 1px solid rgba(218, 226, 230, 0.28);
-  background: rgba(5, 7, 9, 0.72);
+  inset: 0;
+  pointer-events: none;
+
+  --hud-ice: #62ff84;
+  --hud-green-dim: rgba(98, 255, 132, 0.68);
+  --hud-green-soft: rgba(98, 255, 132, 0.24);
+  --hud-green-strong: rgba(98, 255, 132, 0.52);
+  --hud-glyph: 0 0 7px rgba(48, 255, 104, 0.34);
+  --hud-half: min(42vw, 72vh);
+  --hud-tape-height: min(42vh, calc(var(--hud-half) * 0.95));
 }
 
-.flight-telemetry span {
-  min-height: 48px;
-  display: grid;
-  align-content: center;
-  gap: 3px;
-  padding: 0 13px;
-  border-right: 1px solid var(--line);
-  color: var(--ash);
-  font-family: var(--display);
-  font-size: 7px;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-}
-
-.flight-telemetry span:last-child {
-  border-right: 0;
-}
-
-.flight-telemetry strong {
-  color: var(--fog);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
-}
-
-.range-label {
+/*
+The glass is a single canvas covering the same box as the WebGL view, so a world point
+projected through the flight camera lands on the same pixel in both and the pitch ladder
+stays welded to the real horizon. Every stroke carries a translucent green under-pass,
+painted into the canvas — nothing here needs a `filter`, which would recomposite the layer.
+*/
+.hud-glass {
   position: absolute;
-  top: 108px;
-  right: 32px;
-  text-align: right;
-  font-family: var(--display);
-}
-
-.range-label span,
-.range-label small {
+  inset: 0;
   display: block;
-  color: rgba(218, 226, 230, 0.64);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  width: 100%;
+  height: 100%;
 }
 
-.range-label strong {
-  display: block;
-  margin: 5px 0 6px;
-  color: var(--fog);
-  font-size: 19px;
-  letter-spacing: 0.08em;
-}
-
-.range-label small {
-  color: rgba(218, 226, 230, 0.48);
-  font-size: 7px;
-}
-
-.flight-reticle {
+.hud-a11y-readout {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 42px;
-  height: 42px;
-  border: 1px solid rgba(218, 226, 230, 0.42);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.flight-reticle::before,
-.flight-reticle::after,
-.flight-reticle i {
-  position: absolute;
-  background: rgba(218, 226, 230, 0.52);
-  content: "";
-}
-
-.flight-reticle::before {
-  top: 50%;
-  left: -14px;
-  width: 68px;
-  height: 1px;
-}
-
-.flight-reticle::after {
-  top: -7px;
-  left: 50%;
   width: 1px;
-  height: 56px;
-}
-
-.flight-reticle i:first-child {
-  top: 50%;
-  left: 50%;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.flight-reticle i:last-child {
-  right: 8px;
-  bottom: -15px;
-  left: 8px;
   height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.range-controls {
+.flight-fps {
+  top: 96px;
+  right: 26px;
+  left: auto;
+  min-width: 66px;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border: 1px solid var(--hud-green-soft);
+  background: rgba(3, 9, 12, 0.78);
+}
+
+.flight-fps span {
+  color: var(--hud-green-dim);
+}
+
+.flight-fps output {
+  color: var(--hud-ice);
+}
+
+/* ---- Advisory -------------------------------------------------------------------- */
+
+.hud-advisory {
   position: absolute;
-  right: 32px;
-  bottom: 32px;
-  left: 32px;
+  top: calc(50% + (var(--hud-tape-height) / 2) + 92px);
+  left: 50%;
   display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 7px 16px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  color: var(--hud-ice);
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+  white-space: nowrap;
+  background: rgba(3, 9, 12, 0.72);
+  text-shadow: var(--hud-glyph);
+  transform: translateX(-50%);
+}
+
+.hud-advisory.is-caution {
+  color: var(--hud-ice);
+}
+
+/* Alert state stays monochrome: the icon, dark green plate, and pulse carry urgency. */
+.hud-advisory.is-alert {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+  background: rgba(3, 9, 12, 0.86);
+  animation: hud-alert 720ms steps(1, end) infinite alternate;
+}
+
+/* ---- Cockpit bezel --------------------------------------------------------------- */
+
+.deck {
+  position: absolute;
+  color: var(--hud-green-dim);
+  font-family: var(--display);
+  background: rgba(9, 13, 16, 0.86);
+  backdrop-filter: blur(9px);
+}
+
+/* ---- Control deck ---------------------------------------------------------------- */
+
+.deck-controls {
+  right: 26px;
+  bottom: 44px;
+  left: 26px;
+  display: none;
   align-items: end;
   justify-content: space-between;
+  background: none;
+  backdrop-filter: none;
 }
 
-.range-stick {
-  width: 184px;
+.deck-stick {
+  width: 216px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 3px;
+  gap: 5px;
 }
 
-.range-stick > span {
-  min-height: 50px;
+.deck-stick > span {
+  min-height: 58px;
 }
 
-.range-control-button,
-.range-reset-button {
-  min-height: 50px;
+.deck-key {
+  min-height: 58px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid rgba(218, 226, 230, 0.28);
+  gap: 5px;
+  padding: 6px 4px;
+  border: 1px solid var(--hud-green-strong);
   border-radius: 2px;
-  color: var(--fog);
-  background: rgba(5, 7, 9, 0.72);
+  color: var(--hud-ice);
+  background: rgba(9, 13, 16, 0.86);
+  backdrop-filter: blur(9px);
   cursor: pointer;
   touch-action: none;
   user-select: none;
-  transition: color 120ms ease, background 120ms ease, transform 120ms var(--ease-out);
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 140ms var(--ease-out);
 }
 
-.range-control-button span,
-.range-reset-button span {
+.deck-key span {
   font-family: var(--display);
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
 }
 
-.range-control-button:hover,
-.range-reset-button:hover {
-  color: var(--ice);
-  background: rgba(5, 7, 9, 0.86);
+.deck-key:hover {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+  transform: translateY(-2px);
 }
 
-.range-control-button:active {
+.deck-key:active {
   color: var(--void);
-  background: var(--ice);
-  transform: translateY(1px);
+  border-color: var(--hud-ice);
+  background: var(--hud-ice);
+  transform: translateY(0);
 }
 
-.range-reset-button {
+.deck-key.is-reset {
+  color: var(--hud-ice);
+}
+
+.deck-key.is-reset:hover {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+}
+
+.deck-key.is-afterburner {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Reheat is the one control with a budget, so the budget rides on the key: a strip that
+   drains under the thumb holding it and creeps back once the nozzle is cold. */
+.deck-key.is-afterburner::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--hud-ice);
+  opacity: 0.5;
+  transform: scaleX(var(--reserve, 1));
+  transform-origin: left center;
+}
+
+.deck-key.is-afterburner.is-active {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+  background: var(--hud-green-soft);
+  box-shadow: 0 0 10px rgba(48, 255, 104, 0.38);
+}
+
+.deck-key.is-afterburner.is-active::after {
+  opacity: 1;
+}
+
+/* Burnt out and cooling: the key stays lit but stops promising thrust, and its strip
+   refills instead of draining. */
+.deck-key.is-afterburner.is-depleted {
   color: var(--amber);
+  border-color: var(--amber);
 }
 
-.range-engine {
-  width: 272px;
+.deck-key.is-afterburner.is-depleted::after {
+  background: var(--amber);
+  opacity: 0.9;
+}
+
+.deck-engine {
+  width: 320px;
   display: grid;
+  gap: 6px;
+}
+
+.deck-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 5px;
 }
 
-.range-yaw {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
+.deck-row .deck-key {
+  min-height: 50px;
 }
 
-.range-yaw .range-control-button {
-  min-height: 45px;
-  flex-direction: row;
-  gap: 7px;
-}
-
-.range-throttle {
-  padding: 11px 12px 12px;
-  border: 1px solid rgba(218, 226, 230, 0.28);
+.deck-throttle {
+  padding: 12px 13px 13px;
+  border: 1px solid var(--hud-green-strong);
   border-radius: 2px;
-  background: rgba(5, 7, 9, 0.72);
+  background: rgba(9, 13, 16, 0.86);
+  backdrop-filter: blur(9px);
 }
 
-.range-throttle > div:first-child {
+.deck-throttle-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 9px;
+  gap: 14px;
+  margin-bottom: 11px;
 }
 
-.range-throttle > div:first-child span,
-.range-throttle output {
+.deck-throttle-head span {
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: var(--ash);
+  gap: 7px;
+  color: var(--hud-green-dim);
   font-family: var(--display);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-}
-
-.range-throttle output {
-  color: var(--fog);
   font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.17em;
 }
 
-.range-throttle-row {
+/* Thrust reads as a bar first and a number second — it is the value the pilot trims by
+   feel, not one they need to three digits. */
+.deck-thrust {
+  position: relative;
+  flex: 1;
+  height: 7px;
+  background: var(--hud-green-soft);
+}
+
+.deck-thrust i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--thrust, 0) * 100%);
+  background: var(--hud-ice);
+}
+
+.deck-thrust.is-afterburner i {
+  box-shadow: 0 0 9px rgba(48, 255, 104, 0.62);
+}
+
+.deck-throttle-row {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  grid-template-columns: 50px minmax(0, 1fr) 50px;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-.range-throttle-row .range-control-button {
-  min-height: 38px;
+.deck-throttle-row .deck-key {
+  min-height: 42px;
 }
 
-.range-throttle-row input {
+.deck-throttle-row input {
   width: 100%;
-  height: 28px;
+  height: 30px;
   margin: 0;
   appearance: none;
   background: transparent;
   cursor: ew-resize;
 }
 
-.range-throttle-row input::-webkit-slider-runnable-track {
+.deck-throttle-row input::-webkit-slider-runnable-track {
   height: 3px;
-  background: linear-gradient(
-    90deg,
-    var(--ice) 0 calc(var(--range-throttle) * 100%),
-    rgba(218, 226, 230, 0.18) calc(var(--range-throttle) * 100%) 100%
-  );
+  background: var(--hud-green-soft);
 }
 
-.range-throttle-row input::-webkit-slider-thumb {
-  width: 8px;
-  height: 18px;
-  margin-top: -7px;
+.deck-throttle-row input::-webkit-slider-thumb {
+  width: 10px;
+  height: 22px;
+  margin-top: -9px;
   appearance: none;
-  border: 1px solid var(--fog);
+  border: 1px solid var(--hud-ice);
   border-radius: 2px;
   background: var(--carbon);
 }
 
-.range-throttle-row input::-moz-range-track {
+.deck-throttle-row input::-moz-range-track {
   height: 3px;
-  background: rgba(218, 226, 230, 0.18);
+  background: var(--hud-green-soft);
 }
 
-.range-throttle-row input::-moz-range-progress {
-  height: 3px;
-  background: var(--ice);
-}
-
-.range-throttle-row input::-moz-range-thumb {
-  width: 8px;
-  height: 18px;
-  border: 1px solid var(--fog);
+.deck-throttle-row input::-moz-range-thumb {
+  width: 10px;
+  height: 22px;
+  border: 1px solid var(--hud-ice);
   border-radius: 2px;
   background: var(--carbon);
 }
 
-.range-keymap {
+.deck-keymap {
   position: absolute;
-  bottom: 12px;
+  bottom: 13px;
   left: 50%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 9px;
+  justify-content: center;
+  gap: 5px;
   margin: 0;
-  color: rgba(218, 226, 230, 0.58);
+  padding: 6px 14px;
+  border-radius: 2px;
+  color: var(--hud-green-dim);
   font-family: var(--display);
-  font-size: 7px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.11em;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: rgba(9, 13, 16, 0.78);
+  backdrop-filter: blur(9px);
   transform: translateX(-50%);
-  white-space: nowrap;
 }
 
-.range-keymap i {
-  width: 2px;
-  height: 2px;
-  border-radius: 50%;
-  background: var(--amber);
+.deck-keymap kbd {
+  min-width: 23px;
+  padding: 4px 6px;
+  border: 1px solid var(--hud-green-strong);
+  border-radius: 2px;
+  color: var(--hud-ice);
+  font-family: var(--display);
+  font-size: 11px;
+  line-height: 1;
+  text-align: center;
+  background: var(--carbon);
+}
+
+.deck-keymap span {
+  margin-right: 14px;
+  margin-left: 3px;
+}
+
+.deck-keymap span:last-child {
+  margin-right: 0;
 }
 
 .loader-screen {
@@ -1720,7 +1906,7 @@ input:focus-visible {
 .scene-error strong {
   margin-top: 10px;
   font-family: var(--display);
-  font-size: 18px;
+  font-size: 19px;
   letter-spacing: 0.02em;
 }
 
@@ -1744,6 +1930,10 @@ input:focus-visible {
 
 @keyframes skeleton-pulse {
   50% { opacity: 0.3; }
+}
+
+@keyframes hud-alert {
+  to { opacity: 0.58; }
 }
 
 @media (max-width: 1024px) {
@@ -1776,6 +1966,11 @@ input:focus-visible {
   .fps-readout {
     top: 78px;
     left: 16px;
+  }
+
+  .flight-fps {
+    right: 16px;
+    left: auto;
   }
 
   .topbar {
@@ -1812,104 +2007,102 @@ input:focus-visible {
   }
 
   .test-flight-button {
-    min-width: 104px;
+    min-width: 116px;
     height: 38px;
     gap: 7px;
     padding: 0 9px;
-    font-size: 8px;
-    letter-spacing: 0.09em;
-  }
-
-  .flight-telemetry {
-    top: 78px;
-    right: 12px;
-    left: 12px;
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  .flight-telemetry span {
-    min-width: 0;
-    min-height: 42px;
-    padding: 0 8px;
     font-size: 7px;
+    letter-spacing: 0.07em;
   }
 
-  .flight-telemetry strong {
-    font-size: 11px;
+  .viewer-status-rail {
+    top: 78px;
+    left: 16px;
+    grid-template-columns: repeat(2, minmax(84px, auto));
   }
 
-  .range-label,
-  .range-keymap {
+  .viewer-status-rail > span {
+    min-height: 38px;
+    padding: 0 9px;
+  }
+
+  .viewer-status-rail > span:nth-child(n + 3),
+  .viewer-sight {
     display: none;
   }
 
-  .flight-reticle {
-    top: 46%;
-    width: 34px;
-    height: 34px;
+  /* Test Flight, phone. The sightline stays whole — the canvas lays itself out from the
+     viewport — and the bezel gives up the key legend, so the aircraft is never behind
+     an instrument. */
+  .deck-keymap {
+    display: none;
   }
 
-  .flight-reticle::before {
-    width: 58px;
+  /* Clear of the status block, which stacks a third row of digits at this width —
+     `hud.js` switches to its compact status layout at the same 760px. */
+  .hud-advisory {
+    top: calc(50% + (var(--hud-tape-height) / 2) + 112px);
+    padding: 6px 12px;
+    font-size: 11px;
+    letter-spacing: 0.11em;
   }
 
-  .flight-reticle::after {
-    height: 48px;
-  }
-
-  .range-controls {
-    right: 12px;
+  .deck-controls {
+    display: flex;
+    right: 10px;
     bottom: 12px;
-    left: 12px;
-    align-items: end;
-    gap: 14px;
+    left: 10px;
   }
 
-  .range-stick {
-    width: 136px;
-    flex: 0 0 136px;
-  }
-
-  .range-stick > span,
-  .range-control-button,
-  .range-reset-button {
-    min-height: 42px;
-  }
-
-  .range-control-button span,
-  .range-reset-button span {
-    font-size: 7px;
-  }
-
-  .range-engine {
-    width: min(148px, calc(100vw - 172px));
-  }
-
-  .range-yaw .range-control-button {
-    min-height: 40px;
+  .deck-stick {
+    width: min(148px, 43vw);
     gap: 4px;
   }
 
-  .range-throttle {
-    padding: 8px;
+  .deck-stick > span,
+  .deck-key {
+    min-height: 46px;
   }
 
-  .range-throttle > div:first-child {
-    margin-bottom: 6px;
+  .deck-key span {
+    font-size: 9px;
+    letter-spacing: 0.07em;
   }
 
-  .range-throttle > div:first-child span {
-    font-size: 7px;
-    letter-spacing: 0.08em;
+  .deck-engine {
+    width: min(174px, 50vw);
+    gap: 4px;
   }
 
-  .range-throttle-row {
-    grid-template-columns: 36px minmax(26px, 1fr) 36px;
-    gap: 5px;
+  .deck-row {
+    gap: 4px;
   }
 
-  .range-throttle-row .range-control-button {
-    min-height: 34px;
+  .deck-row .deck-key {
+    min-height: 40px;
+  }
+
+  .deck-throttle {
+    padding: 9px 9px 10px;
+  }
+
+  .deck-throttle-head {
+    gap: 9px;
+    margin-bottom: 8px;
+  }
+
+  .deck-throttle-head span {
+    font-size: 9px;
+    letter-spacing: 0.09em;
+  }
+
+  .deck-throttle-row {
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
+    gap: 6px;
+  }
+
+  .deck-throttle-row .deck-key {
+    min-height: 36px;
   }
 
   .control-panel {
@@ -2023,17 +2216,35 @@ input:focus-visible {
     height: 74px;
   }
 
-  .range-controls {
-    bottom: 18px;
-    transform: scale(0.82);
-    transform-origin: bottom center;
-  }
-
-  .range-keymap {
-    display: none;
-  }
-
 }
+
+/* Frames where the bezel crowds the sightline. `hud.js` calls the same band `tight`
+   and pulls its status columns in. */
+@media (max-height: 720px) and (min-width: 761px),
+  (max-width: 1100px) and (min-width: 761px) {
+  .hud-advisory {
+    top: calc(50% + (var(--hud-tape-height) / 2) + 120px);
+  }
+
+  .deck-keymap {
+    width: min(calc(100% - 24px), 720px);
+    gap: 3px;
+    padding: 5px 10px;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+  }
+
+  .deck-keymap kbd {
+    min-width: 20px;
+    padding: 3px 5px;
+    font-size: 9px;
+  }
+
+  .deck-keymap span {
+    margin-right: 8px;
+  }
+}
+
 
 @media (prefers-reduced-motion: reduce) {
   *,
