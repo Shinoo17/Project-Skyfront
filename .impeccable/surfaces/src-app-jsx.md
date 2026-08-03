@@ -19,7 +19,7 @@ The supplied `public/F22_model.glb`, `public/Mountain_Valley_Colorado.glb`, and 
 
 ## Chosen direction
 
-Radar Test Cell: a full-bleed 3D aircraft under cold directional light with restrained amber orientation marks. Test Flight extends the same instrument language into an unobstructed daylight chase view. The memorable moments are the aircraft emerging from darkness in the viewer and the mountain range opening behind it in flight.
+Mission Control to Open Sky: the viewer is a mission-ready hangar terminal with compact live status, while Test Flight becomes a complete combat-training game HUD. The flight sightline prioritizes heading, attitude, speed, altitude, vertical speed, throttle, range position, flap state, and recovery advisories. The memorable moments are the aircraft framed for inspection in the dark hangar and the tactical HUD coming alive over the mountain range without obscuring the chase view.
 
 ## Unresolved decisions
 

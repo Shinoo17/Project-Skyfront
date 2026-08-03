@@ -1,9 +1,9 @@
 /*
-THESIS: A radar test cell where the aircraft, not dashboard chrome, is the instrument.
-OWN-WORLD: Carbon black, cold steel type, ice-blue illumination, and one restrained amber signal.
-STORY: The viewer sees the complete Raptor, explores its airframe, then controls every embedded motion sequence.
-FIRST VIEWPORT: Full-bleed 3D aircraft, sparse identity at left, and controls held to the right edge.
-FORM: Radar-scope test cell, direction 6/7, immersive center stage, seed 83862736.
+THESIS: A mission-ready hangar screen that keeps the aircraft larger than the game interface around it.
+OWN-WORLD: Carbon black, cold vector lines, ice-blue live data, and amber configuration signals.
+STORY: The player inspects the Raptor, checks its systems, controls the airframe, then enters the flight range.
+FIRST VIEWPORT: Full-bleed 3D aircraft, a compact game-status rail, and controls fixed to the right edge.
+FORM: Aerospace hangar terminal extended with a restrained combat-game HUD.
 */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'

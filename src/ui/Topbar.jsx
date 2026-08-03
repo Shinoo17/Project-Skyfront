@@ -12,8 +12,8 @@ export default function Topbar({ onFullscreen }) {
       <div className="brand-lockup">
         <span className="brand-mark" aria-hidden="true"><i /><i /></span>
         <div>
-          <strong>F–22 <em>RAPTOR</em></strong>
-          <small>{isTestFlight ? 'MOUNTAIN FLIGHT RANGE' : 'TACTICAL AIRFRAME VIEWER'}</small>
+          <strong>F-22 <em>RAPTOR</em></strong>
+          <small>{isTestFlight ? 'COMBAT TRAINING RANGE' : 'MISSION HANGAR'}</small>
         </div>
       </div>
 
@@ -24,7 +24,7 @@ export default function Topbar({ onFullscreen }) {
         onClick={() => navigate(isTestFlight ? VIEWER_PATH : TEST_FLIGHT_PATH)}
       >
         <PlaneTakeoff size={16} strokeWidth={1.7} />
-        <span>{isTestFlight ? 'Airframe view' : 'Test flight'}</span>
+        <span>{isTestFlight ? 'Return hangar' : 'Launch sortie'}</span>
         <i aria-hidden="true" />
       </button>
 

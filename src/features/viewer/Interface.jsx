@@ -150,8 +150,8 @@ function ControlPanel({
       <div className="panel-drag" aria-hidden="true" />
       <div className="panel-heading">
         <div>
-          <span>CONTROL SURFACE</span>
-          <strong>AIRFRAME / 001</strong>
+          <span>AIRFRAME CONTROL</span>
+          <strong>F-22 / READY</strong>
         </div>
         <button type="button" className="icon-button close-panel" onClick={onClose} aria-label="ปิดแผงควบคุม">
           <X size={18} />
@@ -166,7 +166,7 @@ function ControlPanel({
           className={panelMode === 'animations' ? 'is-active' : ''}
           onClick={() => changePanelMode('animations')}
         >
-          <Scan size={13} /> Animations
+          <Scan size={13} /> Systems
         </button>
         <button
           type="button"
@@ -175,7 +175,7 @@ function ControlPanel({
           className={panelMode === 'flight' ? 'is-active' : ''}
           onClick={() => changePanelMode('flight')}
         >
-          <Plane size={13} /> Flight
+          <Plane size={13} /> Flight ctrl
         </button>
       </div>
 
@@ -325,7 +325,7 @@ function ControlPanel({
             </button>
           </div>
 
-          <p className="flight-help">ARROWS · PITCH / ROLL · Q E YAW · F FLAPS · W S THROTTLE</p>
+          <p className="flight-help">ARROWS: PITCH / ROLL &nbsp; Q E: YAW &nbsp; F: FLAPS &nbsp; W S: THROTTLE</p>
         </section>
       )}
 
@@ -388,7 +388,7 @@ function ControlPanel({
       </section>
 
       <p className="panel-note">
-        DRAG TO ORBIT · SCROLL TO ZOOM<br />
+        DRAG TO ORBIT / SCROLL TO ZOOM<br />
         DOUBLE TAP TO RECENTER
       </p>
     </aside>
@@ -422,20 +422,31 @@ export default function Interface({
   onPanelOpen,
   onPanelClose,
 }) {
+  const activeSystemCount = Object.values(animationStates).filter(Boolean).length
+
   return (
     <div className="interface">
       <Topbar onFullscreen={onFullscreen} />
 
-      <div className="left-readout" aria-hidden="true">
-        <span>05</span>
-        <i />
-        <p>TACTICAL<br />AIRCRAFT</p>
+      <div className="viewer-status-rail" aria-live="polite">
+        <span><small>MODE</small><strong>{manualFlight ? 'DIRECT CONTROL' : 'HANGAR VIEW'}</strong></span>
+        <span><small>SYSTEMS</small><strong>{activeSystemCount} / {clips.length || '-'}</strong></span>
+        <span><small>THRUST</small><strong>{Math.round(throttle * 100)}%</strong></span>
+        <span><small>LIGHT</small><strong>{lightingMode === 'stealth' ? 'LOW' : 'STUDIO'}</strong></span>
       </div>
 
+      <div className="left-readout" aria-hidden="true">
+        <span>SYS</span>
+        <i />
+        <p>AIRFRAME<br />ONLINE</p>
+      </div>
+
+      <div className="viewer-sight" aria-hidden="true"><i /><i /><b /></div>
+
       <div className="airframe-title" aria-hidden="true">
-        <span>INTERACTIVE AIRFRAME</span>
-        <strong>RAPTOR</strong>
-        <p>5TH-GENERATION AIR-DOMINANCE FIGHTER · STEALTH · SUPERCRUISE</p>
+        <span>HANGAR / AIRFRAME BAY</span>
+        <strong>F-22 RAPTOR</strong>
+        <p>ORBIT CAMERA / LIVE CONTROL SURFACES / FLIGHT RANGE READY</p>
       </div>
 
       <button type="button" className="open-panel" onClick={onPanelOpen}>

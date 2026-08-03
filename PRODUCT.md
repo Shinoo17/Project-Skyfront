@@ -31,6 +31,7 @@ The viewer is a React + Vite web application using Three.js. It is intended to w
 ## Brand Commitments
 
 - The user explicitly requires a cool black theme.
+- The interface should read as a fighter-flight game, with a complete HUD built from real simulation state.
 - The aircraft must remain the visual focus.
 
 ## Evidence on Hand
@@ -42,6 +43,7 @@ The viewer is a React + Vite web application using Three.js. It is intended to w
 ## Product Principles
 
 - Let the aircraft lead the experience.
+- Make flight state, navigation, aircraft attitude, and control input readable at a glance.
 - Make model and animation state visible and controllable.
 - Keep interaction immediate, legible, and reversible.
 - Keep animation playback and manual flight mutually exclusive so the mixer cannot overwrite direct control input.
