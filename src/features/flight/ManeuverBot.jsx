@@ -33,6 +33,9 @@ function releaseControls(controls) {
 
 export default function ManeuverBot({
   maneuver,
+  // Bumped to fly the same script again. Selecting a manoeuvre does not change identity
+  // when it is already selected, so replaying a finished run needs its own signal.
+  runNonce = 0,
   controls,
   telemetry,
   status,
@@ -89,7 +92,7 @@ export default function ManeuverBot({
     })
 
     return () => releaseControls(controls)
-  }, [controls, maneuver, status])
+  }, [controls, maneuver, runNonce, status])
 
   useFrame((_, delta) => {
     const state = run.current
@@ -121,6 +124,11 @@ export default function ManeuverBot({
         state.elapsed = 0
         readout.phase = 'run'
         readout.runs += 1
+        // Per run, not per selection: in loop mode the arming effect does not fire again,
+        // and a verdict carried over from the first iteration would hide a script that has
+        // stopped working since.
+        readout.matchedSeconds = 0
+        readout.matched = false
       }
       state.previousSinceReset = flight.sinceReset
       return

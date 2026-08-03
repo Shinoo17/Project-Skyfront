@@ -44,11 +44,17 @@ export default function DevTestFlightRoute() {
   // flight telemetry uses, so a running demo re-renders nothing.
   const [maneuverId, setManeuverId] = useState(null)
   const [botLoop, setBotLoop] = useState(false)
+  // Selecting the manoeuvre that is already selected does not change its identity, so a
+  // replay needs its own signal for the bot to re-arm on.
+  const [runNonce, setRunNonce] = useState(0)
   const botStatus = useRef(createBotStatus())
   const maneuver = getManeuver(maneuverId)
 
+  const replayManeuver = useCallback(() => setRunNonce((value) => value + 1), [])
+
   const selectManeuver = useCallback((id) => {
     setManeuverId(id)
+    setRunNonce((value) => value + 1)
     // A demonstration that leaves a static observer post behind is not a demonstration.
     // One-way on purpose: stopping the demo leaves the camera where the developer can see
     // it rather than snapping the framing away from them a second time.
@@ -97,6 +103,7 @@ export default function DevTestFlightRoute() {
             recenterId={recenterId}
             track={track}
             maneuver={maneuver}
+            runNonce={runNonce}
             botStatus={botStatus}
             botLoop={botLoop}
             onRequestReset={reset}
@@ -131,6 +138,7 @@ export default function DevTestFlightRoute() {
           status={botStatus}
           activeId={maneuverId}
           onSelect={selectManeuver}
+          onReplay={replayManeuver}
           onStop={stopManeuver}
           loop={botLoop}
           onLoopChange={setBotLoop}

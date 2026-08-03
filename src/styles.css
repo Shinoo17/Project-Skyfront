@@ -2555,6 +2555,21 @@ the same surface; only the content differs.
   flex: 1 1 auto;
 }
 
+/*
+Both glyphs ship on every row and CSS picks one, so the panel's animation frame can swap
+play for stop by toggling a class instead of re-rendering the list.
+*/
+.demo-list button .demo-icon-stop,
+.demo-list button.is-on .demo-icon-play,
+.demo-list button.is-on.is-done .demo-icon-stop {
+  display: none;
+}
+
+.demo-list button.is-on .demo-icon-stop,
+.demo-list button.is-on.is-done .demo-icon-play {
+  display: block;
+}
+
 /* The regime the script claims. Quiet — it is a footnote until the verdict line uses it. */
 .demo-list button em {
   font-size: 8px;

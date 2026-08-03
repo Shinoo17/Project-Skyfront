@@ -9,7 +9,7 @@ export default [
   // linting it only ever reports someone else's 188 problems.
   { ignores: ['dist', 'public/basis', 'example'] },
   {
-    files: ['**/*.{js,jsx}'],
+    files: ['**/*.{js,jsx,mjs}'],
     plugins: {
       react,
       'react-hooks': reactHooks,
@@ -36,5 +36,11 @@ export default [
       'react/prop-types': 'off',
       'react/no-unknown-property': 'off',
     },
+  },
+
+  // Everything in scripts/ runs under Node, not in the page.
+  {
+    files: ['scripts/**/*.{js,mjs}'],
+    languageOptions: { globals: globals.node },
   },
 ]

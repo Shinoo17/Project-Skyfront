@@ -21,6 +21,7 @@ export default function ManeuverPanel({
   status,
   activeId,
   onSelect,
+  onReplay,
   onStop,
   loop,
   onLoopChange,
@@ -65,6 +66,10 @@ export default function ManeuverPanel({
         const text = value.restarts ? `${value.restarts} restart(s)` : ''
         if (nodes.restarts.textContent !== text) nodes.restarts.textContent = text
       }
+      // A finished run puts the play glyph back on the button it is sitting on, because
+      // that is what clicking it now does. The swap is CSS on a class rather than a React
+      // re-render, so nothing about the tree changes sixty times a second.
+      if (nodes.active) nodes.active.classList.toggle('is-done', value.phase === 'done')
     }
     request = window.requestAnimationFrame(paint)
     return () => window.cancelAnimationFrame(request)
@@ -75,22 +80,30 @@ export default function ManeuverPanel({
       <p className="dev-panel-title">MANOEUVRE DEMOS</p>
 
       <ul className="demo-list">
-        {maneuvers.map((maneuver) => (
-          <li key={maneuver.id}>
-            <button
-              type="button"
-              className={maneuver.id === activeId ? 'is-on' : ''}
-              aria-pressed={maneuver.id === activeId}
-              onClick={() => onSelect(maneuver.id === activeId ? null : maneuver.id)}
-            >
-              {maneuver.id === activeId
-                ? <Square size={12} strokeWidth={2.2} />
-                : <Play size={12} strokeWidth={2.2} />}
-              <span>{maneuver.name}</span>
-              {maneuver.expect && <em>{maneuver.expect}</em>}
-            </button>
-          </li>
-        ))}
+        {maneuvers.map((maneuver) => {
+          const isActive = maneuver.id === activeId
+          return (
+            <li key={maneuver.id}>
+              <button
+                type="button"
+                className={isActive ? 'is-on' : ''}
+                aria-pressed={isActive}
+                ref={isActive ? (node) => { dom.current.active = node } : undefined}
+                onClick={() => {
+                  if (!isActive) return onSelect(maneuver.id)
+                  // Clicking the one that is already selected stops it, unless it has
+                  // finished — then it flies it again.
+                  return status.current.phase === 'done' ? onReplay() : onSelect(null)
+                }}
+              >
+                <Play size={12} strokeWidth={2.2} className="demo-icon-play" aria-hidden="true" />
+                <Square size={12} strokeWidth={2.2} className="demo-icon-stop" aria-hidden="true" />
+                <span>{maneuver.name}</span>
+                {maneuver.expect && <em>{maneuver.expect}</em>}
+              </button>
+            </li>
+          )
+        })}
       </ul>
 
       <div className="demo-panel-buttons">

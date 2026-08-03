@@ -142,6 +142,7 @@ export default function DevFlightScene({
   recenterId = 0,
   track = false,
   maneuver = null,
+  runNonce = 0,
   botStatus,
   botLoop = false,
   onRequestReset,
@@ -205,6 +206,7 @@ export default function DevFlightScene({
       {botStatus && (
         <ManeuverBot
           maneuver={maneuver}
+          runNonce={runNonce}
           controls={controls}
           telemetry={telemetry}
           status={botStatus}
