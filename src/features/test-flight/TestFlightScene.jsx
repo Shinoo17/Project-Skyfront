@@ -52,11 +52,24 @@ const DOWN = new Vector3(0, -1, 0)
 const CHASE_CAMERA_OFFSET = new Vector3(-22, 7, 0)
 const CHASE_CAMERA_LOOK_AHEAD = 16
 const BASE_FOV = 48
+const AFTERBURNER_SHAKE = 0.05
 
 // A chase camera that copies the full aircraft bank makes the pitch ladder sweep across
 // the whole HUD during a turn. Following only part of the bank keeps the sightline calm
 // while the ladder and terrain remain registered through the same camera.
+//
+// The other part of the reference — world up projected across the nose — is only defined
+// while the jet is roughly upright and the nose is off the vertical. Straight up it is a
+// zero vector, and it reverses through 180 degrees crossing the top of a loop; inverted it
+// points opposite the airframe's own up. Blending toward it there is what used to roll the
+// camera over itself. So the level reference is faded out over both, and what is left is
+// the airframe's own up: full bank follow through the top of a loop and through inverted
+// flight, which is continuous, and back to the calm sightline as soon as it means anything
+// again. CAMERA_VERTICAL_FADE is on |nose up component|, CAMERA_INVERTED_FADE on the
+// airframe up's world Y.
 const CAMERA_BANK_FOLLOW = 0.35
+const CAMERA_VERTICAL_FADE = [0.6, 0.95]
+const CAMERA_INVERTED_FADE = [-0.1, 0.4]
 
 // Height above the terrain is a downward raycast against the whole range mesh, which is
 // far too expensive to run per frame. Sampling at 10 Hz and easing toward the sample
@@ -252,6 +265,7 @@ function FlightAircraft({
     cameraTarget: new Vector3(),
     cameraTranslation: new Vector3(),
     cameraUp: new Vector3(),
+    cameraLook: new Vector3(),
     levelUp: new Vector3(),
     attitudeCross: new Vector3(),
     rayOrigin: new Vector3(),
@@ -440,15 +454,30 @@ function FlightAircraft({
       .addScaledVector(current.forward, -LOCAL_UP.dot(current.forward))
     if (current.levelUp.lengthSq() < 0.0001) current.levelUp.copy(LOCAL_UP)
     current.levelUp.normalize()
+    // How much of the level reference is worth using. Identically 1 - CAMERA_BANK_FOLLOW in
+    // ordinary flight, faded to nothing where world up stops being a usable roll reference.
+    const levelWeight = (1 - CAMERA_BANK_FOLLOW)
+      * (1 - MathUtils.smoothstep(Math.abs(current.forward.y), ...CAMERA_VERTICAL_FADE))
+      * MathUtils.smoothstep(current.up.y, ...CAMERA_INVERTED_FADE)
     current.cameraUp
-      .copy(current.levelUp)
-      .lerp(current.up, CAMERA_BANK_FOLLOW)
+      .copy(current.up)
+      .lerp(current.levelUp, levelWeight)
       .normalize()
     current.attitudeCross.crossVectors(current.levelUp, current.up)
 
     const cameraBlend = 1 - Math.exp(-4.5 * step)
     camera.position.lerp(current.cameraPosition, cameraBlend)
     camera.up.lerp(current.cameraUp, cameraBlend * 0.65).normalize()
+    // lookAt builds the camera basis by crossing the sightline with up, so an up that has
+    // lagged into line with the sightline degenerates the whole basis. Take the component
+    // across the sightline before handing it over and that can never happen.
+    current.cameraLook.subVectors(current.cameraTarget, camera.position)
+    if (current.cameraLook.lengthSq() > 1e-8) {
+      current.cameraLook.normalize()
+      camera.up.addScaledVector(current.cameraLook, -camera.up.dot(current.cameraLook))
+      if (camera.up.lengthSq() < 1e-6) camera.up.copy(current.cameraUp)
+      camera.up.normalize()
+    }
     camera.lookAt(current.cameraTarget)
 
     // Deceleration and speed read on the lens: the field of view stretches a little with
@@ -469,6 +498,7 @@ function FlightAircraft({
     const buffet = 0.2
       * MathUtils.smoothstep(Math.abs(aircraftState.aoaDeg), 24, 55)
       * MathUtils.clamp(speed / 30, 0, 1)
+      + AFTERBURNER_SHAKE * burner.level
     if (buffet > 0.01) {
       camera.position.x += (Math.random() - 0.5) * buffet
       camera.position.y += (Math.random() - 0.5) * buffet
@@ -573,7 +603,7 @@ function FlightWorld({ aircraft, controls, resetId, telemetry }) {
   const flightBounds = useMemo(() => ({
     x: rangeMetrics.halfWidth,
     z: rangeMetrics.halfDepth,
-    altitude: rangeMetrics.terrainHeight + 10460,
+    altitude: rangeMetrics.terrainHeight + 1460,
   }), [rangeMetrics])
 
   return (
