@@ -31,10 +31,19 @@ export default function TestFlightRoute() {
 
   const reset = useCallback(() => setResetId((value) => value + 1), [])
 
+  // The debug overlay is a real toggle, not a held control: it changes a handful of times
+  // per session, so it is the rare piece of flight UI that belongs in React state.
+  const [debug, setDebug] = useState(false)
+
   const keyActions = useMemo(() => ({
     KeyR: (event) => {
       event.preventDefault()
       setResetId((value) => value + 1)
+    },
+    KeyI: (event, { fieldFocused }) => {
+      if (fieldFocused) return
+      event.preventDefault()
+      setDebug((value) => !value)
     },
   }), [])
 
@@ -49,6 +58,7 @@ export default function TestFlightRoute() {
             controls={controls}
             resetId={resetId}
             telemetry={telemetry}
+            debug={debug}
           />
         </SceneErrorBoundary>
       </div>
@@ -61,6 +71,7 @@ export default function TestFlightRoute() {
           telemetry={telemetry}
           envelope={envelope}
           onReset={reset}
+          debug={debug}
         />
       </div>
 

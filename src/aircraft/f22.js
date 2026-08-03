@@ -247,9 +247,78 @@ const f22 = {
           afterburnerMach: 2.25,
         },
       },
-      pitchRate: 48,
-      rollRate: 66,
+      // Normal-mode body rate ceilings, degrees per second. High-AoA mode has its own
+      // pitch and roll ceilings in `maneuvering`.
+      pitchRate: 58,
+      rollRate: 120,
       yawRate: 42,
+
+      /*
+      Tuning for the 6-DOF-lite flight model in features/flight/flightModel.js. Speeds are
+      km/h (the pilot's unit); accelerations are world units per second squared at the
+      reference speed; alignment, damping, and response values are per-second gains.
+      Everything here is scaled to the compressed range, not to the real atmosphere.
+      */
+      maneuvering: {
+        gravity: 9,
+        referenceSpeed: 50,
+        liftGain: 175,
+        sideForceGain: 55,
+
+        stallAoADeg: 26,
+        postStallLiftFloor: 0.35,
+        normalAoALimitDeg: 24,
+        highAoALimitDeg: 78,
+        aoaLimitSoftnessDeg: 9,
+        negativeAoAFactor: 0.55,
+
+        highAoAPitchRateDeg: 120,
+        highAoARollRateDeg: 60,
+        maxG: 9,
+        maxNegativeG: 3.5,
+
+        // The Cobra window sits where the physics puts it: fast enough that there is
+        // energy to trade, slow enough that lift can no longer swing the flight path
+        // after the nose. Above it the same stick is just a very hard pull.
+        cobraPitchBoost: 1.35,
+        cobraMinKmh: 380,
+        cobraMaxKmh: 820,
+
+        // Pedal turns exist only nose-high and slow; the boost multiplies yaw authority
+        // inside that window and nowhere else.
+        pedalTurnMaxKmh: 560,
+        pedalTurnMinPitchDeg: 55,
+        pedalTurnYawBoost: 2.4,
+
+        inputResponse: 7,
+        pitchResponse: 5.5,
+        rollResponse: 9,
+        yawResponse: 3.5,
+
+        authorityRefSpeed: 34,
+        postStallSurfaceLoss: 0.6,
+
+        thrustVectorEffectiveness: 0.55,
+        maxThrustVectorDeg: 20,
+        thrustVectorResponse: 8,
+        normalThrustVectorFactor: 0.35,
+
+        noseAlignment: 1.6,
+        highAoANoseAlignment: 0.22,
+        velocityAlignment: 1.5,
+        highAoAVelocityAlignment: 0.12,
+        sideslipDamping: 1.4,
+        autoLevelGain: 0.35,
+        spinDamping: 2.2,
+
+        aoaDragGain: 26,
+        highAoADragMultiplier: 1.6,
+        sideslipDragGain: 9,
+        airBrakeDrag: 12,
+        flapsDrag: 4,
+
+        recoveryMinKmh: 320,
+      },
     },
   },
 

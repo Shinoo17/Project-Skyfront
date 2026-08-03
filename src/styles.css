@@ -1620,6 +1620,37 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   min-height: 50px;
 }
 
+/* The two flight-mode holds — air brake and High-AoA — sit on their own wider keys:
+   they are the pair the thumb rests on during a manoeuvre. */
+.deck-row.is-modes {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.deck-row.is-modes .deck-key {
+  min-height: 40px;
+}
+
+/* The flight-model debug readout: one monospace block off the sightline, phosphor on
+   glass like everything else, and invisible to the pointer. */
+.hud-debug {
+  position: absolute;
+  top: 84px;
+  left: 18px;
+  margin: 0;
+  padding: 10px 13px;
+  border: 1px solid var(--hud-green-strong);
+  border-radius: 2px;
+  background: rgba(6, 10, 12, 0.74);
+  color: var(--hud-green, #62ff84);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  letter-spacing: 0.04em;
+  white-space: pre;
+  pointer-events: none;
+  z-index: 30;
+}
+
 .deck-throttle {
   padding: 12px 13px 13px;
   border: 1px solid var(--hud-green-strong);

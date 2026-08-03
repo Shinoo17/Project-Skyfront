@@ -1,15 +1,14 @@
 import { useGLTF } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
+  ArrowHelper,
   Box3,
   Color,
-  Euler,
   Fog,
   FrontSide,
   MathUtils,
   Mesh,
   PerspectiveCamera,
-  Quaternion,
   Raycaster,
   Vector3,
 } from 'three'
@@ -23,18 +22,24 @@ import { getKTX2Loader, withKTX2 } from '../../three/ktx2'
 import { applyClosedRestPose } from '../../three/pose'
 import ExhaustPlumes from '../flight/ExhaustPlumes'
 import {
+  FLIGHT_FIXED_STEP,
+  createFlightState,
+  resetFlightState,
+  stepFlight,
+} from '../flight/flightModel'
+import {
   createAfterburnerState,
-  readAccelerationKmhPerSecond,
   readMach,
   readTargetAirspeedKmh,
-  readWorldSpeed,
   resetAfterburnerState,
   stepAfterburner,
 } from '../flight/performance'
 import { applySurfaceTargets } from '../flight/surfaces'
 import {
   readAfterburnerCommand,
+  readAirBrake,
   readAxes,
+  readHighAoA,
   readThrottleDirection,
 } from '../flight/useFlightControls'
 
@@ -46,6 +51,7 @@ const LOCAL_UP = new Vector3(0, 1, 0)
 const DOWN = new Vector3(0, -1, 0)
 const CHASE_CAMERA_OFFSET = new Vector3(-22, 7, 0)
 const CHASE_CAMERA_LOOK_AHEAD = 16
+const BASE_FOV = 48
 
 // A chase camera that copies the full aircraft bank makes the pitch ladder sweep across
 // the whole HUD during a turn. Following only part of the bank keeps the sightline calm
@@ -140,6 +146,51 @@ function Terrain({ scene, groupRef }) {
   )
 }
 
+// World-space force and state arrows, driven straight off the telemetry the flight loop
+// publishes. Rendered only while the debug overlay is up; costs nothing otherwise.
+const DEBUG_ARROWS = [
+  { key: 'forward', color: 0x37d5ff, scale: 24, fixed: true },
+  { key: 'velocity', color: 0x62ff84, scale: 0.45 },
+  { key: 'liftForce', color: 0x5a8dff, scale: 1.4 },
+  { key: 'dragForce', color: 0xff5a5a, scale: 1.4 },
+  { key: 'thrustForce', color: 0xffb347, scale: 1.4 },
+]
+
+const debugDirection = new Vector3()
+
+function DebugVectors({ telemetry }) {
+  const arrows = useMemo(
+    () => DEBUG_ARROWS.map((spec) => ({
+      spec,
+      helper: new ArrowHelper(FORWARD, new Vector3(), 1, spec.color, 2.2, 1.4),
+    })),
+    [],
+  )
+
+  useFrame(() => {
+    const state = telemetry.current
+    arrows.forEach(({ spec, helper }) => {
+      const vector = state[spec.key]
+      const usable = state.live && state.position && vector && vector.lengthSq() > 1e-4
+      helper.visible = Boolean(usable)
+      if (!usable) return
+      helper.position.copy(state.position)
+      helper.setDirection(debugDirection.copy(vector).normalize())
+      helper.setLength(
+        spec.fixed ? spec.scale : MathUtils.clamp(vector.length() * spec.scale, 3, 46),
+        2.2,
+        1.4,
+      )
+    })
+  })
+
+  return (
+    <group>
+      {arrows.map(({ spec, helper }) => <primitive key={spec.key} object={helper} />)}
+    </group>
+  )
+}
+
 function FlightAircraft({
   aircraft,
   scene,
@@ -188,11 +239,13 @@ function FlightAircraft({
   )
 
   const flight = useRef({
-    position: new Vector3(-260, spawnAltitude, 0),
+    // The 6-DOF-lite state — position, attitude, velocity, and body rates — lives in the
+    // flight model. Everything else here is presentation: camera scratch, ground samples,
+    // FPS accounting.
+    model: createFlightState(),
+    accumulator: 0,
+    spawn: new Vector3(-260, spawnAltitude, 0),
     previousPosition: new Vector3(-260, spawnAltitude, 0),
-    orientation: new Quaternion(),
-    rotationStep: new Quaternion(),
-    rotationEuler: new Euler(0, 0, 0, 'XYZ'),
     forward: new Vector3(),
     up: new Vector3(),
     cameraPosition: new Vector3(),
@@ -206,7 +259,9 @@ function FlightAircraft({
     groundHeight: 0,
     groundSample: 0,
     groundSampledAt: -1,
-    speedKmh: 0,
+    decel: 0,
+    previousSpeed: 0,
+    fov: BASE_FOV,
     fps: 0,
     fpsFrames: 0,
     fpsSampledAt: 0,
@@ -223,30 +278,32 @@ function FlightAircraft({
   const resetFlight = (cause, keepThrottle = true) => {
     const state = flight.current
     resetAfterburnerState(reheat.current)
-    state.position.set(-260, spawnAltitude, 0)
-    state.previousPosition.copy(state.position)
-    state.orientation.identity()
+    state.spawn.set(-260, spawnAltitude, 0)
+    if (!keepThrottle) controls.current.throttle = envelope.idleThrottle
+    resetFlightState(
+      state.model,
+      state.spawn,
+      readTargetAirspeedKmh(controls.current.throttle, spawnAltitude, 0, envelope),
+      envelope,
+    )
+    state.previousPosition.copy(state.model.position)
+    state.accumulator = 0
     state.groundHeight = 0
     state.groundSample = 0
     state.groundSampledAt = -1
+    state.decel = 0
+    state.previousSpeed = state.model.velocity.length()
     state.resetCause = cause
-    if (!keepThrottle) controls.current.throttle = envelope.idleThrottle
-    state.speedKmh = readTargetAirspeedKmh(
-      controls.current.throttle,
-      spawnAltitude,
-      0,
-      envelope,
-    )
     if (group.current) {
-      group.current.position.copy(state.position)
+      group.current.position.copy(state.model.position)
       group.current.quaternion.identity()
     }
     state.cameraPosition
       .copy(CHASE_CAMERA_OFFSET)
-      .applyQuaternion(state.orientation)
-      .add(state.position)
+      .applyQuaternion(state.model.orientation)
+      .add(state.model.position)
     state.cameraTarget
-      .copy(state.position)
+      .copy(state.model.position)
       .addScaledVector(FORWARD, CHASE_CAMERA_LOOK_AHEAD)
     camera.position.copy(state.cameraPosition)
     camera.up.copy(LOCAL_UP)
@@ -267,10 +324,11 @@ function FlightAircraft({
       flight.current.resetAt = state.clock.elapsedTime
     }
 
-    const step = Math.min(delta, 0.05)
+    // Frame delta is capped so a stalled tab cannot feed the physics a huge step; the
+    // model itself always integrates at FLIGHT_FIXED_STEP regardless of refresh rate.
+    const step = Math.min(delta, 0.1)
     const pressed = controls.current.pressed
     const input = readAxes(pressed)
-    const { pitch, roll, yaw } = input
     const throttleDirection = readThrottleDirection(pressed)
     controls.current.throttle = MathUtils.clamp(
       controls.current.throttle + (throttleDirection * step * envelope.throttleRate),
@@ -284,36 +342,27 @@ function FlightAircraft({
     }, envelope)
 
     const current = flight.current
-    current.rotationEuler.set(
-      roll * MathUtils.degToRad(envelope.rollRate) * step,
-      yaw * MathUtils.degToRad(envelope.yawRate) * step,
-      pitch * MathUtils.degToRad(envelope.pitchRate) * step,
-      'XYZ',
-    )
-    current.rotationStep.setFromEuler(current.rotationEuler)
-    current.orientation.multiply(current.rotationStep).normalize()
+    const aircraftState = current.model
 
-    const targetSpeedKmh = readTargetAirspeedKmh(
-      controls.current.throttle,
-      current.position.y,
-      burner.level,
-      envelope,
-    )
-    const acceleration = readAccelerationKmhPerSecond(
-      current.speedKmh,
-      targetSpeedKmh,
-      burner.level,
-      current.position.y,
-      envelope,
-    )
-    current.speedKmh += MathUtils.clamp(
-      targetSpeedKmh - current.speedKmh,
-      -acceleration * step,
-      acceleration * step,
-    )
-    const worldSpeed = readWorldSpeed(current.speedKmh, envelope)
-    current.forward.copy(FORWARD).applyQuaternion(current.orientation).normalize()
-    current.position.addScaledVector(current.forward, worldSpeed * step)
+    const command = {
+      pitch: input.pitch,
+      roll: input.roll,
+      yaw: input.yaw,
+      flaps: input.flaps,
+      throttle: controls.current.throttle,
+      airBrake: readAirBrake(pressed),
+      highAoA: readHighAoA(pressed),
+      burnerLevel: burner.level,
+    }
+
+    current.accumulator += step
+    while (current.accumulator >= FLIGHT_FIXED_STEP) {
+      stepFlight(aircraftState, command, envelope, FLIGHT_FIXED_STEP)
+      current.accumulator -= FLIGHT_FIXED_STEP
+    }
+
+    const speed = aircraftState.velocity.length()
+    current.forward.copy(FORWARD).applyQuaternion(aircraftState.orientation).normalize()
 
     const now = state.clock.elapsedTime
     if (!current.fpsSampledAt) current.fpsSampledAt = now
@@ -327,10 +376,10 @@ function FlightAircraft({
 
     if (terrainRef.current && now - current.groundSampledAt > GROUND_SAMPLE_INTERVAL) {
       current.groundSampledAt = now
-      current.rayOrigin.copy(current.position).setY(current.position.y + 4)
+      current.rayOrigin.copy(aircraftState.position).setY(aircraftState.position.y + 4)
       current.raycaster.set(current.rayOrigin, DOWN)
       current.raycaster.near = 0
-      current.raycaster.far = current.position.y + 60
+      current.raycaster.far = aircraftState.position.y + 60
       const hit = current.raycaster.intersectObject(terrainRef.current, true)[0]
       current.groundSample = hit ? hit.point.y : 0
     }
@@ -339,14 +388,15 @@ function FlightAircraft({
       current.groundSample,
       1 - Math.exp(-9 * step),
     )
-    const groundClearance = current.position.y - current.groundHeight
+    const groundClearance = aircraftState.position.y - current.groundHeight
 
     const resetCause =
-      Math.abs(current.position.x) > flightBounds.x || Math.abs(current.position.z) > flightBounds.z
+      Math.abs(aircraftState.position.x) > flightBounds.x
+        || Math.abs(aircraftState.position.z) > flightBounds.z
         ? 'range'
-        : groundClearance < CRASH_CLEARANCE || current.position.y < 8
+        : groundClearance < CRASH_CLEARANCE || aircraftState.position.y < 8
           ? 'terrain'
-          : current.position.y > flightBounds.altitude
+          : aircraftState.position.y > flightBounds.altitude
             ? 'ceiling'
             : ''
     if (resetCause) {
@@ -354,31 +404,37 @@ function FlightAircraft({
       current.resetAt = now
     }
 
-    group.current.position.copy(current.position)
-    group.current.quaternion.copy(current.orientation)
+    group.current.position.copy(aircraftState.position)
+    group.current.quaternion.copy(aircraftState.orientation)
 
-    // The nozzles are not driven out here: the chase camera never frames them closely
-    // enough to pay for the extra hinge work.
+    // The surfaces animate from the FCC's smoothed stick, so they move with the same
+    // response the airframe answers to. The nozzles are still not driven out here: the
+    // chase camera never frames them closely enough to pay for the extra hinge work.
     applySurfaceTargets(
       surfaces,
-      aircraft.mixControlSurfaces(input),
+      aircraft.mixControlSurfaces({
+        pitch: aircraftState.input.pitch,
+        roll: aircraftState.input.roll,
+        yaw: aircraftState.input.yaw,
+        flaps: input.flaps,
+      }),
       1 - Math.exp(-10 * step),
     )
 
     current.cameraPosition
       .copy(CHASE_CAMERA_OFFSET)
-      .applyQuaternion(current.orientation)
-      .add(current.position)
+      .applyQuaternion(aircraftState.orientation)
+      .add(aircraftState.position)
     current.cameraTarget
-      .copy(current.position)
+      .copy(aircraftState.position)
       .addScaledVector(current.forward, CHASE_CAMERA_LOOK_AHEAD)
     // Carry the camera by the aircraft's translation before easing the relative chase
     // offset. Without this, high-Mach flight adds speed-dependent lag and makes the jet
     // shrink away from the player even though the configured camera distance is fixed.
-    current.cameraTranslation.subVectors(current.position, current.previousPosition)
+    current.cameraTranslation.subVectors(aircraftState.position, current.previousPosition)
     camera.position.add(current.cameraTranslation)
-    current.previousPosition.copy(current.position)
-    current.up.copy(LOCAL_UP).applyQuaternion(current.orientation).normalize()
+    current.previousPosition.copy(aircraftState.position)
+    current.up.copy(LOCAL_UP).applyQuaternion(aircraftState.orientation).normalize()
     current.levelUp
       .copy(LOCAL_UP)
       .addScaledVector(current.forward, -LOCAL_UP.dot(current.forward))
@@ -395,6 +451,30 @@ function FlightAircraft({
     camera.up.lerp(current.cameraUp, cameraBlend * 0.65).normalize()
     camera.lookAt(current.cameraTarget)
 
+    // Deceleration and speed read on the lens: the field of view stretches a little with
+    // pace and pinches under hard braking, and deep AoA puts a faint buffet on the
+    // camera. All of it is feedback for forces the model is really applying — none of it
+    // feeds back into the physics.
+    const rawDecel = step > 0 ? (current.previousSpeed - speed) / step : 0
+    current.previousSpeed = speed
+    current.decel = MathUtils.lerp(current.decel, Math.max(rawDecel, 0), 1 - Math.exp(-5 * step))
+    const targetFov = BASE_FOV
+      + (7 * MathUtils.clamp((speed - 45) / 28, 0, 1))
+      - (8 * MathUtils.clamp(current.decel / 22, 0, 1))
+    current.fov = MathUtils.lerp(current.fov, targetFov, 1 - Math.exp(-3.5 * step))
+    if (Math.abs(camera.fov - current.fov) > 0.01 && camera instanceof PerspectiveCamera) {
+      camera.fov = current.fov
+      camera.updateProjectionMatrix()
+    }
+    const buffet = 0.2
+      * MathUtils.smoothstep(Math.abs(aircraftState.aoaDeg), 24, 55)
+      * MathUtils.clamp(speed / 30, 0, 1)
+    if (buffet > 0.01) {
+      camera.position.x += (Math.random() - 0.5) * buffet
+      camera.position.y += (Math.random() - 0.5) * buffet
+      camera.position.z += (Math.random() - 0.5) * buffet
+    }
+
     // Published every frame straight into the caller's ref. Nothing here calls setState:
     // the HUD reads this object from its own animation frame and writes the DOM directly,
     // so a 60 Hz range does not re-render the React tree 60 times a second.
@@ -402,10 +482,14 @@ function FlightAircraft({
     // Stable references, assigned rather than copied: the HUD projects the ladder through
     // this camera and off this position, so it must see the same objects the scene renders.
     readout.camera = camera
-    readout.position = current.position
+    readout.position = aircraftState.position
     readout.forward = current.forward
+    readout.velocity = aircraftState.velocity
+    readout.liftForce = aircraftState.liftForce
+    readout.dragForce = aircraftState.dragForce
+    readout.thrustForce = aircraftState.thrustForce
     readout.heading = MathUtils.euclideanModulo(
-      MathUtils.radToDeg(Math.atan2(-current.forward.z, current.forward.x)),
+      MathUtils.radToDeg(Math.atan2(current.forward.z, current.forward.x)),
       360,
     )
     readout.pitch = MathUtils.radToDeg(Math.asin(MathUtils.clamp(current.forward.y, -1, 1)))
@@ -413,12 +497,12 @@ function FlightAircraft({
       current.attitudeCross.dot(current.forward),
       current.levelUp.dot(current.up),
     ))
-    readout.altitude = Math.max(0, current.position.y)
+    readout.altitude = Math.max(0, aircraftState.position.y)
     readout.groundClearance = Math.max(0, groundClearance)
-    readout.ceiling = Math.max(0, flightBounds.altitude - current.position.y)
+    readout.ceiling = Math.max(0, flightBounds.altitude - aircraftState.position.y)
     readout.edge = Math.max(0, Math.min(
-      flightBounds.x - Math.abs(current.position.x),
-      flightBounds.z - Math.abs(current.position.z),
+      flightBounds.x - Math.abs(aircraftState.position.x),
+      flightBounds.z - Math.abs(aircraftState.position.z),
     ))
     readout.fps = current.fps
     readout.afterburner = burner.lit
@@ -432,13 +516,23 @@ function FlightAircraft({
       : burner.lit
         ? 'engaged'
         : 'off'
-    readout.mach = readMach(current.speedKmh, current.position.y, envelope)
-    readout.speed = current.speedKmh
-    readout.verticalSpeed = current.forward.y * worldSpeed
+    readout.mach = readMach(aircraftState.speedKmh, aircraftState.position.y, envelope)
+    readout.speed = aircraftState.speedKmh
+    readout.verticalSpeed = aircraftState.velocity.y
     readout.throttle = controls.current.throttle
     readout.flaps = input.flaps
-    readout.positionX = MathUtils.clamp(current.position.x / flightBounds.x, -1, 1)
-    readout.positionZ = MathUtils.clamp(current.position.z / flightBounds.z, -1, 1)
+    readout.aoa = aircraftState.aoaDeg
+    readout.sideslip = aircraftState.sideslipDeg
+    readout.gLoad = aircraftState.gLoad
+    readout.pitchRate = MathUtils.radToDeg(aircraftState.angularVelocity.z)
+    readout.rollRate = MathUtils.radToDeg(aircraftState.angularVelocity.x)
+    readout.yawRate = MathUtils.radToDeg(aircraftState.angularVelocity.y)
+    readout.highAoA = aircraftState.highAoA
+    readout.airBrake = aircraftState.airBrake
+    readout.thrustVector = aircraftState.thrustVectorDeg
+    readout.maneuver = aircraftState.maneuver
+    readout.positionX = MathUtils.clamp(aircraftState.position.x / flightBounds.x, -1, 1)
+    readout.positionZ = MathUtils.clamp(aircraftState.position.z / flightBounds.z, -1, 1)
     readout.resetCause = current.resetCause
     readout.sinceReset = now - current.resetAt
     readout.live = true
@@ -505,6 +599,7 @@ export default function TestFlightScene({
   resetId,
   telemetry,
   aircraftId,
+  debug = false,
 }) {
   const aircraft = getAircraft(aircraftId)
   const graphics = useGraphicsProfile('medium')
@@ -514,7 +609,7 @@ export default function TestFlightScene({
       frameloop="demand"
       dpr={graphics.dpr}
       shadows={graphics.shadows}
-      camera={{ position: [-286, 480, 0], fov: 48, near: 0.3, far: 3600 }}
+      camera={{ position: [-286, 480, 0], fov: BASE_FOV, near: 0.3, far: 3600 }}
       gl={{
         antialias: graphics.antialias,
         alpha: false,
@@ -539,6 +634,7 @@ export default function TestFlightScene({
           telemetry={telemetry}
         />
       </Suspense>
+      {debug && <DebugVectors telemetry={telemetry} />}
       <SyncedFrameLoop targetFps={graphics.targetFps} />
     </Canvas>
   )

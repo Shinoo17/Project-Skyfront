@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  ArrowUpRight,
   ChevronsDown,
   Flame,
   Gauge,
@@ -19,6 +20,7 @@ import {
   RotateCcw,
   RotateCw,
   TriangleAlert,
+  Wind,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -30,6 +32,16 @@ const RESET_CAPTIONS = {
   manual: 'RANGE RESET',
   range: 'RANGE EDGE · RESET',
   terrain: 'TERRAIN · RANGE RESET',
+}
+
+// The detector's regimes, named the way a pilot would call them. Only the ones worth an
+// advisory line — 'normal' and 'high-aoa' are ordinary flying, not events.
+const MANEUVER_CAPTIONS = {
+  cobra: 'COBRA',
+  'j-turn': 'J-TURN',
+  'pedal-turn': 'PEDAL TURN',
+  'post-stall': 'POST-STALL',
+  recovery: 'RECOVERING',
 }
 
 // A retina backing store for a canvas that repaints every frame is the difference between
@@ -62,7 +74,12 @@ function readAdvisory(telemetry) {
   if (telemetry.afterburnerState === 'depleted') {
     return { key: 'reheat-out', label: 'REHEAT DEPLETED · COOLING', tone: 'caution' }
   }
+  // A named manoeuvre outranks housekeeping advisories: the detector reads the physics,
+  // and calling the regime is the cheapest feedback the range can give.
+  const maneuver = MANEUVER_CAPTIONS[telemetry.maneuver]
+  if (maneuver) return { key: `mnv-${telemetry.maneuver}`, label: maneuver, tone: 'caution' }
   if (telemetry.flaps) return { key: 'flaps', label: 'FLAPS DOWN', tone: 'caution' }
+  if (telemetry.highAoA) return { key: 'high-aoa', label: 'HIGH-AOA MODE', tone: 'caution' }
   return { key: 'clear', label: 'FLIGHT PATH CLEAR', tone: 'normal' }
 }
 
@@ -106,7 +123,27 @@ function HoldControl({ control, label, icon: Icon, controls, className, nodeRef,
   )
 }
 
-export default function FlightHud({ controls, telemetry, envelope, onReset }) {
+// The debug readout as one preformatted block: a dozen numbers that change every frame
+// belong in a single text write, not a dozen DOM nodes.
+function formatDebug(value) {
+  if (!value.live) return 'FLIGHT DEBUG\nstandby'
+  const row = (label, text) => `${label.padEnd(9)}${text}`
+  return [
+    'FLIGHT DEBUG',
+    row('SPD', `${value.speed.toFixed(0)} km/h  M${value.mach.toFixed(2)}`),
+    row('ALT', `${value.altitude.toFixed(0)}  V/S ${value.verticalSpeed.toFixed(1)}`),
+    row('AOA', `${value.aoa.toFixed(1)}°  SLIP ${value.sideslip.toFixed(1)}°`),
+    row('G', value.gLoad.toFixed(2)),
+    row('RATE', `P${value.pitchRate.toFixed(0)} R${value.rollRate.toFixed(0)} Y${value.yawRate.toFixed(0)} °/s`),
+    row('THR', `${Math.round(value.throttle * 100)}%  A/B ${value.afterburnerState}`),
+    row('TVC', `${value.thrustVector.toFixed(1)}°`),
+    row('MODE', `${value.highAoA ? 'HIGH-AOA' : 'normal'}${value.airBrake ? ' +brake' : ''}`),
+    row('MNVR', value.maneuver),
+    row('FPS', String(value.fps || 0)),
+  ].join('\n')
+}
+
+export default function FlightHud({ controls, telemetry, envelope, onReset, debug = false }) {
   const dom = useRef({})
   const [advisory, setAdvisory] = useState(() => readAdvisory(EMPTY_TELEMETRY))
   const advisoryKey = useRef(advisory.key)
@@ -170,6 +207,7 @@ export default function FlightHud({ controls, telemetry, envelope, onReset }) {
         const rounded = Math.round(value.throttle * 100) / 100
         if (Number(nodes.slider.value) !== rounded) nodes.slider.value = String(rounded)
       }
+      if (nodes.debug) setText(nodes.debug, formatDebug(value))
     }
 
     request = window.requestAnimationFrame(paint)
@@ -210,6 +248,12 @@ export default function FlightHud({ controls, telemetry, envelope, onReset }) {
         <output ref={(node) => { dom.current.fps = node }}>–</output>
       </div>
 
+      {debug && (
+        <pre className="hud-debug" aria-label="Flight model debug readout" ref={(node) => { dom.current.debug = node }}>
+          FLIGHT DEBUG
+        </pre>
+      )}
+
       <p className={`hud-advisory is-${advisory.tone}`} role="status">
         {advisory.tone === 'alert' && <TriangleAlert size={15} strokeWidth={2.2} aria-hidden="true" />}
         <span>{advisory.label}</span>
@@ -248,6 +292,20 @@ export default function FlightHud({ controls, telemetry, envelope, onReset }) {
             </HoldControl>
           </div>
 
+          <div className="deck-row is-modes">
+            <HoldControl control="air-brake" label="Hold for air brake" icon={Wind} controls={controls}>
+              Brake
+            </HoldControl>
+            <HoldControl
+              control="high-aoa"
+              label="Hold for high angle-of-attack mode"
+              icon={ArrowUpRight}
+              controls={controls}
+            >
+              High-AoA
+            </HoldControl>
+          </div>
+
           <div className="deck-throttle">
             <div className="deck-throttle-head">
               <span><Gauge size={14} strokeWidth={1.9} /> THROTTLE</span>
@@ -278,8 +336,11 @@ export default function FlightHud({ controls, telemetry, envelope, onReset }) {
         <kbd>Q</kbd><kbd>E</kbd><span>yaw</span>
         <kbd>W</kbd><kbd>S</kbd><span>throttle</span>
         <kbd>SHIFT</kbd><span>hold for afterburner</span>
+        <kbd>SPACE</kbd><span>air brake</span>
+        <kbd>ALT</kbd><span>high-AoA</span>
         <kbd>F</kbd><span>flaps</span>
         <kbd>R</kbd><span>reset</span>
+        <kbd>I</kbd><span>debug</span>
       </p>
     </div>
   )

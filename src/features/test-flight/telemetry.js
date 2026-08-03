@@ -17,6 +17,26 @@ aircraft is flying, which is the same condition `live` reports.
 */
 export const EMPTY_TELEMETRY = {
   altitude: 0,
+  // Airflow state from the flight model: angle of attack and sideslip in degrees, wing
+  // load factor in G, and body rates in degrees per second. `maneuver` is the detector's
+  // name for the current regime — it labels the physics, it never drives them.
+  aoa: 0,
+  sideslip: 0,
+  gLoad: 1,
+  pitchRate: 0,
+  rollRate: 0,
+  yawRate: 0,
+  highAoA: false,
+  airBrake: false,
+  thrustVector: 0,
+  maneuver: 'normal',
+  // Live Vector3, the true velocity — the flight path marker projects along this, which
+  // is what lets it drift away from the boresight at high AoA. Null until flying.
+  velocity: null,
+  // Live Vector3 accelerations for the debug arrows; null until flying.
+  liftForce: null,
+  dragForce: null,
+  thrustForce: null,
   // The burner publishes what it has worth reading: whether it is alight, how much of it
   // is alight, how much reserve is left to feed it, that reserve as the seconds of burn it
   // is actually worth, the seconds a burnt-out burner still owes before it will relight,

@@ -14,6 +14,9 @@ export const FLIGHT_BINDINGS = {
   KeyF: 'flaps',
   ShiftLeft: 'afterburner',
   ShiftRight: 'afterburner',
+  Space: 'air-brake',
+  AltLeft: 'high-aoa',
+  AltRight: 'high-aoa',
 }
 
 function axis(pressed, positive, negative) {
@@ -38,6 +41,16 @@ export function readThrottleDirection(pressed) {
 // the burner actually lights is the flight model's answer, not the keyboard's.
 export function readAfterburnerCommand(pressed) {
   return pressed.has('afterburner')
+}
+
+export function readAirBrake(pressed) {
+  return pressed.has('air-brake')
+}
+
+// The High-AoA modifier is a held mode switch, same as the burner: the flight control
+// computer decides what relaxing the limiters actually buys at the current energy state.
+export function readHighAoA(pressed) {
+  return pressed.has('high-aoa')
 }
 
 function isFieldFocused(event) {

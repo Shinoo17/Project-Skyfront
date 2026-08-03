@@ -279,17 +279,31 @@ export function createFlightHud(canvas) {
   }
 
   /*
-  One symbol on the nose, not two. The flight model integrates position straight along the
-  airframe's forward vector — no angle of attack, no sideslip — so the boresight and the
-  flight path are the same direction, and drawing both a gun cross and a flight path marker
-  would put two symbols on the same pixel and read as a rendering fault.
+  Two symbols now, because the flight model earned them: the boresight cross sits on the
+  nose, and the flight path marker rides the real velocity vector. In level flight they
+  overlap to within a couple of degrees of trim AoA; pull into a Cobra and the cross
+  climbs the glass while the marker stays on where the jet is actually going — the whole
+  manoeuvre, told by two symbols separating.
 
-  It is projected from a point far out along the nose rather than pinned to the centre of
-  the canvas, because the chase camera drifts behind the jet: pinned, the marker comes
-  adrift from the sightline exactly when the aircraft is manoeuvring.
+  Both are projected from points far out along their vectors rather than pinned to the
+  canvas, because the chase camera drifts behind the jet: pinned, they come adrift from
+  the sightline exactly when the aircraft is manoeuvring.
   */
-  function drawFlightPathMarker(state, layout) {
+  function drawBoresight(state, layout) {
     const point = project(scratch.copy(state.forward).multiplyScalar(4000).add(state.position))
+    if (!point) return
+
+    const { x: cx, y: cy } = point
+    const r = Math.max(layout.half * 0.02, 7)
+    line(cx - r, cy, cx + r, cy, 1.5, HUD_GREEN_DIM)
+    line(cx, cy - r, cx, cy + r, 1.5, HUD_GREEN_DIM)
+  }
+
+  function drawFlightPathMarker(state, layout) {
+    const along = state.velocity && state.velocity.lengthSq() > 1e-4
+      ? scratch.copy(state.velocity).normalize()
+      : scratch.copy(state.forward)
+    const point = project(along.multiplyScalar(4000).add(state.position))
     if (!point) return
 
     const { x: cx, y: cy } = point
@@ -449,7 +463,7 @@ export function createFlightHud(canvas) {
     // when the decks have reached in from both sides, three when they have dropped away
     // entirely and the outboard gauges have collapsed into digits, and nothing beyond the
     // two bars when the decks are clamped to the corners.
-    const depth = layout.tight ? 63 : layout.compact ? 82 : 22
+    const depth = layout.tight ? 86 : layout.compact ? 104 : 42
     // On a short frame the tapes reach far enough down that the last row would land past
     // the bezel. The block sits on the floor rather than through it.
     const first = Math.min(
@@ -481,9 +495,20 @@ export function createFlightHud(canvas) {
     const pitch = state.live ? signed(state.pitch) : '––'
     const bank = state.live ? signed(state.roll) : '––'
     const verticalSpeed = state.live ? signed(state.verticalSpeed) : '––'
+    // AoA and load factor join the attitude row: they are the two numbers a post-stall
+    // manoeuvre is flown by. AoA brightens once past the stall so the state is legible at
+    // a glance.
+    const aoa = state.live ? signed(state.aoa) : '––'
+    const g = state.live ? state.gLoad.toFixed(1) : '–.–'
+    const aoaColor = state.live && Math.abs(state.aoa) > 26 ? HUD_GREEN_CAUTION : HUD_GREEN_DIM
     // Stacked under the bars when the frame is crowded, beside them when it is not.
     const attitudeRow = layout.tight ? second + 21 : first
     text(`PITCH ${pitch}°   BANK ${bank}°`, right, attitudeRow, display(12), HUD_GREEN_DIM, align)
+    // Its own slot in every layout: under the flap row when the block is stacked, under
+    // the attitude row when the columns are side by side.
+    const aoaRow = layout.tight ? attitudeRow + 40 : layout.compact ? second + 80 : second
+    text(`α ${aoa}°   ${g}G${state.highAoA ? '   AOA MODE' : ''}${state.airBrake ? '   BRAKE' : ''}`,
+      right, aoaRow, display(12), aoaColor, align)
 
     // Flap and range-edge state belong to the tacmap deck, which is opaque, larger, and the
     // only copy a screen reader can reach. The glass picks them up exactly on the frames
@@ -605,6 +630,7 @@ export function createFlightHud(canvas) {
     // camera, so the standby sightline is dashes on an empty ladder rather than a blank.
     if (state.live && camera && state.position && state.forward) {
       drawLadder(state, layout)
+      drawBoresight(state, layout)
       drawFlightPathMarker(state, layout)
     }
 
