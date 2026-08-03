@@ -1,11 +1,13 @@
 import { Maximize, PlaneTakeoff } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { TEST_FLIGHT_PATH, VIEWER_PATH } from '../routes/paths'
+import { FLIGHT_RANGE_PATH, VIEWER_PATH } from '../routes/paths'
 
-export default function Topbar({ onFullscreen }) {
+// `kicker` lets a surface name itself — the dev pages are not the hangar and not the
+// sortie, and saying so is the only chrome they need.
+export default function Topbar({ onFullscreen, kicker }) {
   const navigate = useNavigate()
-  const isTestFlight = useLocation().pathname === TEST_FLIGHT_PATH
+  const isFlightRange = useLocation().pathname === FLIGHT_RANGE_PATH
 
   return (
     <header className="topbar">
@@ -13,18 +15,18 @@ export default function Topbar({ onFullscreen }) {
         <span className="brand-mark" aria-hidden="true"><i /><i /></span>
         <div>
           <strong>F-22 <em>RAPTOR</em></strong>
-          <small>{isTestFlight ? 'COMBAT TRAINING RANGE' : 'MISSION HANGAR'}</small>
+          <small>{kicker ?? (isFlightRange ? 'COMBAT TRAINING RANGE' : 'MISSION HANGAR')}</small>
         </div>
       </div>
 
       <button
         type="button"
-        className={`test-flight-button ${isTestFlight ? 'is-active' : ''}`}
-        aria-pressed={isTestFlight}
-        onClick={() => navigate(isTestFlight ? VIEWER_PATH : TEST_FLIGHT_PATH)}
+        className={`test-flight-button ${isFlightRange ? 'is-active' : ''}`}
+        aria-pressed={isFlightRange}
+        onClick={() => navigate(isFlightRange ? VIEWER_PATH : FLIGHT_RANGE_PATH)}
       >
         <PlaneTakeoff size={16} strokeWidth={1.7} />
-        <span>{isTestFlight ? 'Return hangar' : 'Launch sortie'}</span>
+        <span>{isFlightRange ? 'Return hangar' : 'Launch sortie'}</span>
         <i aria-hidden="true" />
       </button>
 

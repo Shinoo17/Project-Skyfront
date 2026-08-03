@@ -25,7 +25,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { createFlightHud } from './hud'
-import { EMPTY_TELEMETRY } from './telemetry'
+import { EMPTY_TELEMETRY } from '../flight/telemetry'
 
 const RESET_CAPTIONS = {
   ceiling: 'CEILING · RANGE RESET',
@@ -143,7 +143,23 @@ function formatDebug(value) {
   ].join('\n')
 }
 
-export default function FlightHud({ controls, telemetry, envelope, onReset, debug = false }) {
+/*
+`variant` picks how much of the cockpit comes with the glass. 'cockpit' is the sortie: the
+projected symbology plus the bezel the pilot flies from. 'glass' is the same symbology and
+nothing else, for the observer page's picture-in-picture, where the box is a few hundred
+pixels wide and the controls belong to the page around it rather than inside the inset.
+Both draw from the same telemetry through the same camera, so the inset is a true copy of
+what the pilot is looking at, not a reconstruction of it.
+*/
+export default function FlightHud({
+  controls,
+  telemetry,
+  envelope,
+  onReset,
+  debug = false,
+  variant = 'cockpit',
+}) {
+  const glassOnly = variant === 'glass'
   const dom = useRef({})
   const [advisory, setAdvisory] = useState(() => readAdvisory(EMPTY_TELEMETRY))
   const advisoryKey = useRef(advisory.key)
@@ -229,7 +245,11 @@ export default function FlightHud({ controls, telemetry, envelope, onReset, debu
   }, [controls])
 
   return (
-    <div className="hud" aria-label="Flight instruments" ref={(node) => { dom.current.root = node }}>
+    <div
+      className={`hud ${glassOnly ? 'is-glass' : ''}`}
+      aria-label={glassOnly ? 'Pilot view instruments' : 'Flight instruments'}
+      ref={(node) => { dom.current.root = node }}
+    >
       {/* Projected symbology — one plate of lit glass, drawn through the flight camera. */}
       <canvas className="hud-glass" aria-hidden="true" ref={(node) => { dom.current.glass = node }} />
 
@@ -243,12 +263,14 @@ export default function FlightHud({ controls, telemetry, envelope, onReset, debu
         </div>
       </dl>
 
-      <div className="fps-readout flight-fps" aria-label="WebGL rendering performance">
-        <span>FPS</span>
-        <output ref={(node) => { dom.current.fps = node }}>–</output>
-      </div>
+      {!glassOnly && (
+        <div className="fps-readout flight-fps" aria-label="WebGL rendering performance">
+          <span>FPS</span>
+          <output ref={(node) => { dom.current.fps = node }}>–</output>
+        </div>
+      )}
 
-      {debug && (
+      {!glassOnly && debug && (
         <pre className="hud-debug" aria-label="Flight model debug readout" ref={(node) => { dom.current.debug = node }}>
           FLIGHT DEBUG
         </pre>
@@ -259,7 +281,7 @@ export default function FlightHud({ controls, telemetry, envelope, onReset, debu
         <span>{advisory.label}</span>
       </p>
 
-      <div className="deck deck-controls" aria-label="Flight controls">
+      {!glassOnly && <div className="deck deck-controls" aria-label="Flight controls">
         <div className="deck-stick">
           <span aria-hidden="true" />
           <HoldControl control="pitch-up" label="Pitch up" icon={ArrowUp} controls={controls}>Nose up</HoldControl>
@@ -328,9 +350,9 @@ export default function FlightHud({ controls, telemetry, envelope, onReset, debu
             </div>
           </div>
         </div>
-      </div>
+      </div>}
 
-      <p className="deck-keymap">
+      {!glassOnly && <p className="deck-keymap">
         <kbd>↑</kbd><kbd>↓</kbd><span>pitch</span>
         <kbd>←</kbd><kbd>→</kbd><span>roll</span>
         <kbd>Q</kbd><kbd>E</kbd><span>yaw</span>
@@ -341,7 +363,7 @@ export default function FlightHud({ controls, telemetry, envelope, onReset, debu
         <kbd>F</kbd><span>flaps</span>
         <kbd>R</kbd><span>reset</span>
         <kbd>I</kbd><span>debug</span>
-      </p>
+      </p>}
     </div>
   )
 }

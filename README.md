@@ -16,20 +16,48 @@ Open the local URL shown by Vite.
 | URL | What it is |
 | --- | --- |
 | `/` | Airframe viewer — orbit the model and drive every embedded animation clip |
-| `/#/test-flight` | Flight range over `Mountain_Valley_Colorado.glb`, chase camera |
+| `/#/test-flight` | The sortie: fly a map from the chase camera on a full HUD |
+| `/#/dev/test-flight` | Developer observer: free-orbit camera over the map, the pilot's view in a picture-in-picture |
 
-Routing is `HashRouter`, so both URLs survive a reload on any static host without a
+Routing is `HashRouter`, so every URL survives a reload on any static host without a
 rewrite rule. Route paths live in [src/routes/paths.js](src/routes/paths.js).
 
 ## Layout
 
 - `routes/` — one file per URL, owning that surface's state
-- `features/viewer`, `features/test-flight` — the two surfaces
-- `features/flight` — input and flight behaviour shared between flying surfaces
+- `maps/` — one manifest per range (terrain path, span, spawn, ceiling, atmosphere, camera
+  limits) plus the registry. No scene names a terrain `.glb` or a range dimension.
 - `aircraft/` — one manifest per airframe (model path, hinges, mixing, envelope) plus the
   registry. Scene code reads the manifest and never names a `.glb` or a mesh.
-- `three/` — renderer helpers: KTX2 loader, hinge builder, rest pose, graphics profiles
+- `features/world` — a map made flyable: terrain, atmosphere, range metrics, and
+  `FlightRange`, the one component every flight surface mounts
+- `features/flight` — the flight model, controls, telemetry contract, the aircraft rig, and
+  the chase camera. Everything here is camera- and surface-agnostic.
+- `features/flight-range` — the sortie's own pieces: the HUD and its scene wiring
+- `features/dev-flight` — the observer page's own pieces: the dual-view renderer and panel
+- `features/viewer` — the hangar
+- `three/` — renderer helpers: KTX2 loader, hinge builder, rest pose, graphics profiles,
+  demand-render tick
 - `ui/` — chrome shared across routes
+
+The two flight surfaces differ in exactly one thing: which camera the aircraft flies.
+The sortie hands `FlightRange` no camera, so the rig drives the Canvas's own; the observer
+page hands it a detached camera and renders that into the inset. There is one scene, one
+physics step and one telemetry object behind both views, so they cannot disagree.
+
+## Adding a map
+
+1. Drop the terrain `.glb` into `public/`.
+2. Copy [src/maps/mountainValley.js](src/maps/mountainValley.js) to a new module beside it
+   and edit the values: `id`, `name`, `region`, `url`, `assets`, `span`, `edgeMargin`,
+   `spawn`, `ceilingAboveTerrain`, `environment`, `camera`, `observer`.
+3. List it in `MAPS` in [src/maps/index.js](src/maps/index.js).
+
+Nothing else changes. The range walls, the spawn altitude and the ceiling are measured from
+the terrain's own bounds at the declared span, the loader screen and the error copy read the
+map's `loading` and `assets`, and the map picker on the observer page is built from
+`listMaps()`. To fly it, pass `mapId` to `useFlightSession` — the observer page already
+exposes it as a dropdown.
 
 See [ROADMAP.md](ROADMAP.md) for where the missile, dogfight, and graphics-settings work
 is meant to land.

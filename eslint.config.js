@@ -5,7 +5,9 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
-  { ignores: ['dist', 'public/basis'] },
+  // `example/` is a vendored reference project with its own repository and its own rules;
+  // linting it only ever reports someone else's 188 problems.
+  { ignores: ['dist', 'public/basis', 'example'] },
   {
     files: ['**/*.{js,jsx}'],
     plugins: {
