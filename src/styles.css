@@ -2490,3 +2490,193 @@ the canvas never drew.
   font-size: 9px;
   letter-spacing: 0.12em;
 }
+
+/* ---- Manoeuvre demonstration board ------------------------------------------------ */
+
+/*
+Right-hand column on the developer page, clear of the picture-in-picture in the bottom
+corner. It borrows the dev panel's chrome — same carbon plate, same green — because it is
+the same surface; only the content differs.
+*/
+.demo-panel {
+  position: absolute;
+  top: 92px;
+  right: 24px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 244px;
+  /* Clear of the picture-in-picture in the bottom-right corner, which is at most 560 wide
+     by 315 tall plus its 22px margin. */
+  max-height: max(180px, calc(100% - 440px));
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid rgba(98, 255, 132, 0.22);
+  border-radius: 3px;
+  pointer-events: auto;
+  color: var(--hud-green-dim, rgba(98, 255, 132, 0.68));
+  font-family: var(--display);
+  background: rgba(7, 12, 15, 0.86);
+  backdrop-filter: blur(9px);
+
+  --hud-ice: #62ff84;
+  --hud-green-dim: rgba(98, 255, 132, 0.68);
+  --hud-green-soft: rgba(98, 255, 132, 0.24);
+}
+
+.demo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.demo-list button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--hud-green-soft);
+  border-radius: 2px;
+  color: var(--hud-green-dim);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-align: left;
+  background: rgba(3, 9, 12, 0.72);
+  cursor: pointer;
+}
+
+.demo-list button span {
+  flex: 1 1 auto;
+}
+
+/* The regime the script claims. Quiet — it is a footnote until the verdict line uses it. */
+.demo-list button em {
+  font-size: 8px;
+  font-style: normal;
+  letter-spacing: 0.1em;
+  opacity: 0.62;
+}
+
+.demo-list button:hover {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+}
+
+.demo-list button.is-on {
+  color: #06110a;
+  border-color: var(--hud-ice);
+  background: var(--hud-ice);
+}
+
+.demo-panel-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.demo-panel-buttons button {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid var(--hud-green-soft);
+  border-radius: 2px;
+  color: var(--hud-green-dim);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  background: rgba(3, 9, 12, 0.72);
+  cursor: pointer;
+}
+
+.demo-panel-buttons button.is-on {
+  color: #06110a;
+  border-color: var(--hud-ice);
+  background: var(--hud-ice);
+}
+
+.demo-panel-buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.demo-brief {
+  margin: 0;
+  color: rgba(98, 255, 132, 0.56);
+  font-size: 9px;
+  line-height: 1.65;
+  letter-spacing: 0.03em;
+}
+
+.demo-progress {
+  --progress: 0;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(98, 255, 132, 0.16);
+}
+
+.demo-progress i {
+  display: block;
+  height: 100%;
+  background: var(--hud-ice);
+  transform: scaleX(var(--progress));
+  transform-origin: left center;
+}
+
+.demo-readout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/*
+The verdict. Neither glyph shows until the run has said something: a tick once the flight
+model has actually reported the regime, a cross once a finished run never did.
+*/
+.demo-verdict {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: rgba(98, 255, 132, 0.5);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.demo-verdict strong {
+  color: var(--hud-ice);
+  font-weight: 700;
+}
+
+.demo-verdict .demo-tick,
+.demo-verdict .demo-cross {
+  display: none;
+  flex: 0 0 auto;
+}
+
+.demo-verdict.is-matched {
+  color: var(--hud-ice);
+}
+
+.demo-verdict.is-matched .demo-tick {
+  display: block;
+}
+
+.demo-verdict.is-missed {
+  color: var(--danger);
+}
+
+.demo-verdict.is-missed .demo-cross {
+  display: block;
+}
+
+@media (max-width: 900px) {
+  .demo-panel {
+    display: none;
+  }
+}

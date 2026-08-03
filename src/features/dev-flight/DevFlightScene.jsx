@@ -17,6 +17,7 @@ import { useGraphicsProfile } from '../../three/graphics'
 import SyncedFrameLoop from '../../three/SyncedFrameLoop'
 import { BASE_FOV } from '../flight/chaseCamera'
 import DebugVectors from '../flight/DebugVectors'
+import ManeuverBot from '../flight/ManeuverBot'
 import FlightRange from '../world/FlightRange'
 import MapEnvironment from '../world/MapEnvironment'
 import DualViewRenderer from './DualViewRenderer'
@@ -140,6 +141,10 @@ export default function DevFlightScene({
   pip = true,
   recenterId = 0,
   track = false,
+  maneuver = null,
+  botStatus,
+  botLoop = false,
+  onRequestReset,
   onPipRect,
 }) {
   const aircraft = getAircraft(aircraftId)
@@ -197,6 +202,16 @@ export default function DevFlightScene({
         />
       </Suspense>
       {debug && <DebugVectors telemetry={telemetry} />}
+      {botStatus && (
+        <ManeuverBot
+          maneuver={maneuver}
+          controls={controls}
+          telemetry={telemetry}
+          status={botStatus}
+          loop={botLoop}
+          onRequestReset={onRequestReset}
+        />
+      )}
       <ObserverRig
         map={map}
         spawn={spawn}

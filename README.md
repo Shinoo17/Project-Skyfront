@@ -25,6 +25,30 @@ the camera and its orbit target by the aircraft's frame-to-frame translation —
 delta on both, so the viewing angle, the distance and the framing are unchanged and only
 x, y and z move. Fly at the camera and it retreats ahead of you; fly away and it follows.
 
+## Manoeuvre demonstrations
+
+The right-hand panel on the developer page flies scripted manoeuvres — Cobra, J-turn, pedal
+turn, post-stall pass, loop, aileron and barrel roll, Split-S, Immelmann — with a bot that
+holds the same controls a pilot does. It writes into the same `pressed` set the keyboard
+writes into and has no other access, so every limiter, authority curve and energy cost
+applies to it. Picking one resets the aircraft first, so each run starts identically.
+
+A script may claim a regime (`expect`), and the panel shows a tick only once
+`detectManeuver` in the flight model has actually reported it. Nothing forces the label, so
+a cross means the airframe stopped being able to do the thing.
+
+```bash
+npm run maneuver-check              # every script, headless, one line each
+npm run maneuver-check -- cobra     # one script with a sampled trace
+npm run maneuver-check -- all 400   # every script from a 400-unit spawn
+```
+
+The checker imports the real flight model at the real fixed step and exits non-zero if a
+script no longer produces its regime, or if any of them dives more than 40 units below the
+spawn — the margin the range floor allows over any terrain the map registry can load. Run
+it after touching `maneuvering` in an aircraft manifest. Scripts live in
+[src/features/flight/maneuvers.js](src/features/flight/maneuvers.js).
+
 Routing is `HashRouter`, so every URL survives a reload on any static host without a
 rewrite rule. Route paths live in [src/routes/paths.js](src/routes/paths.js).
 

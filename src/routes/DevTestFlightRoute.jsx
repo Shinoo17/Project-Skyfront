@@ -6,12 +6,15 @@ FIRST VIEWPORT: The valley under a free-orbit camera, telemetry down the left ed
 FORM: Composition only — one scene, one physics step, two cameras rendered in the same frame.
 */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 
 import { DEFAULT_AIRCRAFT_ID } from '../aircraft'
 import DevFlightPanel from '../features/dev-flight/DevFlightPanel'
 import DevFlightScene from '../features/dev-flight/DevFlightScene'
+import ManeuverPanel from '../features/dev-flight/ManeuverPanel'
 import FlightHud from '../features/flight-range/FlightHud'
+import { createBotStatus } from '../features/flight/botStatus'
+import { getManeuver } from '../features/flight/maneuvers'
 import useFlightSession from '../features/flight/useFlightSession'
 import { DEFAULT_MAP_ID } from '../maps'
 import LoaderScreen from '../ui/LoaderScreen'
@@ -35,6 +38,24 @@ export default function DevTestFlightRoute() {
   // second CSS rule, because symbology that is a few pixels off the WebGL box stops being
   // registered with the terrain it is drawn over.
   const [pipRect, setPipRect] = useState(null)
+
+  // The demonstration bot. `maneuverId` is the only React state it needs — its progress
+  // lives in a ref the panel reads from its own animation frame, the same contract the
+  // flight telemetry uses, so a running demo re-renders nothing.
+  const [maneuverId, setManeuverId] = useState(null)
+  const [botLoop, setBotLoop] = useState(false)
+  const botStatus = useRef(createBotStatus())
+  const maneuver = getManeuver(maneuverId)
+
+  const selectManeuver = useCallback((id) => {
+    setManeuverId(id)
+    // A demonstration that leaves a static observer post behind is not a demonstration.
+    // One-way on purpose: stopping the demo leaves the camera where the developer can see
+    // it rather than snapping the framing away from them a second time.
+    if (id) setTrack(true)
+  }, [])
+
+  const stopManeuver = useCallback(() => setManeuverId(null), [])
 
   // Held stable: `useFlightSession` folds these into the key map it memoizes, and a fresh
   // object every render would rebuild that map on every panel click for nothing.
@@ -75,6 +96,10 @@ export default function DevTestFlightRoute() {
             pip={pip}
             recenterId={recenterId}
             track={track}
+            maneuver={maneuver}
+            botStatus={botStatus}
+            botLoop={botLoop}
+            onRequestReset={reset}
             onPipRect={setPipRect}
           />
         </SceneErrorBoundary>
@@ -99,6 +124,16 @@ export default function DevTestFlightRoute() {
           onTrackChange={setTrack}
           onReset={reset}
           onRecenter={recenter}
+        />
+
+        <ManeuverPanel
+          aircraft={aircraft}
+          status={botStatus}
+          activeId={maneuverId}
+          onSelect={selectManeuver}
+          onStop={stopManeuver}
+          loop={botLoop}
+          onLoopChange={setBotLoop}
         />
 
         {pipRect && (
