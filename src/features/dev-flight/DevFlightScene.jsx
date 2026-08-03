@@ -110,24 +110,31 @@ export default function DevFlightScene({
 
   const handleRangeReady = useCallback((metrics) => setSpawn(metrics.spawn), [])
 
+  // Held stable across renders on purpose. Every panel toggle re-renders this component,
+  // and a fresh options object is the one thing that could talk R3F into re-seating the
+  // observer camera — which would throw away the angle the developer just dragged to.
+  const cameraConfig = useMemo(() => ({
+    position: [-430, 300, 190],
+    fov: 55,
+    near: map.camera.near,
+    far: map.observer.far,
+  }), [map])
+
+  const glConfig = useMemo(() => ({
+    antialias: graphics.antialias,
+    alpha: false,
+    depth: true,
+    stencil: false,
+    powerPreference: graphics.powerPreference,
+  }), [graphics])
+
   return (
     <Canvas
       frameloop="demand"
       dpr={graphics.dpr}
       shadows={graphics.shadows}
-      camera={{
-        position: [-430, 300, 190],
-        fov: 55,
-        near: map.camera.near,
-        far: map.observer.far,
-      }}
-      gl={{
-        antialias: graphics.antialias,
-        alpha: false,
-        depth: true,
-        stencil: false,
-        powerPreference: graphics.powerPreference,
-      }}
+      camera={cameraConfig}
+      gl={glConfig}
     >
       <MapEnvironment map={map} />
       <Suspense fallback={null}>

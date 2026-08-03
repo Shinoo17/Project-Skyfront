@@ -2446,12 +2446,18 @@ a pointer or paint a background over it.
 
 /* ---- Picture-in-picture ----------------------------------------------------------- */
 
+/*
+The rule is inset, not a border: `box-sizing: border-box` would take a real border out of
+the content box, the HUD inside would lay out two pixels short of the WebGL rectangle
+beside it, and the projected ladder would scale off the horizon it is supposed to sit on.
+*/
 .pip-frame {
   position: absolute;
   z-index: 3;
   pointer-events: none;
-  border: 1px solid rgba(98, 255, 132, 0.34);
-  box-shadow: 0 8px 28px rgba(3, 7, 10, 0.55);
+  box-shadow:
+    inset 0 0 0 1px rgba(98, 255, 132, 0.34),
+    0 8px 28px rgba(3, 7, 10, 0.55);
 }
 
 .pip-label {
