@@ -290,11 +290,15 @@ export function stepFlight(state, command, envelope, dt) {
     * MathUtils.degToRad(highAoA ? tuning.highAoARollRateDeg : envelope.rollRate)
     * rollAuthority
   // Weak wings-leveller, only in calm, hands-off, nose-near-level flight — it must never
-  // fight a loop or a knife-edge on purpose.
+  // fight a loop or a knife-edge on purpose. It also only tidies up a bank the pilot has
+  // very nearly rolled out of already: past the window it is off entirely, so a held bank
+  // stays held and inverted flight is left alone.
   if (!highAoA && Math.abs(state.input.roll) < 0.05 && Math.abs(state.input.yaw) < 0.05) {
     const bank = Math.atan2(-worldRight.y, Math.max(worldUp.y, 0.05))
-    rollCmd -= bank * tuning.autoLevelGain
-      * MathUtils.clamp(1 - (Math.abs(worldForward.y) * 2.2), 0, 1)
+    if (Math.abs(bank) < MathUtils.degToRad(tuning.autoLevelMaxBankDeg)) {
+      rollCmd -= bank * tuning.autoLevelGain
+        * MathUtils.clamp(1 - (Math.abs(worldForward.y) * 2.2), 0, 1)
+    }
   }
 
   let yawCmd = state.input.yaw * MathUtils.degToRad(envelope.yawRate) * yawAuthority

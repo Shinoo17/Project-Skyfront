@@ -573,7 +573,7 @@ function FlightWorld({ aircraft, controls, resetId, telemetry }) {
   const flightBounds = useMemo(() => ({
     x: rangeMetrics.halfWidth,
     z: rangeMetrics.halfDepth,
-    altitude: rangeMetrics.terrainHeight + 460,
+    altitude: rangeMetrics.terrainHeight + 10460,
   }), [rangeMetrics])
 
   return (

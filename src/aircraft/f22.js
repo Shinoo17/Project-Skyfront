@@ -309,6 +309,9 @@ const f22 = {
         highAoAVelocityAlignment: 0.12,
         sideslipDamping: 1.4,
         autoLevelGain: 0.35,
+        // The leveller's window: outside this bank the wings stay where the pilot left
+        // them, so held banks and inverted flight are the pilot's business.
+        autoLevelMaxBankDeg: 15,
         spinDamping: 2.2,
 
         aoaDragGain: 26,
