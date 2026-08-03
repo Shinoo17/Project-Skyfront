@@ -266,13 +266,21 @@ const f22 = {
         sideForceGain: 55,
 
         stallAoADeg: 26,
-        postStallLiftFloor: 0.35,
+        // Past the stall the lift is gone by about twenty degrees, not eighty: a wing
+        // still making most of its lift at 40 degrees keeps pulling the flight path
+        // round with the nose, and a Cobra is precisely the manoeuvre where it must not.
+        postStallLiftEndDeg: 46,
+        postStallLiftFloor: 0.12,
         normalAoALimitDeg: 24,
-        highAoALimitDeg: 78,
+        // Far enough past the vertical for the nose to lie down along the flight path,
+        // which is the pose the manoeuvre is named for.
+        highAoALimitDeg: 105,
         aoaLimitSoftnessDeg: 9,
         negativeAoAFactor: 0.55,
 
-        highAoAPitchRateDeg: 120,
+        // The nose has to beat the flight path to deep AoA, not merely lead it: what
+        // separates a Cobra from a hard pull is the ratio between the two rates.
+        highAoAPitchRateDeg: 240,
         highAoARollRateDeg: 60,
         maxG: 9,
         maxNegativeG: 3.5,
@@ -283,6 +291,14 @@ const f22 = {
         cobraPitchBoost: 1.35,
         cobraMinKmh: 380,
         cobraMaxKmh: 820,
+
+        // What `detectManeuver` calls a Cobra, and the two-sided test that keeps a loop
+        // from answering to the name: the nose this far off the airstream while the
+        // trajectory is bending no faster than this. A hard pull satisfies the first and
+        // never the second.
+        cobraMinAoADeg: 62,
+        cobraMaxPathRateDeg: 26,
+        pathRateResponse: 9,
 
         // Pedal turns exist only nose-high and slow; the boost multiplies yaw authority
         // inside that window and nowhere else.

@@ -2,10 +2,22 @@
 Replays every demonstration script in `src/features/flight/maneuvers.js` through the real
 flight model, headless, and checks two things per script:
 
-  1. The flight model reports the regime the script claims. `expect` is an assertion about
-     the airframe, not an instruction — nothing forces the label, so this is the only thing
-     that can tell you a Cobra script still produces a Cobra after a tuning change.
-  2. Nothing descends more than MAX_DIP below the spawn. The range resets a sortie below 9
+  1. The flight model reports the regime the script claims, and holds it — for MATCH_SECONDS
+     at least, the same bar the demonstration panel's tick is drawn at. `expect` is an
+     assertion about the airframe, not an instruction — nothing forces the label, so this is
+     the only thing that can tell you a Cobra script still produces a Cobra after a tuning
+     change. A frame or two of the right label is a script clipping the regime on its way
+     past, not flying it.
+  2. A script claiming a post-stall regime leaves the flight path alone: the trajectory may
+     not swing more than MAX_PATH_TURN from where it entered. This is the check that would
+     have caught a Cobra script quietly turning into a loop — the attitudes and the AoA of a
+     hard enough pull look identical, and only the flight path tells them apart.
+  3. A script marked `exitsLevel` finishes with the nose within MAX_EXIT_PITCH of the
+     horizon. Every one of them starts from level flight, so every one of them has to end
+     there; nothing in the flight model levels the nose on its own, and a script that stops
+     with forty degrees still on the clock leaves the aircraft climbing away from a
+     manoeuvre it never finished.
+  4. Nothing descends more than MAX_DIP below the spawn. The range resets a sortie below 9
      units of ground clearance and the spawn clears the highest ground by 58, so a script
      that stays inside this margin is safe over any terrain the map registry can load.
 
@@ -44,10 +56,42 @@ import {
 
 const FRAME = 1 / 60
 const MAX_DIP = 40
+// Kept in step with ManeuverBot's own constant: the panel and this gate should not be able
+// to disagree about whether a run counted.
+const MATCH_SECONDS = 0.6
+// How far the flight path may swing for a manoeuvre that is supposed to leave it alone.
+// A loop entered on the same stick reaches 150 degrees and more.
+const MAX_PATH_TURN = 55
+const PATH_HELD = new Set(['cobra', 'j-turn'])
+// A script marked `exitsLevel` has to put the nose back where it found it. Nothing in the
+// FCC levels the nose on its own — the wings-leveller is roll only — so returning to level
+// is something the script flies, and if it stops short the jet climbs or dives away for
+// the rest of the demonstration.
+const MAX_EXIT_PITCH = 8
 
 const envelope = f22.flight.envelope
 const [only = 'all', spawnArg] = process.argv.slice(2)
-const SPAWN_Y = Number(spawnArg ?? 250)
+
+/*
+The altitude the range actually spawns a sortie at. `useRangeMetrics` takes the greater of
+the map's `minAltitude` and its *measured* terrain height plus `clearance` — and the
+measurement comes from the loaded GLB's bounding box, which this script cannot do without a
+GL context. So this is an observed number, read off the dev observer page on the mountain
+valley, not a derived one: if the terrain, the map's `span`, or the GLB changes, it moves,
+and so does everything calibrated against it.
+
+It matters far more than an altitude usually would. `highAltitude.worldUnits` is 800, so a
+spawn above it sits in the high-altitude performance band where the dry limit is 2230 km/h
+rather than 1100 — the same throttle holds a couple of hundred km/h more than it does low
+down, which is the difference between a Cobra and a loop. The scripts are calibrated for
+this band. Pass a spawn to check another one:
+
+  npm run maneuver-check -- all 250     the low band; the post-stall scripts do not hold
+
+If a new map spawns materially below 800, its scripts need their own entry throttles.
+*/
+const OBSERVED_SPAWN_Y = 815
+const SPAWN_Y = Number(spawnArg ?? OBSERVED_SPAWN_Y)
 
 // One scripted run. Mirrors FlightAircraft's useFrame body: cap the frame, read the held
 // controls, step the burner, then integrate the model at its own fixed step.
@@ -74,9 +118,11 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
     maxG: 0,
     maxYawRate: 0,
     rotation: 0,
+    pathTurn: 0,
   }
   let accumulator = 0
   let previousUp = null
+  let entryPath = null
   let clock = 0
 
   for (const step of timeline) {
@@ -116,6 +162,12 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
       const noseUp = (Math.asin(Math.max(-1, Math.min(1, forward.y))) * 180) / Math.PI
 
       seen.add(state.maneuver)
+      // Where it ends up, not just how far it went. A manoeuvre that starts level and
+      // leaves the jet climbing away at forty degrees has not been flown, it has been
+      // abandoned partway through.
+      stats.exitNose = noseUp
+      stats.exitDy = state.position.y - SPAWN_Y
+      stats.exitKmh = state.speedKmh
       stats.peakAoA = Math.max(stats.peakAoA, Math.abs(state.aoaDeg))
       stats.peakBeta = Math.max(stats.peakBeta, Math.abs(state.sideslipDeg))
       stats.peakNoseUp = Math.max(stats.peakNoseUp, noseUp)
@@ -129,6 +181,15 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
       )
       if (previousUp) stats.rotation += previousUp.angleTo(up) * (180 / Math.PI)
       previousUp = up
+
+      // Where the aircraft was going when the script stopped settling and started flying,
+      // and how far it has been taken from it since. Total rotation above measures the
+      // airframe; this measures the trajectory, and a Cobra is the difference.
+      const path = state.velocity.clone().normalize()
+      if (!entryPath && step.label !== 'SETTLE') entryPath = path.clone()
+      if (entryPath) {
+        stats.pathTurn = Math.max(stats.pathTurn, entryPath.angleTo(path) * (180 / Math.PI))
+      }
 
       onSample?.(clock, step, state, noseUp)
     }
@@ -165,19 +226,24 @@ for (const maneuver of MANEUVERS) {
     },
   })
 
-  const labelOk = !maneuver.expect || seen.has(maneuver.expect)
+  const labelOk = !maneuver.expect || (seen.has(maneuver.expect) && matchedSeconds >= MATCH_SECONDS)
   const floorOk = stats.dip <= MAX_DIP
-  if (!labelOk || !floorOk) failures += 1
+  const pathOk = !PATH_HELD.has(maneuver.expect) || stats.pathTurn <= MAX_PATH_TURN
+  const levelOk = !maneuver.exitsLevel || Math.abs(stats.exitNose) <= MAX_EXIT_PITCH
+  if (!labelOk || !floorOk || !pathOk || !levelOk) failures += 1
 
   console.log(
-    `${labelOk && floorOk ? 'PASS' : 'FAIL'} ${maneuver.id.padEnd(13)}`
+    `${labelOk && floorOk && pathOk && levelOk ? 'PASS' : 'FAIL'} ${maneuver.id.padEnd(13)}`
     + ` want=${String(maneuver.expect ?? '—').padEnd(11)}`
-    + ` held=${pad(matchedSeconds, 4, 1)}s`
+    + ` held=${pad(matchedSeconds, 4, 1)}s${labelOk ? ' ' : '!'}`
     + ` aoa=${pad(stats.peakAoA, 3)} beta=${pad(stats.peakBeta, 3)}`
     + ` nose=${pad(stats.peakNoseUp, 3)} yaw=${pad(stats.maxYawRate, 3)}`
     + ` kmh=${pad(stats.minSpeed, 4)}..${pad(stats.maxSpeed, 4)}`
     + ` dip=${pad(stats.dip, 3)}${floorOk ? ' ' : '!'}`
     + ` g=${pad(stats.maxG, 4, 1)} rot=${pad(stats.rotation, 4)}`
+    + ` path=${pad(stats.pathTurn, 4)}${pathOk ? ' ' : '!'}`
+    + ` exit=${pad(stats.exitNose, 4)}°${levelOk ? ' ' : '!'}`
+    + `${pad(stats.exitDy, 4)}y ${pad(stats.exitKmh, 4)}kmh`
     + ` ${pad(readManeuverSeconds(maneuver), 5, 1)}s`,
   )
 }

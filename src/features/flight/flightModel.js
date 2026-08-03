@@ -20,8 +20,14 @@ commands body rates, the FCC scales them by control authority (dynamic pressure 
 thrust vectoring), applies AoA and G soft limits, adds weathervane stability and damping,
 and chases the command with a first-order response — a PD loop on rates, never a slerp
 toward a target attitude. Holding the High-AoA modifier relaxes the AoA limiter and the
-velocity-alignment assist, which is what lets the jet fly a Cobra with the nose eighty
-degrees off the flight path while the trajectory carries on and the speed drains away.
+velocity-alignment assist, which is what lets the jet fly a Cobra with the nose ninety
+degrees and more off the flight path while the trajectory carries on and the speed drains
+away.
+
+Whether that actually happens is a question about the flight path, not the nose. A hard
+enough pull reaches the same attitudes with the trajectory swinging round behind it, and
+that is a loop. `pathRateDeg` is the state that tells them apart, and `detectManeuver`
+is the only thing that reads it.
 
 Axes follow the rest of the project: local +X forward, +Y up, +Z right wing. The body rate
 vector uses pilot sense — x rolls right, y yaws right, z pitches up.
@@ -53,6 +59,7 @@ const liftDir = new Vector3()
 const sideDir = new Vector3()
 const accel = new Vector3()
 const pathDir = new Vector3()
+const entryPathDir = new Vector3()
 const perpAccel = new Vector3()
 const alignAxis = new Vector3()
 const alignStep = new Quaternion()
@@ -80,6 +87,10 @@ export function createFlightState() {
     thrustVectorDeg: 0,
     aoaDeg: 0,
     sideslipDeg: 0,
+    // How fast the flight path itself is bending, degrees per second, smoothed. This is
+    // what tells a Cobra from a loop: both put the nose somewhere steep, only one leaves
+    // the trajectory alone.
+    pathRateDeg: 0,
     gLoad: 1,
     highAoA: false,
     airBrake: false,
@@ -103,6 +114,7 @@ export function resetFlightState(state, position, speedKmh, envelope) {
   state.thrustVectorDeg = 0
   state.aoaDeg = 0
   state.sideslipDeg = 0
+  state.pathRateDeg = 0
   state.gLoad = 1
   state.highAoA = false
   state.airBrake = false
@@ -116,14 +128,21 @@ export function resetFlightState(state, position, speedKmh, envelope) {
 /*
 Which named regime the jet is in, read off the physics rather than driving it. The camera,
 the HUD, and the effects may all key off this; nothing in the step below ever does.
+
+The Cobra test is deliberately two-sided. Deep AoA alone does not make one — a hard enough
+pull reaches deep AoA on the way round a loop, with the flight path swinging along behind
+the nose the whole time. What makes it a Cobra is that the trajectory carries straight on
+while the nose leaves it, so `pathRateDeg` has to be low at the same time. A pull that is
+past the stall but still bending the path is exactly what `post-stall` names.
 */
 function detectManeuver(state, tuning, pitchAttitudeDeg, speed, pedalMaxSpeed) {
   const alpha = Math.abs(state.aoaDeg)
   const beta = Math.abs(state.sideslipDeg)
   const yawRateDeg = Math.abs(MathUtils.radToDeg(state.angularVelocity.y))
+  const flying = alpha > tuning.cobraMinAoADeg && state.pathRateDeg < tuning.cobraMaxPathRateDeg
 
-  if (state.highAoA && alpha > 45 && beta > 14) return 'j-turn'
-  if (state.highAoA && alpha > 45) return 'cobra'
+  if (state.highAoA && flying && beta > 14) return 'j-turn'
+  if (state.highAoA && flying) return 'cobra'
   if (pitchAttitudeDeg > tuning.pedalTurnMinPitchDeg && speed < pedalMaxSpeed && yawRateDeg > 18) {
     return 'pedal-turn'
   }
@@ -143,13 +162,19 @@ Lift coefficient shape, normalised so 1 is the pre-stall peak. Linear up to the 
 then a smooth decay toward a post-stall floor rather than a cliff: a wing past the stall
 still lifts, badly, which is what keeps post-stall flight controllable instead of a coin
 toss.
+
+The decay finishes at `postStallLiftEndDeg`, not at some angle far out past the vertical.
+A wing that is still making most of its lift twenty degrees past the stall keeps bending
+the flight path, and a flight path that keeps bending can only ever be a loop — the whole
+Cobra depends on the lift being gone by the time the nose is properly off the airstream.
 */
 function liftShape(alphaRad, tuning) {
   const stall = MathUtils.degToRad(tuning.stallAoADeg)
   const magnitude = Math.abs(alphaRad)
   const sign = Math.sign(alphaRad)
   if (magnitude <= stall) return sign * (magnitude / stall)
-  const past = smooth01((magnitude - stall) / (MathUtils.degToRad(85) - stall))
+  const end = MathUtils.degToRad(tuning.postStallLiftEndDeg)
+  const past = smooth01((magnitude - stall) / Math.max(end - stall, 1e-3))
   return sign * MathUtils.lerp(1, tuning.postStallLiftFloor, past)
 }
 
@@ -185,8 +210,16 @@ export function stepFlight(state, command, envelope, dt) {
 
   // Airflow angles from the local airstream — undefined at a standstill, so freeze them
   // below walking pace instead of letting atan2 flail on noise.
+  //
+  // Alpha is an atan2 because it has to be allowed past ninety degrees: the whole point of
+  // a Cobra is a nose that ends up behind its own airstream. Sideslip is the textbook
+  // asin against total speed instead, because the same atan2 would read a jet flying
+  // backwards as 180 degrees of slip when it is not sliding sideways at all — which puts
+  // a pure-pitch Cobra into the yaw-coupled J-turn branch on nothing but a sign flip.
   const alphaRad = speed > 2 ? Math.atan2(-localVelocity.y, localVelocity.x) : 0
-  const betaRad = speed > 2 ? Math.atan2(localVelocity.z, localVelocity.x) : 0
+  const betaRad = speed > 2
+    ? Math.asin(MathUtils.clamp(localVelocity.z / speed, -1, 1))
+    : 0
   state.aoaDeg = MathUtils.radToDeg(alphaRad)
   state.sideslipDeg = MathUtils.radToDeg(betaRad)
 
@@ -355,6 +388,8 @@ export function stepFlight(state, command, envelope, dt) {
   pathDir.copy(state.velocity)
   const hasPath = pathDir.lengthSq() > 1e-6
   if (hasPath) pathDir.normalize()
+  // Held so the step can measure how far it moved the trajectory, further down.
+  entryPathDir.copy(pathDir)
 
   liftDir.copy(worldUp)
   if (hasPath) liftDir.addScaledVector(pathDir, -liftDir.dot(pathDir))
@@ -430,6 +465,14 @@ export function stepFlight(state, command, envelope, dt) {
   state.velocity.copy(pathDir).multiplyScalar(newSpeed)
   state.position.addScaledVector(state.velocity, dt)
   state.speedKmh = newSpeed / toWorld
+
+  // How far this step actually bent the trajectory. Smoothed, because a single fixed step
+  // of it is a very small angle and the regimes read off it should not chatter.
+  if (hasPath) {
+    const pathTurn = Math.acos(MathUtils.clamp(entryPathDir.dot(pathDir), -1, 1))
+    state.pathRateDeg = approach(
+      state.pathRateDeg, MathUtils.radToDeg(pathTurn) / dt, tuning.pathRateResponse, dt)
+  }
 
   // Load factor as the wing feels it: lift over weight, signed by AoA.
   state.gLoad = liftMag / gravity

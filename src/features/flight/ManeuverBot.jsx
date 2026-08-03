@@ -26,6 +26,10 @@ no longer matches it.
 // Before OrbitControls' damping pass and well before the flight loop at 0.
 const BOT_PRIORITY = -2
 
+// How long the flight model has to keep reporting the expected regime before the panel
+// will call it a match. Every asserted script holds its regime for at least a second.
+const MATCH_SECONDS = 0.6
+
 function releaseControls(controls) {
   const pressed = controls?.current?.pressed
   if (pressed && pressed.size) pressed.clear()
@@ -160,7 +164,10 @@ export default function ManeuverBot({
     readout.observed = flight.maneuver
     if (readout.expect && flight.maneuver === readout.expect) {
       readout.matchedSeconds += step
-      readout.matched = true
+      // Held, not touched. A single frame of the right label is something a script can
+      // clip on its way past — the tick is supposed to mean the airframe sat in the
+      // regime, so it costs the same time the detector needs to be sure of it.
+      readout.matched = readout.matchedSeconds >= MATCH_SECONDS
     }
 
     if (state.stepElapsed < current.seconds) return
