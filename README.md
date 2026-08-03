@@ -19,6 +19,12 @@ Open the local URL shown by Vite.
 | `/#/test-flight` | The sortie: fly a map from the chase camera on a full HUD |
 | `/#/dev/test-flight` | Developer observer: free-orbit camera over the map, the pilot's view in a picture-in-picture |
 
+The observer camera has two modes, and neither of them turns to face the aircraft. Static
+(default) is a fixed post the jet flies past. Tracking (`T`, or the panel button) carries
+the camera and its orbit target by the aircraft's frame-to-frame translation — the same
+delta on both, so the viewing angle, the distance and the framing are unchanged and only
+x, y and z move. Fly at the camera and it retreats ahead of you; fly away and it follows.
+
 Routing is `HashRouter`, so every URL survives a reload on any static host without a
 rewrite rule. Route paths live in [src/routes/paths.js](src/routes/paths.js).
 

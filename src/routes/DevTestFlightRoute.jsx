@@ -6,7 +6,7 @@ FIRST VIEWPORT: The valley under a free-orbit camera, telemetry down the left ed
 FORM: Composition only — one scene, one physics step, two cameras rendered in the same frame.
 */
 
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { DEFAULT_AIRCRAFT_ID } from '../aircraft'
 import DevFlightPanel from '../features/dev-flight/DevFlightPanel'
@@ -26,12 +26,25 @@ export default function DevTestFlightRoute() {
   const [pip, setPip] = useState(true)
   const [pilotHud, setPilotHud] = useState(true)
   const [recenterId, setRecenterId] = useState(0)
+  // Static observer post by default. Tracking carries the camera by the aircraft's
+  // translation and nothing else — the viewing angle is never touched by either mode.
+  const [track, setTrack] = useState(false)
 
   // Where the picture-in-picture ended up, in CSS pixels, reported by the renderer that
   // scissored it. The HUD overlay is positioned from the same numbers rather than from a
   // second CSS rule, because symbology that is a few pixels off the WebGL box stops being
   // registered with the terrain it is drawn over.
   const [pipRect, setPipRect] = useState(null)
+
+  // Held stable: `useFlightSession` folds these into the key map it memoizes, and a fresh
+  // object every render would rebuild that map on every panel click for nothing.
+  const extraKeys = useMemo(() => ({
+    KeyT: (event, { fieldFocused }) => {
+      if (fieldFocused) return
+      event.preventDefault()
+      setTrack((value) => !value)
+    },
+  }), [])
 
   const {
     aircraft,
@@ -43,7 +56,7 @@ export default function DevTestFlightRoute() {
     reset,
     debug,
     setDebug,
-  } = useFlightSession({ mapId, aircraftId })
+  } = useFlightSession({ mapId, aircraftId, extraKeys })
 
   const recenter = useCallback(() => setRecenterId((value) => value + 1), [])
 
@@ -61,6 +74,7 @@ export default function DevTestFlightRoute() {
             debug={debug}
             pip={pip}
             recenterId={recenterId}
+            track={track}
             onPipRect={setPipRect}
           />
         </SceneErrorBoundary>
@@ -81,6 +95,8 @@ export default function DevTestFlightRoute() {
           onPilotHudChange={setPilotHud}
           debug={debug}
           onDebugChange={setDebug}
+          track={track}
+          onTrackChange={setTrack}
           onReset={reset}
           onRecenter={recenter}
         />

@@ -3,11 +3,11 @@ THESIS: One world, two lenses — a free observer over the range and the pilot's
 OWN-WORLD: The same terrain, airframe and physics the sortie flies; only the cameras differ.
 STORY: The developer drags around the aircraft, watches it manoeuvre from outside, and checks the corner to see what the pilot saw at that instant.
 FIRST VIEWPORT: The valley from a static observer post with the jet crossing it, its cockpit view inset bottom-right.
-FORM: Composition only — no flight logic lives here, and the observer camera never follows the aircraft.
+FORM: Composition only — no flight logic lives here, and the observer camera never turns to face the aircraft.
 */
 
 import { OrbitControls } from '@react-three/drei'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PerspectiveCamera, Vector3 } from 'three'
 
@@ -26,16 +26,34 @@ import DualViewRenderer from './DualViewRenderer'
 const OBSERVER_OFFSET = new Vector3(-120, 62, 130)
 
 /*
-The observer camera. It is deliberately inert: it is placed once when the range loads, moved
-only by the mouse, and re-aimed only when the developer explicitly asks for it. Nothing in
-here reads the aircraft every frame, which is the whole point of the page — what you see is
-what a bystander in the world would see, not a rig bolted to the jet.
+The observer camera. Placed once when the range loads, moved by the mouse, and re-aimed only
+when the developer asks for it. It has two modes and neither of them is a chase camera:
+
+- Static (default). The camera does not move at all. The jet flies past a fixed post, which
+  is the honest answer to "what does a bystander see".
+- Tracking. The camera and its orbit target are both carried by the aircraft's own frame-to-
+  frame translation — the same delta added to both, so the offset between them, and with it
+  the viewing direction, the distance and the framing, are bit-for-bit unchanged. Only x, y
+  and z move. Fly at the camera and it retreats ahead of you; fly away and it comes along.
+  Nothing here reads the aircraft's *attitude*, so a roll or a loop never swings the view.
+
+`TRACK_PRIORITY` sits between the flight loop (priority 0) and the two render passes, so the
+translation is always taken from the position the same frame is about to draw.
 */
-function ObserverRig({ map, spawn, telemetry, recenterId }) {
+const TRACK_PRIORITY = 1
+
+function ObserverRig({ map, spawn, telemetry, recenterId, track = false }) {
   const camera = useThree((state) => state.camera)
   const invalidate = useThree((state) => state.invalidate)
   const orbit = useRef()
-  const scratch = useMemo(() => ({ offset: new Vector3(), point: new Vector3() }), [])
+  const scratch = useMemo(
+    () => ({ offset: new Vector3(), point: new Vector3(), delta: new Vector3() }),
+    [],
+  )
+  // Where the aircraft was when tracking last moved the camera. Null means "not tracking
+  // yet" — the first tracked frame seeds it and moves nothing, so switching the mode on
+  // never jolts the view by however far the jet has flown since the page loaded.
+  const anchor = useRef(null)
 
   const aim = useCallback((point, reseat) => {
     const controls = orbit.current
@@ -66,6 +84,35 @@ function ObserverRig({ map, spawn, telemetry, recenterId }) {
     aim(scratch.point.copy(telemetry.current.position ?? spawn ?? scratch.point), false)
   }, [aim, recenterId, scratch, spawn, telemetry])
 
+  // Dropped on every change of the mode, in both directions. A stale anchor is the whole
+  // range's worth of flying that happened while tracking was off, and applying it would
+  // fling the camera across the map the instant the mode came back on.
+  useEffect(() => {
+    anchor.current = null
+  }, [track])
+
+  useFrame(() => {
+    if (!track) return
+    const position = telemetry.current.position
+    const controls = orbit.current
+    if (!position || !controls) return
+    if (!anchor.current) {
+      anchor.current = position.clone()
+      return
+    }
+
+    scratch.delta.subVectors(position, anchor.current)
+    anchor.current.copy(position)
+    if (scratch.delta.lengthSq() < 1e-10) return
+
+    // The same translation on both ends of the orbit, and deliberately no `update` call:
+    // OrbitControls derives its spherical offset from position minus target at the top of
+    // every update, so moving both leaves the angle and the distance untouched, and the
+    // damping pass it already runs each frame would apply a second time if called here.
+    camera.position.add(scratch.delta)
+    controls.target.add(scratch.delta)
+  }, TRACK_PRIORITY)
+
   return (
     <OrbitControls
       ref={orbit}
@@ -92,6 +139,7 @@ export default function DevFlightScene({
   debug = false,
   pip = true,
   recenterId = 0,
+  track = false,
   onPipRect,
 }) {
   const aircraft = getAircraft(aircraftId)
@@ -154,6 +202,7 @@ export default function DevFlightScene({
         spawn={spawn}
         telemetry={telemetry}
         recenterId={recenterId}
+        track={track}
       />
       <DualViewRenderer pipCamera={pipCamera} enabled={pip} onRect={onPipRect} />
       <SyncedFrameLoop targetFps={graphics.targetFps} />

@@ -1,4 +1,4 @@
-import { Axis3d, Crosshair, Eye, EyeOff, Gauge, RotateCcw } from 'lucide-react'
+import { Axis3d, Crosshair, Eye, EyeOff, Gauge, Move, RotateCcw } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
 import { listAircraft } from '../../aircraft'
@@ -72,6 +72,8 @@ export default function DevFlightPanel({
   onPilotHudChange,
   debug,
   onDebugChange,
+  track,
+  onTrackChange,
   onReset,
   onRecenter,
 }) {
@@ -126,6 +128,14 @@ export default function DevFlightPanel({
         </button>
         <button
           type="button"
+          className={track ? 'is-on' : ''}
+          aria-pressed={track}
+          onClick={() => onTrackChange(!track)}
+        >
+          <Move size={14} strokeWidth={1.9} /> Track position <kbd>T</kbd>
+        </button>
+        <button
+          type="button"
           className={pip ? 'is-on' : ''}
           aria-pressed={pip}
           onClick={() => onPipChange(!pip)}
@@ -162,9 +172,15 @@ export default function DevFlightPanel({
       </dl>
 
       <p className="dev-panel-hint">
-        Drag to orbit · scroll to zoom · right-drag to pan. The observer never follows the
-        aircraft — arrows, <kbd>Q</kbd>/<kbd>E</kbd>, <kbd>W</kbd>/<kbd>S</kbd> and
-        <kbd>SHIFT</kbd> still fly it.
+        Drag to orbit · scroll to zoom · right-drag to pan. Arrows,
+        <kbd>Q</kbd>/<kbd>E</kbd>, <kbd>W</kbd>/<kbd>S</kbd> and <kbd>SHIFT</kbd> fly the
+        aircraft.
+      </p>
+
+      <p className="dev-panel-hint">
+        {track
+          ? 'Tracking: the camera is carried by the aircraft’s translation only. The angle, distance and framing never change — fly at it and it backs away, fly off and it comes along.'
+          : 'Static post: the camera does not move at all. The aircraft flies past it.'}
       </p>
     </aside>
   )
