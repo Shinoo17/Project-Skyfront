@@ -49,6 +49,7 @@ const VAPOR_VERTEX_SHADER = /* glsl */ `
   uniform float uBillow;
   uniform float uLayer;
   uniform float uLayerLift;
+  uniform vec2 uWing;
   varying vec2 vGrid;
   varying vec3 vNormal;
   varying vec3 vView;
@@ -59,21 +60,23 @@ const VAPOR_VERTEX_SHADER = /* glsl */ `
   }
 
   void main() {
-    // The mesh is the footprint, one unit square before scaling, so its own position is the
-    // lookup: 0..1 aft to fore in x, across the span in z. Chord runs 0 at the leading edge
-    // to 1 off the trailing edge; span is -1..1 with 0 on the centreline.
+    // The mesh is the footprint — the whole airframe in plan — one unit square before
+    // scaling, so its own position is the lookup: 0 at the tail, 1 at the nose, and across
+    // the span in z. The wing coordinate runs 0 at its trailing edge to 1 at its leading,
+    // which is the only part of the footprint allowed to carry a thick sheet.
     vec2 grid = position.xz + 0.5;
     vGrid = grid;
-    float chord = 1.0 - grid.x;
+    float wing = clamp((grid.x - uWing.x) / max(uWing.y - uWing.x, 1e-3), 0.0, 1.0);
     float span = (grid.y * 2.0) - 1.0;
 
     // The sheet stands off the skin rather than lying on it — it is a surface of constant
     // pressure, thickest where the suction peak is and lifting as it sheds off the back.
-    float bulge = sin(3.14159265 * clamp(chord, 0.0, 1.0));
-    float shed = smoothstep(0.68, 1.0, chord);
+    // Everywhere else on the airframe the veil is thin enough to lie on the metal.
+    float bulge = sin(3.14159265 * wing);
+    float shed = smoothstep(uWing.x, uWing.x - 0.10, grid.x);
     float ripple =
-      (sin((chord * 8.0) - (uTime * 2.1) + (span * 4.5) + (uLayer * 3.7)) * 0.14) +
-      (sin((chord * 15.0) + (uTime * 1.3) - (span * 8.0) + (uLayer * 2.1)) * 0.07);
+      (sin((grid.x * -12.0) - (uTime * 2.1) + (span * 4.5) + (uLayer * 3.7)) * 0.14) +
+      (sin((grid.x * -22.0) + (uTime * 1.3) - (span * 8.0) + (uLayer * 2.1)) * 0.07);
     // The stack fans out over the middle of the chord and closes again at the edges, so
     // the cloud has a section like a cloud — thickest where the suction is, tapering to
     // nothing where it is running out of reasons to exist.
@@ -105,7 +108,11 @@ const VAPOR_FRAGMENT_SHADER = /* glsl */ `
   uniform float uStrength;
   uniform float uLayer;
   uniform vec2 uEdge;
-  uniform float uAspect;
+  uniform vec2 uWing;
+  uniform vec2 uSize;
+  uniform vec2 uOpacity;
+  uniform vec2 uDensity;
+  uniform float uHaze;
   varying vec2 vGrid;
   varying vec3 vNormal;
   varying vec3 vView;
@@ -137,41 +144,45 @@ const VAPOR_FRAGMENT_SHADER = /* glsl */ `
   }
 
   void main() {
-    float chord = 1.0 - vGrid.x;
     vec4 planform = texture2D(uPlanform, vGrid);
 
-    // Where the wing can hold a sheet at all, and it is the wing that says so. The outline
-    // comes in feathered, so the cloud fades in just inside the edge instead of being cut
-    // off at it; the wake is that same outline smeared aft, which is what lets the sheet
-    // leave the trailing edge still shaped like what shed it.
-    // Each layer up sits inside the one under it, so the stack has the section of a cloud
-    // rather than of a stack of decks.
+    // Where the airframe can hold vapour at all, and it is the airframe that says so. The
+    // outline comes in feathered, so the cloud fades in just inside the edge instead of
+    // being cut off at it; the wake is that same outline smeared aft, which is what lets it
+    // leave the trailing edge still shaped like what shed it. Each layer up sits inside the
+    // one under it, so the stack has the section of a cloud rather than of a stack of decks.
     float inset = uLayer * 0.2;
     float sheet = smoothstep(uEdge.x + inset, uEdge.y + inset, planform.r);
     float wake = smoothstep(0.06 + inset, 0.55 + inset, planform.b) * 0.8;
-    // Nothing right on the leading edge — the air has to have turned the corner and
-    // accelerated before it can condense — and thinning aft as the sheet breaks up.
-    float front = smoothstep(0.0, 0.16, chord);
-    float aft = mix(1.0, 0.30, smoothstep(0.55, 1.0, chord));
-    // And gone before the footprint runs out, so the far end of the wake is the cloud
-    // giving up rather than the mesh ending.
-    float tail = 1.0 - smoothstep(0.84, 1.0, chord);
-    float profile = max(sheet, wake) * front * aft * tail;
 
-    // Two scales of cloud: a slow body drifting aft with the flow, and a finer shimmer
-    // that keeps the edges alive without moving the sheet off its station. Sampled in
-    // footprint proportions so the cloud is not stretched across the span.
-    vec2 field = vec2(vGrid.x, vGrid.y * uAspect);
-    float body = fbm((field * 3.4) + vec2(uTime * -0.30, uLayer * 5.0));
-    float fine = fbm((field * 8.0) + vec2(uTime * -0.85, (uTime * 0.12) + (uLayer * 9.0)));
+    // How much of it is allowed here. Full over the wing and in the air just behind it,
+    // where the suction peak is; a haze fraction of that everywhere else, the thin veil the
+    // rest of the upper surface carries at the same alpha — enough to see, thin enough to
+    // see the aircraft through.
+    float overWing =
+      smoothstep(uWing.y + 0.05, uWing.y - 0.03, vGrid.x) *
+      smoothstep(uWing.x - 0.16, uWing.x - 0.02, vGrid.x);
+    // And gone before the footprint runs out at either end, so the nose and the far end of
+    // the wake are the cloud giving up rather than the mesh ending.
+    float ends = smoothstep(0.0, 0.05, vGrid.x) * (1.0 - smoothstep(0.94, 1.0, vGrid.x));
+    float profile = max(sheet, wake) * mix(uHaze, 1.0, overWing) * ends;
+
+    // Two scales of cloud: a slow body drifting aft with the flow, and a finer shimmer that
+    // keeps the edges alive without moving the sheet off its station. Sampled in airframe
+    // units, so the grain is the same size whatever the footprint turned out to be.
+    vec2 field = vGrid * uSize;
+    float body = fbm((field * 1.16) + vec2(uTime * -0.30, uLayer * 5.0));
+    float fine = fbm((field * 2.72) + vec2(uTime * -0.85, (uTime * 0.12) + (uLayer * 9.0)));
     float cloud = mix(body, fine, 0.35);
 
-    // A weak pull condenses only the densest patches; a hard one closes them into a sheet.
-    // Same noise field either way, so the cloud grows and heals rather than fading in.
-    // The window is set against what this noise actually produces: four octaves halving in
-    // amplitude average about 0.47, not 0.5, so a cut anywhere near a half would leave the
-    // patchy end of the effect — which is most of it — showing nothing at all.
-    float cut = mix(0.44, 0.14, uStrength);
+    // A weak pull condenses only the densest patches; a hard one closes them up. Same noise
+    // field either way, so the cloud grows and heals rather than fading in. The window is
+    // set against what this noise actually produces: four octaves halving in amplitude
+    // average about 0.47, not 0.5, so a cut anywhere near a half would leave the patchy end
+    // of the effect — which is most of it — showing nothing at all. The hard end of the cut
+    // stays well above zero on purpose: a sheet that closes completely is a white blanket
+    // with an aircraft somewhere under it.
+    float cut = mix(uDensity.x, uDensity.y, uStrength);
     float density = smoothstep(cut, cut + 0.24, cloud * profile);
 
     // A thin slab reads denser edge-on, because that is where the line of sight crosses
@@ -180,7 +191,7 @@ const VAPOR_FRAGMENT_SHADER = /* glsl */ `
     float grazing = mix(1.0, 0.45, smoothstep(0.25, 0.95, facing));
 
     float alpha =
-      density * grazing * mix(0.45, 0.9, uStrength) *
+      density * grazing * mix(uOpacity.x, uOpacity.y, uStrength) *
       mix(1.0, 0.6, uLayer) * smoothstep(0.0, 0.12, uStrength);
     if (alpha < 0.004) discard;
 
@@ -228,7 +239,11 @@ export default function VaporSheets({ aircraft, model, condensation }) {
           uLayerLift: { value: planform.chord * (tuning.layerLift ?? 0) },
           uLayer: { value: layer },
           uEdge: { value: tuning.edge ?? [0.35, 0.8] },
-          uAspect: { value: planform.scale[2] / planform.scale[0] },
+          uWing: { value: planform.wing },
+          uSize: { value: [planform.scale[0], planform.scale[2]] },
+          uOpacity: { value: tuning.opacity ?? [0.2, 0.5] },
+          uDensity: { value: tuning.density ?? [0.46, 0.26] },
+          uHaze: { value: tuning.haze ?? 0.3 },
         },
         transparent: true,
         blending: NormalBlending,

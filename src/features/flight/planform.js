@@ -82,27 +82,36 @@ function unionOf(names, model, box) {
 /*
 The patch of sky the sheet occupies, in the airframe's frame.
 
-The wing meshes give the leading edge, the trailing edge and the span; the footprint is
-that, carried further aft because the cloud does not stop where the structure does, and a
-little wider because it does not stop at the tip rib either. X runs aft to fore, Z across.
+Two boxes, because the effect has two parts. A hard pull condenses a thick sheet over the
+wing, but the same air is being turned by the whole upper surface, so at high alpha the
+photographs show a thin veil lying over the entire aircraft — nose, canopy, spine, tails —
+with the wing sheet standing proud of it. The footprint is therefore the whole airframe,
+carried a little further aft than the structure because the cloud does not stop where the
+metal does, and the wing box is kept alongside it to say where in that footprint the sheet
+is allowed to be thick. X runs aft to fore, Z across.
 */
 export function measureFootprint(model, tuning) {
-  const box = unionOf(tuning.wingMeshes, model, new Box3())
-  if (box.isEmpty()) return null
+  const wing = unionOf(tuning.wingMeshes, model, new Box3())
+  const body = unionOf(tuning.planformMeshes ?? tuning.wingMeshes, model, new Box3())
+  if (wing.isEmpty() || body.isEmpty()) return null
 
-  const leading = box.max.x
-  const chord = Math.max(leading - box.min.x, 1e-3)
-  const trailing = box.min.x - (chord * tuning.chordExtension)
-  const margin = (box.max.z - box.min.z) * tuning.spanMargin * 0.5
+  const chord = Math.max(wing.max.x - wing.min.x, 1e-3)
+  const leading = body.max.x
+  const trailing = body.min.x - (chord * tuning.chordExtension)
+  const margin = (body.max.z - body.min.z) * tuning.spanMargin * 0.5
+  const length = leading - trailing
 
   return {
     chord,
     leading,
     trailing,
-    length: leading - trailing,
-    minZ: box.min.z - margin,
-    maxZ: box.max.z + margin,
-    width: (box.max.z - box.min.z) + (margin * 2),
+    length,
+    // Where the wing itself sits inside the footprint, 0 at the aft end and 1 at the nose —
+    // the same coordinate the shader looks the planform up in.
+    wing: [(wing.min.x - trailing) / length, (wing.max.x - trailing) / length],
+    minZ: body.min.z - margin,
+    maxZ: body.max.z + margin,
+    width: (body.max.z - body.min.z) + (margin * 2),
   }
 }
 
@@ -349,6 +358,7 @@ export function bakePlanform(model, tuning) {
     heightMin: minY,
     heightScale,
     chord: footprint.chord,
+    wing: footprint.wing,
     // One texel, in the mesh's own 0..1 grid space — the step the shader reads the height
     // gradient over when it works out which way the draped sheet is facing.
     texel: [1 / nx, 1 / nz],

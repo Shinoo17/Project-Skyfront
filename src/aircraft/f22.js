@@ -217,6 +217,8 @@ const f22 = {
       ],
       planformMeshes: [
         'Body_Fuselage_Main',
+        'Canopy_Glass',
+        'Canopy_Frame_Rear',
         'Wing_LEFlap_L',
         'Wing_LEFlap_R',
         'Wing_Aileron_L',
@@ -226,13 +228,13 @@ const f22 = {
         'Tail_Stabilator_L',
         'Tail_Stabilator_R',
       ],
-      // How far past the trailing edge the sheet still streams before it shreds, and how
-      // far outboard of the tips it is allowed to reach.
+      // How far past the tail the veil still streams before it shreds, as a fraction of the
+      // wing chord, and how far outboard of the tips it is allowed to reach.
       chordExtension: 0.16,
       spanMargin: 0.04,
-      // Chordwise cells the planform is measured in. At this figure a cell is about two
-      // centimetres of real wing, which is finer than the leading edge is sharp.
-      resolution: 192,
+      // Cells along the aircraft the planform is measured in. At this figure a cell is about
+      // three centimetres of real airframe, which is finer than the leading edge is sharp.
+      resolution: 256,
       // How far the outline is softened, and where in that soft edge the cloud starts and
       // finishes. Together they hold the vapour just inside the wing rather than letting it
       // stop dead at the tip rib — an edge this thin would otherwise alias badly side-on.
@@ -251,6 +253,19 @@ const f22 = {
       // as one thick blanket instead of one flat decal.
       layers: 4,
       layerLift: 0.05,
+      // How much of the wing's sheet the rest of the airframe carries. The same pull that
+      // condenses a thick sheet over the wing lays a thin veil over the whole upper surface,
+      // and the photographs show the aircraft plainly through it — so this is deliberately
+      // low, and it is what makes the effect read as vapour rather than as paint.
+      haze: 0.3,
+      // Alpha per layer, from the faintest pull to the hardest. Four layers compound, so the
+      // second figure is not what the cloud looks like — turning it up past about 0.55 is
+      // where the airframe starts disappearing under it.
+      opacity: [0.16, 0.42],
+      // Where the noise gets cut into cloud, weak pull to hard. The hard end stays well
+      // above zero so even a maximum pull keeps holes in the sheet to see the aircraft
+      // through; lower it toward 0.1 for the solid white blanket of a humid-day airshow.
+      density: [0.46, 0.28],
       // Measured against what the flight model actually pulls, not against the airframe's
       // paper limit: the demonstration loop peaks at about three and a half G, and only a
       // deliberate hard pull gets past six. Set at the old two-and-a-half, a loop showed a
