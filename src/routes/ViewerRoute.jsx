@@ -8,14 +8,18 @@ FORM: Aerospace hangar terminal extended with a restrained combat-game HUD.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { getAircraft } from '../aircraft'
 import useFlightControls, { readAxes, readThrottleDirection } from '../features/flight/useFlightControls'
 import Interface from '../features/viewer/Interface'
 import Scene from '../features/viewer/Scene'
 import LoaderScreen from '../ui/LoaderScreen'
 import SceneErrorBoundary from '../ui/SceneErrorBoundary'
 import useFullscreen from '../ui/useFullscreen'
+import { resolveLoadout } from '../weapons'
 
-export default function ViewerRoute() {
+export default function ViewerRoute({ aircraftId }) {
+  const aircraft = getAircraft(aircraftId)
+  const loadout = useMemo(() => resolveLoadout(aircraft.weapons), [aircraft])
   const [clips, setClips] = useState([])
   const [animationStates, setAnimationStates] = useState({})
   const [isPlaying, setIsPlaying] = useState(
@@ -37,8 +41,13 @@ export default function ViewerRoute() {
   const [throttle, setThrottle] = useState(0.32)
   const [afterburner, setAfterburner] = useState(false)
   const [flightResetId, setFlightResetId] = useState(0)
+  // null when the airframe is on stage; 'all' for the whole loadout, or a weapon id for
+  // one weapon on its own.
+  const [weaponView, setWeaponView] = useState(null)
   const manualFlightRef = useRef(manualFlight)
   manualFlightRef.current = manualFlight
+  const weaponViewRef = useRef(weaponView)
+  weaponViewRef.current = weaponView
   const handleFullscreen = useFullscreen()
 
   const handleClipsReady = useCallback((nextClips) => {
@@ -59,6 +68,31 @@ export default function ViewerRoute() {
   const handleViewChange = useCallback((view) => {
     setViewRequest({ view, id: performance.now() })
     setIsPanelOpen(false)
+  }, [])
+
+  /*
+  Entering the weapons view takes the stage from the airframe: clips stop, direct control drops,
+  and the camera swings square to the weapons. Moving between weapons once inside changes
+  nothing else, so picking one out of the X does not also shove the camera.
+  */
+  const handleWeaponViewChange = useCallback((next) => {
+    const current = weaponViewRef.current
+    if (current === next) return
+
+    weaponViewRef.current = next
+    setWeaponView(next)
+
+    if (next && !current) {
+      setManualFlight(false)
+      setAfterburner(false)
+      setAutoRotate(false)
+      setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
+      setIsPlaying(false)
+      setViewRequest({ view: 'front', id: performance.now() })
+    } else if (!next && current) {
+      setIsPlaying(true)
+      setViewRequest({ view: 'perspective', id: performance.now() })
+    }
   }, [])
 
   const handleManualFlightChange = useCallback((enabled) => {
@@ -107,7 +141,7 @@ export default function ViewerRoute() {
     Space: (event, { fieldFocused }) => {
       // Space still activates whatever control has focus rather than dropping flight mode.
       const target = event.target instanceof HTMLElement ? event.target : null
-      if (fieldFocused || target?.closest('button')) return
+      if (fieldFocused || target?.closest('button') || weaponViewRef.current) return
       event.preventDefault()
       if (manualFlightRef.current) {
         setManualFlight(false)
@@ -120,18 +154,25 @@ export default function ViewerRoute() {
     },
     KeyR: (event, { fieldFocused }) => {
       if (fieldFocused) return
-      handleViewChange('perspective')
+      // Recentring means the weapons square-on while the weapons view is up, not the airframe's
+      // three-quarter pose.
+      handleViewChange(weaponViewRef.current ? 'front' : 'perspective')
     },
   }), [handleViewChange])
 
   const flightControls = useFlightControls({
-    // Any flight key drops the viewer out of clip playback and into direct control.
+    // Any flight key drops the viewer out of clip playback and into direct control — but
+    // not out of the weapons view, where there is no airframe to fly.
     onPress: () => {
+      if (weaponViewRef.current) return
       setManualFlight(true)
       setAutoRotate(false)
       setIsPlaying(false)
     },
-    onChange: (pressed) => setFlightInput(readAxes(pressed)),
+    onChange: (pressed) => {
+      if (weaponViewRef.current) return
+      setFlightInput(readAxes(pressed))
+    },
     keyActions,
   })
 
@@ -139,6 +180,8 @@ export default function ViewerRoute() {
   // timer instead of on the keydown.
   useEffect(() => {
     const timer = window.setInterval(() => {
+      if (weaponViewRef.current) return
+
       const direction = readThrottleDirection(flightControls.current.pressed)
       if (!direction) return
 
@@ -173,6 +216,8 @@ export default function ViewerRoute() {
             throttle={throttle}
             afterburner={afterburner}
             onClipsReady={handleClipsReady}
+            aircraftId={aircraft.id}
+            weaponView={weaponView}
           />
         </SceneErrorBoundary>
       </div>
@@ -181,6 +226,10 @@ export default function ViewerRoute() {
       <div className="scanline" aria-hidden="true" />
 
       <Interface
+        aircraft={aircraft}
+        loadout={loadout}
+        weaponView={weaponView}
+        onWeaponViewChange={handleWeaponViewChange}
         clips={clips}
         animationStates={animationStates}
         onAnimationToggle={handleAnimationToggle}

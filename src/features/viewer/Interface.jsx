@@ -9,14 +9,15 @@ import {
   Flame,
   Gauge,
   Lightbulb,
+  Layers,
   Plane,
+  Rocket,
   Rotate3D,
   RotateCcw,
   RotateCw,
   Scan,
   X,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
 
 import Topbar from '../../ui/Topbar'
 
@@ -99,7 +100,30 @@ function FlightControlButton({
   )
 }
 
+function WeaponOption({ weapon, active, onSelect }) {
+  return (
+    <button
+      type="button"
+      className={`weapon-option ${active ? 'is-active' : ''}`}
+      aria-pressed={active}
+      onClick={() => onSelect(weapon.id)}
+    >
+      <span className="weapon-count">{weapon.count}×</span>
+      <span className="animation-copy">
+        <strong>{weapon.designation}</strong>
+        <small>{weapon.role}</small>
+      </span>
+      <span className="weapon-station">{weapon.station}</span>
+    </button>
+  )
+}
+
 function ControlPanel({
+  aircraft,
+  loadout,
+  weaponView,
+  onWeaponViewChange,
+  panelMode,
   clips,
   animationStates,
   onAnimationToggle,
@@ -110,7 +134,6 @@ function ControlPanel({
   lightingMode,
   onLightingMode,
   onViewChange,
-  manualFlight,
   aircraftMotionEnabled,
   onAircraftMotionToggle,
   flightInput,
@@ -124,18 +147,15 @@ function ControlPanel({
   isOpen,
   onClose,
 }) {
-  const [panelMode, setPanelMode] = useState(
-    manualFlight ? 'flight' : 'animations',
-  )
-
-  useEffect(() => {
-    setPanelMode(manualFlight ? 'flight' : 'animations')
-  }, [manualFlight])
-
+  // The tab is a readout of what the stage is showing, never its own piece of state — the
+  // route owns both the weapons view and direct control, so a flight key can never leave
+  // the panel pointing at a tab the viewer is not on.
   const changePanelMode = (mode) => {
-    setPanelMode(mode)
-    onManualFlightChange(mode === 'flight')
+    onWeaponViewChange(mode === 'weapons' ? 'all' : null)
+    if (mode !== 'weapons') onManualFlightChange(mode === 'flight')
   }
+
+  const selectedWeapon = loadout.find((weapon) => weapon.id === weaponView) ?? null
 
   const signedInput = (value) => {
     const amount = Math.round(value * 100)
@@ -150,8 +170,8 @@ function ControlPanel({
       <div className="panel-drag" aria-hidden="true" />
       <div className="panel-heading">
         <div>
-          <span>AIRFRAME CONTROL</span>
-          <strong>F-22 / READY</strong>
+          <span>{panelMode === 'weapons' ? 'WEAPONS CONTROL' : 'AIRFRAME CONTROL'}</span>
+          <strong>{aircraft.shortName} / READY</strong>
         </div>
         <button type="button" className="icon-button close-panel" onClick={onClose} aria-label="ปิดแผงควบคุม">
           <X size={18} />
@@ -175,9 +195,69 @@ function ControlPanel({
           className={panelMode === 'flight' ? 'is-active' : ''}
           onClick={() => changePanelMode('flight')}
         >
-          <Plane size={13} /> Flight ctrl
+          <Plane size={13} /> Flight
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={panelMode === 'weapons'}
+          className={panelMode === 'weapons' ? 'is-active' : ''}
+          disabled={!loadout.length}
+          onClick={() => changePanelMode('weapons')}
+        >
+          <Rocket size={13} /> Weapons
         </button>
       </div>
+
+      {panelMode === 'weapons' && (
+        <section className="panel-section weapon-section" role="tabpanel">
+          <p className="section-label">
+            <Rocket size={13} />
+            {aircraft.shortName} loadout
+            <span className="clip-count">{loadout.length} types</span>
+          </p>
+
+          <div className="weapon-list">
+            <button
+              type="button"
+              className={`weapon-option is-all ${weaponView === 'all' ? 'is-active' : ''}`}
+              aria-pressed={weaponView === 'all'}
+              onClick={() => onWeaponViewChange('all')}
+            >
+              <span className="weapon-count"><Layers size={13} /></span>
+              <span className="animation-copy">
+                <strong>All weapons</strong>
+                <small>Crossed pair</small>
+              </span>
+              <span className="weapon-station">ALL</span>
+            </button>
+
+            {loadout.map((weapon) => (
+              <WeaponOption
+                key={weapon.id}
+                weapon={weapon}
+                active={weaponView === weapon.id}
+                onSelect={onWeaponViewChange}
+              />
+            ))}
+          </div>
+
+          {selectedWeapon ? (
+            <dl className="weapon-spec" aria-live="polite">
+              {selectedWeapon.spec.map(([term, value]) => (
+                <div key={term}>
+                  <dt>{term}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="weapon-hint">
+              เลือกอาวุธหนึ่งรายการเพื่อหมุนให้เห็นตรงๆ พร้อมข้อมูลจำเพาะ
+            </p>
+          )}
+        </section>
+      )}
 
       {panelMode === 'animations' && (
         <section className="panel-section animation-section" role="tabpanel">
@@ -364,7 +444,7 @@ function ControlPanel({
       </section>
 
       <section className="panel-section toggle-stack">
-        {panelMode === 'animations' && (
+        {panelMode !== 'flight' && (
           <Toggle active={autoRotate} onClick={onAutoRotate} icon={Rotate3D}>
             Auto orbit
           </Toggle>
@@ -396,6 +476,10 @@ function ControlPanel({
 }
 
 export default function Interface({
+  aircraft,
+  loadout = [],
+  weaponView,
+  onWeaponViewChange,
   clips,
   animationStates,
   onAnimationToggle,
@@ -423,13 +507,21 @@ export default function Interface({
   onPanelClose,
 }) {
   const activeSystemCount = Object.values(animationStates).filter(Boolean).length
+  const panelMode = weaponView
+    ? 'weapons'
+    : manualFlight ? 'flight' : 'animations'
+  const mode = panelMode === 'weapons'
+    ? 'WEAPONS BAY'
+    : manualFlight ? 'DIRECT CONTROL' : 'HANGAR VIEW'
+  const selectedTitle = loadout
+    .find((weapon) => weapon.id === weaponView)?.displayName.toUpperCase() ?? null
 
   return (
     <div className="interface">
       <Topbar onFullscreen={onFullscreen} />
 
       <div className="viewer-status-rail" aria-live="polite">
-        <span><small>MODE</small><strong>{manualFlight ? 'DIRECT CONTROL' : 'HANGAR VIEW'}</strong></span>
+        <span><small>MODE</small><strong>{mode}</strong></span>
         <span><small>SYSTEMS</small><strong>{activeSystemCount} / {clips.length || '-'}</strong></span>
         <span><small>THRUST</small><strong>{Math.round(throttle * 100)}%</strong></span>
         <span><small>LIGHT</small><strong>{lightingMode === 'stealth' ? 'LOW' : 'STUDIO'}</strong></span>
@@ -444,16 +536,30 @@ export default function Interface({
       <div className="viewer-sight" aria-hidden="true"><i /><i /><b /></div>
 
       <div className="airframe-title" aria-hidden="true">
-        <span>HANGAR / AIRFRAME BAY</span>
-        <strong>F-22 RAPTOR</strong>
-        <p>ORBIT CAMERA / LIVE CONTROL SURFACES / FLIGHT RANGE READY</p>
+        <span>{panelMode === 'weapons' ? 'HANGAR / WEAPONS BAY' : 'HANGAR / AIRFRAME BAY'}</span>
+        <strong>
+          {panelMode === 'weapons'
+            ? (selectedTitle ?? `${aircraft.shortName} WEAPONS`)
+            : aircraft.displayName.toUpperCase()}
+        </strong>
+        <p>
+          {panelMode === 'weapons'
+            ? 'ORBIT CAMERA / WEAPON INSPECTION / NOT ARMED'
+            : 'ORBIT CAMERA / LIVE CONTROL SURFACES / FLIGHT RANGE READY'}
+        </p>
       </div>
 
       <button type="button" className="open-panel" onClick={onPanelOpen}>
-        {manualFlight ? 'FLIGHT' : 'CONTROLS'} <ChevronDown size={15} />
+        {panelMode === 'weapons' ? 'WEAPONS' : manualFlight ? 'FLIGHT' : 'CONTROLS'}
+        <ChevronDown size={15} />
       </button>
 
       <ControlPanel
+        aircraft={aircraft}
+        loadout={loadout}
+        weaponView={weaponView}
+        onWeaponViewChange={onWeaponViewChange}
+        panelMode={panelMode}
         clips={clips}
         animationStates={animationStates}
         onAnimationToggle={onAnimationToggle}
@@ -464,7 +570,6 @@ export default function Interface({
         lightingMode={lightingMode}
         onLightingMode={onLightingMode}
         onViewChange={onViewChange}
-        manualFlight={manualFlight}
         aircraftMotionEnabled={aircraftMotionEnabled}
         onAircraftMotionToggle={onAircraftMotionToggle}
         flightInput={flightInput}

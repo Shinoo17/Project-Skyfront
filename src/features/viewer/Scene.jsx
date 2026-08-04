@@ -22,6 +22,8 @@ import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 import { getAircraft } from '../../aircraft'
+import { resolveLoadout } from '../../weapons'
+import WeaponDisplay from './WeaponDisplay'
 import ExhaustPlumes from '../flight/ExhaustPlumes'
 import { applySurfaceTargets } from '../flight/surfaces'
 import { useGraphicsProfile } from '../../three/graphics'
@@ -53,6 +55,7 @@ function AircraftModel({
   flightResetId,
   throttle,
   afterburner,
+  hidden,
 }) {
   const group = useRef()
   const attitude = useRef(new Quaternion())
@@ -163,6 +166,10 @@ function AircraftModel({
   }, [actions, animationStates, invalidate, isPlaying, manualFlight, mixer, playbackSpeed])
 
   useFrame((state, delta) => {
+    // The airframe stays mounted behind the weapons display so its clips, its pose, and its
+    // four megabytes of geometry survive the trip. Off screen it does no work.
+    if (hidden) return
+
     if (group.current) {
       if (manualFlight) {
         if (previousFlightResetId.current !== flightResetId) {
@@ -229,6 +236,7 @@ function AircraftModel({
       ref={group}
       quaternion={baseAircraftQuaternion}
       position={[0, 0.25, 0]}
+      visible={!hidden}
     >
       <primitive object={model} />
       <ExhaustPlumes
@@ -385,13 +393,20 @@ export default function Scene({
   afterburner,
   onClipsReady,
   aircraftId,
+  weaponView,
 }) {
   const controls = useRef()
   const fpsMeter = useRef({ frames: 0 })
-  const [modelRadius, setModelRadius] = useState(5.3)
+  const [aircraftRadius, setAircraftRadius] = useState(5.3)
+  const [weaponRadius, setWeaponRadius] = useState(4)
   const isStealth = lightingMode === 'stealth'
   const aircraft = getAircraft(aircraftId)
+  const loadout = useMemo(() => resolveLoadout(aircraft.weapons), [aircraft])
   const graphics = useGraphicsProfile('studio')
+
+  // Each subject reports its own bounds and keeps them, so leaving the weapons display reframes the
+  // airframe without it having to measure itself a second time.
+  const modelRadius = weaponView ? weaponRadius : aircraftRadius
 
   return (
     <>
@@ -465,9 +480,20 @@ export default function Scene({
             throttle={throttle}
             afterburner={afterburner}
             onClipsReady={onClipsReady}
-            onModelBoundsReady={setModelRadius}
+            onModelBoundsReady={setAircraftRadius}
+            hidden={Boolean(weaponView)}
           />
         </Suspense>
+
+        {weaponView && (
+          <Suspense fallback={null}>
+            <WeaponDisplay
+              loadout={loadout}
+              selectedId={weaponView === 'all' ? null : weaponView}
+              onBoundsReady={setWeaponRadius}
+            />
+          </Suspense>
+        )}
 
         <Grid
           position={[0, -2.07, 0]}

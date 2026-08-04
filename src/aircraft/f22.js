@@ -151,6 +151,8 @@ const CLIP_METADATA = {
 const f22 = {
   id: 'f22',
   displayName: 'F-22 Raptor',
+  // What the panel headings call it where a full name will not fit.
+  shortName: 'F-22',
   url: '/F22_model.glb',
 
   controlSurfaces: CONTROL_SURFACES,
@@ -341,7 +343,15 @@ const f22 = {
     },
   },
 
-  // Reserved for the missile milestone: named nodes the stores hang from.
+  // What this airframe carries, by weapon id from src/weapons. The registry there owns
+  // every detail of the weapon itself; the airframe states only which ones are its own,
+  // how many, and where they ride. A second airframe lists its own weapons the same way.
+  weapons: [
+    { id: 'aim9', count: 2, station: 'Side bay' },
+    { id: 'aim120', count: 6, station: 'Main bay' },
+  ],
+
+  // Reserved for the missile milestone: named nodes the weapons hang from.
   hardpoints: [],
 }
 

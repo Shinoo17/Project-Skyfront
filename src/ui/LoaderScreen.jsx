@@ -1,4 +1,5 @@
 import { useProgress } from '@react-three/drei'
+import { useEffect, useState } from 'react'
 
 /*
 `map` is optional and only means anything on a flight surface: it supplies the range's own
@@ -9,8 +10,18 @@ export default function LoaderScreen({ mode = 'viewer', map = null }) {
   const { active, progress, loaded, total, errors } = useProgress()
   const hasError = errors.length > 0
   const isFlight = mode === 'flight'
+  const isIdle = !active && progress === 100 && !hasError
 
-  if (!active && progress === 100 && !hasError) return null
+  // Weapons stream in on demand, long after the airframe is up. Once the first load has
+  // finished this screen has done its job — a later fetch must not black out a live
+  // viewer — so it stands down for good and leaves errors to the boundary.
+  const [hasSettled, setHasSettled] = useState(false)
+
+  useEffect(() => {
+    if (isIdle) setHasSettled(true)
+  }, [isIdle])
+
+  if (isIdle || hasSettled) return null
 
   const assets = ['F22_model.glb', ...(map?.assets ?? [])].join(', ')
 
