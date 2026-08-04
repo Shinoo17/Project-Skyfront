@@ -189,6 +189,93 @@ const f22 = {
   flight: {
     scale: 7,
     isFlightDetail,
+
+    // The vapour sheet a hard pull lays over the wing. Two mesh lists, because the sheet
+    // needs two different things from the airframe.
+    //
+    // `wingMeshes` bounds the footprint — how far forward, how far aft, how far out the
+    // effect is allowed to reach at all. The leading-edge flaps give the leading edge and
+    // the span, the ailerons and flaperons give the trailing edge. Keeping it to the wing's
+    // own surfaces is what stops the cloud from wandering up the nose.
+    //
+    // `planformMeshes` is what the outline and the drape are rasterised from inside that
+    // window: the fuselage (which carries the wing skin and the LEX in one mesh here), the
+    // wing surfaces, and the stabilators, which the cloud reaches once it is streaming aft.
+    // Deliberately not the vertical tails or the canopy — they stand well above the upper
+    // surface, and a sheet draped over their height would hang in the air off the spine.
+    //
+    // Lengths are fractions of the wing chord. Onsets are the flight-model state the
+    // suction is read from; see features/flight/condensation.js for what they mean.
+    condensation: {
+      wingMeshes: [
+        'Wing_LEFlap_L',
+        'Wing_LEFlap_R',
+        'Wing_Aileron_L',
+        'Wing_Aileron_R',
+        'Wing_Flaperon_L',
+        'Wing_Flaperon_R',
+      ],
+      planformMeshes: [
+        'Body_Fuselage_Main',
+        'Wing_LEFlap_L',
+        'Wing_LEFlap_R',
+        'Wing_Aileron_L',
+        'Wing_Aileron_R',
+        'Wing_Flaperon_L',
+        'Wing_Flaperon_R',
+        'Tail_Stabilator_L',
+        'Tail_Stabilator_R',
+      ],
+      // How far past the trailing edge the sheet still streams before it shreds, and how
+      // far outboard of the tips it is allowed to reach.
+      chordExtension: 0.16,
+      spanMargin: 0.04,
+      // Chordwise cells the planform is measured in. At this figure a cell is about two
+      // centimetres of real wing, which is finer than the leading edge is sharp.
+      resolution: 192,
+      // How far the outline is softened, and where in that soft edge the cloud starts and
+      // finishes. Together they hold the vapour just inside the wing rather than letting it
+      // stop dead at the tip rib — an edge this thin would otherwise alias badly side-on.
+      edgeFeather: 0.03,
+      edge: [0.5, 0.85],
+      // How far aft the wing's shape survives in the air that has left it. Past roughly
+      // this much chord the streaming cloud has forgotten what shed it.
+      wakeLength: 0.1,
+      // Clear of the skin so the sheet never cuts through the wing, and bulging at the
+      // suction peak the way a constant-pressure surface does. It needs no arch over the
+      // spine: it is draped on the measured upper surface, so the fuselage lifts it.
+      standoff: 0.025,
+      billow: 0.09,
+      // A cloud has depth. Four sheets, each sitting a little higher and a little further
+      // inside the one below it, each carrying its own patch of the same noise field, read
+      // as one thick blanket instead of one flat decal.
+      layers: 4,
+      layerLift: 0.05,
+      // Measured against what the flight model actually pulls, not against the airframe's
+      // paper limit: the demonstration loop peaks at about three and a half G, and only a
+      // deliberate hard pull gets past six. Set at the old two-and-a-half, a loop showed a
+      // tenth of a sheet and the effect never appeared in normal flying. Level flight is
+      // still nothing at all — one G is far below the onset — but a turn worth watching now
+      // shows something, and the wing has to be genuinely near its limit to close it up.
+      onsetG: 1.8,
+      fullG: 5.5,
+      // Angle of attack keeps the cloud alive through a slow nose-high pull where the load
+      // factor has already dropped away, but it never makes as much of it as the pull did.
+      aoaOnsetDeg: 12,
+      aoaFullDeg: 28,
+      aoaWeight: 0.85,
+      // No dynamic pressure, no suction: below the first figure the wing makes no cloud at
+      // any load, and above the second the speed is no longer what is holding it back. The
+      // window is low deliberately — the airshow passes this effect is drawn from are slow
+      // and nose-high, and a gate set at fighting speed would erase exactly those.
+      minKmh: 260,
+      fullKmh: 560,
+      // Condensing is quicker than clearing — the air has to be mixed and re-warmed before
+      // the sheet goes, which is why it hangs on a beat after the pull is released.
+      onsetPerSecond: 6,
+      decayPerSecond: 2.2,
+    },
+
     // Flight-range envelope. Published airspeed follows the supplied F-22 performance
     // table; kmhPerWorldUnitPerSecond maps it back onto the compact arcade terrain without
     // making a Mach 2 pass cross the entire range in a few seconds.

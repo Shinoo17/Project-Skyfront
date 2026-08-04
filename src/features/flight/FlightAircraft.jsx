@@ -11,6 +11,12 @@ import {
   updateChaseCamera,
 } from './chaseCamera'
 import ExhaustPlumes from './ExhaustPlumes'
+import VaporSheets from './VaporSheets'
+import {
+  createCondensationState,
+  resetCondensationState,
+  stepCondensation,
+} from './condensation'
 import {
   FLIGHT_FIXED_STEP,
   createFlightState,
@@ -136,9 +142,15 @@ export default function FlightAircraft({
   // same object, so the flame can never show thrust the aircraft is not making.
   const reheat = useRef(createAfterburnerState())
 
+  // How much vapour the wing is condensing, on the same terms: the sheet is not something
+  // the renderer decides to show, it is a reading off the load the flight model is putting
+  // through the wing this frame.
+  const condensation = useRef(createCondensationState())
+
   const resetFlight = (cause, keepThrottle = true) => {
     const state = flight.current
     resetAfterburnerState(reheat.current)
+    resetCondensationState(condensation.current)
     state.spawn.copy(spawn)
     if (!keepThrottle) controls.current.throttle = envelope.idleThrottle
     resetFlightState(
@@ -209,6 +221,21 @@ export default function FlightAircraft({
     while (current.accumulator >= FLIGHT_FIXED_STEP) {
       stepFlight(aircraftState, command, envelope, FLIGHT_FIXED_STEP)
       current.accumulator -= FLIGHT_FIXED_STEP
+    }
+
+    // An airframe that ships no condensation block simply makes no vapour, the same way one
+    // with no engines list draws no plume.
+    if (aircraft.flight.condensation) {
+      stepCondensation(
+        condensation.current,
+        {
+          gLoad: aircraftState.gLoad,
+          aoaDeg: aircraftState.aoaDeg,
+          speedKmh: aircraftState.speedKmh,
+          step,
+        },
+        aircraft.flight.condensation,
+      )
     }
 
     const speed = aircraftState.velocity.length()
@@ -359,6 +386,7 @@ export default function FlightAircraft({
         reheat={reheat}
         continuous
       />
+      <VaporSheets aircraft={aircraft} model={model} condensation={condensation} />
     </group>
   )
 }
