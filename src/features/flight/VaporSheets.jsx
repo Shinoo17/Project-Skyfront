@@ -112,6 +112,7 @@ const VAPOR_FRAGMENT_SHADER = /* glsl */ `
   uniform vec2 uSize;
   uniform vec2 uOpacity;
   uniform vec2 uDensity;
+  uniform float uFalloff;
   uniform float uHaze;
   varying vec2 vGrid;
   varying vec3 vNormal;
@@ -162,9 +163,13 @@ const VAPOR_FRAGMENT_SHADER = /* glsl */ `
     float overWing =
       smoothstep(uWing.y + 0.05, uWing.y - 0.03, vGrid.x) *
       smoothstep(uWing.x - 0.16, uWing.x - 0.02, vGrid.x);
-    // And gone before the footprint runs out at either end, so the nose and the far end of
-    // the wake are the cloud giving up rather than the mesh ending.
-    float ends = smoothstep(0.0, 0.05, vGrid.x) * (1.0 - smoothstep(0.94, 1.0, vGrid.x));
+    // And gone before the footprint runs out at any edge, so the nose, the tips and the far
+    // end of the wake are the cloud giving up rather than the mesh ending. Outboard this is
+    // only insurance — the margin past the tips is wide enough that the outline has already
+    // faded out well inside it — so it is kept to the last cells of the grid.
+    float ends =
+      smoothstep(0.0, 0.05, vGrid.x) * (1.0 - smoothstep(0.94, 1.0, vGrid.x)) *
+      smoothstep(0.0, 0.03, vGrid.y) * (1.0 - smoothstep(0.97, 1.0, vGrid.y));
     float profile = max(sheet, wake) * mix(uHaze, 1.0, overWing) * ends;
 
     // Two scales of cloud: a slow body drifting aft with the flow, and a finer shimmer that
@@ -182,8 +187,18 @@ const VAPOR_FRAGMENT_SHADER = /* glsl */ `
     // of the effect — which is most of it — showing nothing at all. The hard end of the cut
     // stays well above zero on purpose: a sheet that closes completely is a white blanket
     // with an aircraft somewhere under it.
-    float cut = mix(uDensity.x, uDensity.y, uStrength);
-    float density = smoothstep(cut, cut + 0.24, cloud * profile);
+    //
+    // The edge asks more of that noise than the middle does. Where the cloud is running out
+    // of reasons to exist it takes a denser patch to condense anything at all, so the sheet
+    // comes apart into wisps on its way out instead of ending on a contour line — which is
+    // what it did while the profile scaled the noise into the cut rather than raising it:
+    // once coverage fell far enough, every pixel dropped under the threshold at once, and
+    // the last pixels still standing were at full density. So coverage does not touch the
+    // threshold any more. It goes back to being what it always was — how much cloud is
+    // allowed here — and multiplies the alpha, which is the only form of it that can taper
+    // to nothing.
+    float cut = mix(uDensity.x, uDensity.y, uStrength) + (uFalloff * (1.0 - profile));
+    float density = smoothstep(cut, cut + 0.24, cloud);
 
     // A thin slab reads denser edge-on, because that is where the line of sight crosses
     // more of it — the opposite of the plume, which is brightest through its core.
@@ -191,13 +206,13 @@ const VAPOR_FRAGMENT_SHADER = /* glsl */ `
     float grazing = mix(1.0, 0.45, smoothstep(0.25, 0.95, facing));
 
     float alpha =
-      density * grazing * mix(uOpacity.x, uOpacity.y, uStrength) *
+      density * profile * grazing * mix(uOpacity.x, uOpacity.y, uStrength) *
       mix(1.0, 0.6, uLayer) * smoothstep(0.0, 0.12, uStrength);
     if (alpha < 0.004) discard;
 
     // Cloud, lit by nothing in particular: white where it is thick, cooler and greyer
     // where it is thinning out, which is how condensation reads against a bright sky.
-    vec3 color = mix(vec3(0.78, 0.82, 0.88), vec3(1.0, 1.0, 1.0), density);
+    vec3 color = mix(vec3(0.78, 0.82, 0.88), vec3(1.0, 1.0, 1.0), density * profile);
 
     gl_FragColor = vec4(color, alpha);
   }
@@ -243,6 +258,7 @@ export default function VaporSheets({ aircraft, model, condensation }) {
           uSize: { value: [planform.scale[0], planform.scale[2]] },
           uOpacity: { value: tuning.opacity ?? [0.2, 0.5] },
           uDensity: { value: tuning.density ?? [0.46, 0.26] },
+          uFalloff: { value: tuning.falloff ?? 0.3 },
           uHaze: { value: tuning.haze ?? 0.3 },
         },
         transparent: true,

@@ -231,15 +231,21 @@ const f22 = {
       // How far past the tail the veil still streams before it shreds, as a fraction of the
       // wing chord, and how far outboard of the tips it is allowed to reach.
       chordExtension: 0.16,
-      spanMargin: 0.04,
+      // Wide enough outboard that the feathered outline has air to fade into. At the old
+      // hairline margin the fade ran out of texture at the tip and the cloud finished on
+      // the metal, which is the one place the eye cannot see it finish.
+      spanMargin: 0.12,
       // Cells along the aircraft the planform is measured in. At this figure a cell is about
       // three centimetres of real airframe, which is finer than the leading edge is sharp.
       resolution: 256,
       // How far the outline is softened, and where in that soft edge the cloud starts and
       // finishes. Together they hold the vapour just inside the wing rather than letting it
       // stop dead at the tip rib — an edge this thin would otherwise alias badly side-on.
-      edgeFeather: 0.03,
-      edge: [0.5, 0.85],
+      // The feather is the width of the fade in real metres — about half a metre of wing at
+      // this figure — and the window is deliberately opened wide inside it, low end first,
+      // so the cloud spends that whole band thinning out rather than the inner third of it.
+      edgeFeather: 0.07,
+      edge: [0.25, 0.8],
       // How far aft the wing's shape survives in the air that has left it. Past roughly
       // this much chord the streaming cloud has forgotten what shed it.
       wakeLength: 0.1,
@@ -261,11 +267,17 @@ const f22 = {
       // Alpha per layer, from the faintest pull to the hardest. Four layers compound, so the
       // second figure is not what the cloud looks like — turning it up past about 0.55 is
       // where the airframe starts disappearing under it.
-      opacity: [0.16, 0.42],
+      opacity: [0.16, 0.24],
       // Where the noise gets cut into cloud, weak pull to hard. The hard end stays well
       // above zero so even a maximum pull keeps holes in the sheet to see the aircraft
       // through; lower it toward 0.1 for the solid white blanket of a humid-day airshow.
       density: [0.46, 0.28],
+      // How much harder the noise has to work at the edge of the cloud than in the middle,
+      // added to the cut where coverage has run out entirely. This is what gives the sheet
+      // a fallout rather than an outline: the last of it breaks into wisps over a band of
+      // its own, on top of the alpha already tapering. Too low and the cloud ends on a line
+      // again; past about 0.45 the wing sheet starts losing its own edges as well.
+      falloff: 0.3,
       // Measured against what the flight model actually pulls, not against the airframe's
       // paper limit: the demonstration loop peaks at about three and a half G, and only a
       // deliberate hard pull gets past six. Set at the old two-and-a-half, a loop showed a
@@ -431,7 +443,7 @@ const f22 = {
         autoLevelGain: 0.35,
         // The leveller's window: outside this bank the wings stay where the pilot left
         // them, so held banks and inverted flight are the pilot's business.
-        autoLevelMaxBankDeg: 15,
+        autoLevelMaxBankDeg: 30,
         spinDamping: 2.2,
 
         aoaDragGain: 26,
