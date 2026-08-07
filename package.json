@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",
+    "performance-check": "node --import ./scripts/register.mjs scripts/performance-check.mjs",
     "maneuver-check": "node --import ./scripts/register.mjs scripts/maneuver-check.mjs"
   },
   "dependencies": {

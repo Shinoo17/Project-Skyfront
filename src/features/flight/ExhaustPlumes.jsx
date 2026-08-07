@@ -310,11 +310,19 @@ export default function ExhaustPlumes({
     // the flame follows how much of it is actually alight. The airframe viewer has no
     // flight model behind its switch, so there reheat is simply on or off.
     const reheatLevel = reheat ? reheat.current.level : Number(afterburner)
-    const milTarget = active ? liveThrottle : 0
-    const abTarget = active ? reheatLevel : 0
+    const afterburnerConfig = aircraft.flight.envelope.afterburner
+    // The range publishes its physical core spool on the reheat ref. The viewer has no
+    // flight model, so a held A/B control drives this visual core through MIL itself.
+    const coreTarget = reheat
+      ? (reheat.current.coreLevel ?? liveThrottle)
+      : Math.max(liveThrottle, afterburner ? afterburnerConfig.coreTarget : 0)
+    const milTarget = active ? coreTarget : 0
     const state = spool.current
 
     state.mil += (milTarget - state.mil) * (1 - Math.exp(-2.4 * step))
+    const abTarget = active && (
+      reheat || state.mil >= afterburnerConfig.ignitionCorePower
+    ) ? reheatLevel : 0
     state.ab +=
       (abTarget - state.ab) *
       (1 - Math.exp(-(abTarget > state.ab ? 3.6 : 5.5) * step))

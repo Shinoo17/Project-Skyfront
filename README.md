@@ -97,9 +97,9 @@ is meant to land.
 - Drag to orbit and scroll/pinch to zoom.
 - Use the bottom transport to play, pause, restart, or scrub the animation.
 - Use the control surface to switch clips, playback speed, camera angle, auto-orbit, and lighting mode.
-- Switch to the Flight tab for direct Three.js control of pitch, roll, and yaw. Hold the on-screen controls, or use arrow keys for pitch/roll and `Q` / `E` for yaw.
+- Switch to the Flight tab for direct Three.js control of pitch, roll, and yaw. Hold the on-screen controls, or use arrow keys for pitch/roll and `Q` / `E` for yaw. Hold the A/B control or `Shift` to drive the engine through military power and light the afterburner.
 - Manual flight moves the ailerons, flaperons, leading-edge flaps, rudders, stabilators, and the thrust-vectoring nozzles while rotating the aircraft itself. Pitch vectors both nozzles together; roll vectors them differentially. Use Level to reset attitude.
-- Select `Test flight` in the top bar to fly over `Mountain_Valley_Colorado.glb`. Use arrow keys for pitch/roll, `Q` / `E` for yaw, `W` / `S` for throttle, `F` for flaps, and `R` to reset. Touch controls are available on screen.
+- Select `Test flight` in the top bar to fly over `Mountain_Valley_Colorado.glb`. Use arrow keys for pitch/roll, `Q` / `E` for yaw, `W` / `S` for dry throttle, hold `Shift` for afterburner, `F` for flaps, and `R` to reset. Touch controls are available on screen.
 - Press `Space` to play/pause and `R` to reset the camera.
 
 The Test Flight canvas uses the optimized Meshopt/KTX2 assets at DPR 1, 30 FPS, with no antialiasing, shadows, environment map, or post-processing to keep GPU and battery use low. Both canvases read those settings from the `eco` and `studio` profiles in [src/three/graphics.js](src/three/graphics.js).

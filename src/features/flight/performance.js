@@ -11,6 +11,12 @@ function smoothstep(value) {
   return clamped * clamped * (3 - (2 * clamped))
 }
 
+export function readThrottlePower(throttle, envelope) {
+  return clamp01(
+    (throttle - envelope.minThrottle) / (1 - envelope.minThrottle),
+  )
+}
+
 export function readAltitudePerformance(altitude, envelope) {
   const { performance } = envelope
   return smoothstep(altitude / performance.highAltitude.worldUnits)
@@ -25,26 +31,26 @@ function readAfterburnerLimitKmh(altitudeMix, envelope) {
   )
 }
 
-/*
-`reheat` is how much of the burner is actually alight, 0..1 — not a switch. A burner
-spooling up walks the target between the dry limit and the reheat limit rather than
-snapping to it, which is what makes light-off read as a surge instead of a jump.
-
-Reheat does not scale with the throttle. Where dry thrust runs from idle up to the military
-limit, the burner dumps fuel into the jet pipe and pulls toward the reheat limit whatever
-the core is set to — which is why lighting it at a crawl is a boost rather than a nudge.
-*/
-export function readTargetAirspeedKmh(throttle, altitude, reheat, envelope) {
+function readDryLimitKmh(altitudeMix, envelope) {
   const { performance } = envelope
-  const altitudeMix = readAltitudePerformance(altitude, envelope)
-  const power = clamp01(
-    (throttle - envelope.minThrottle) / (1 - envelope.minThrottle),
-  )
-  const dryLimit = lerp(
+  return lerp(
     performance.seaLevel.dryKmh,
     performance.highAltitude.dryKmh,
     altitudeMix,
   )
+}
+
+/*
+This is the steady, wings-level equilibrium used only to seed a reset. Live flight does
+not chase this speed: thrust and drag are evaluated independently below, and merely meet
+at the same authored landmarks. Keeping the reset trim here means every manoeuvre still
+enters at the speed named by its throttle while the pilot gets a real power lever in flight.
+*/
+export function readTargetAirspeedKmh(throttle, altitude, reheat, envelope) {
+  const { performance } = envelope
+  const altitudeMix = readAltitudePerformance(altitude, envelope)
+  const power = readThrottlePower(throttle, envelope)
+  const dryLimit = readDryLimitKmh(altitudeMix, envelope)
   const dryTarget = lerp(performance.minKmh, dryLimit, power)
   const level = clamp01(reheat)
   if (!level) return dryTarget
@@ -53,34 +59,48 @@ export function readTargetAirspeedKmh(throttle, altitude, reheat, envelope) {
 }
 
 /*
-Excess thrust, not a flat number.
-
-Accelerating, the airframe gives up a share of its acceleration as it approaches the
-reheat limit, because drag climbs with speed. Decelerating, there is no brake at all: what
-slows the jet after the burner cuts is drag alone, so the rate decays with the gap the
-aircraft is still carrying above the speed its throttle will hold. The magnitudes are
-compressed like the terrain scale; the shape of both curves is the real one.
+Propulsion and drag are deliberately separate. Core power owns dry thrust, reheat adds
+augmented thrust, and neither vanishes because the aircraft crossed a target speed. The
+drag curve uses the same exponent as the throttle curve, so below the dry limit their
+equilibrium still lands on `readTargetAirspeedKmh`; a smooth transonic rise then makes full
+reheat meet drag at the authored afterburner limit.
 */
-export function readAccelerationKmhPerSecond(speedKmh, targetKmh, reheat, altitude, envelope) {
+export function readPropulsionKmhPerSecond(engineCoreLevel, reheat, envelope) {
   const { performance } = envelope
-  if (targetKmh <= speedKmh) {
-    return Math.min(
-      performance.decelerationKmhPerSecond,
-      (speedKmh - targetKmh) * performance.dragDecayPerSecond,
-    )
-  }
+  const core = clamp01(engineCoreLevel)
+  const dryThrust = performance.accelerationKmhPerSecond * (
+    performance.idleThrustFraction
+    + ((1 - performance.idleThrustFraction)
+      * (core ** performance.throttlePowerExponent))
+  )
+  const augmentedThrust = (
+    performance.afterburnerAccelerationKmhPerSecond
+    - performance.accelerationKmhPerSecond
+  ) * clamp01(reheat)
+  return dryThrust + augmentedThrust
+}
 
-  const limit = readAfterburnerLimitKmh(
-    readAltitudePerformance(altitude, envelope),
-    envelope,
+export function readDragKmhPerSecond(speedKmh, altitude, envelope) {
+  const { performance } = envelope
+  const altitudeMix = readAltitudePerformance(altitude, envelope)
+  const dryLimit = readDryLimitKmh(altitudeMix, envelope)
+  const afterburnerLimit = readAfterburnerLimitKmh(altitudeMix, envelope)
+  const dryRange = Math.max(dryLimit - performance.minKmh, 1)
+  const dryLoad = Math.max(0, (speedKmh - performance.minKmh) / dryRange)
+  const lowSpeedFlow = smoothstep(speedKmh / performance.minKmh)
+  const dryDrag = performance.accelerationKmhPerSecond * (
+    (performance.idleThrustFraction * lowSpeedFlow)
+    + ((1 - performance.idleThrustFraction)
+      * (dryLoad ** performance.throttlePowerExponent))
   )
-  const load = limit > 0 ? clamp01(speedKmh / limit) : 0
-  const thrust = lerp(
-    performance.accelerationKmhPerSecond,
-    performance.afterburnerAccelerationKmhPerSecond,
-    clamp01(reheat),
+  const transonic = smoothstep(
+    (speedKmh - dryLimit) / Math.max(afterburnerLimit - dryLimit, 1),
   )
-  return thrust * (1 - (performance.dragFalloff * load * load))
+  const waveDrag = (
+    performance.afterburnerAccelerationKmhPerSecond
+    - performance.accelerationKmhPerSecond
+  ) * transonic
+  return dryDrag + waveDrag
 }
 
 /*
@@ -120,9 +140,10 @@ function readAfterburnerClocks(state, afterburner) {
     state.cooldown = 0
     return
   }
+  const flameout = state.level / afterburner.spoolDownPerSecond
   const dwell = Math.max(0, afterburner.recoveryDelaySeconds - state.cooling)
   const refill = Math.max(0, afterburner.relightReserve - state.reserve)
-  state.cooldown = dwell + (refill * afterburner.recoverySeconds)
+  state.cooldown = flameout + dwell + (refill * afterburner.recoverySeconds)
 }
 
 export function stepAfterburner(state, { commanded, step }, envelope) {
@@ -135,10 +156,16 @@ export function stepAfterburner(state, { commanded, step }, envelope) {
 
   if (state.lit) {
     state.lockedOut = false
-    state.cooling = 0
     state.level = Math.min(1, state.level + (step * afterburner.spoolUpPerSecond))
-    // Billed against the flame that is actually burning, so the light-off transient is not
-    // charged at full reheat.
+  } else {
+    state.level = Math.max(0, state.level - (step * afterburner.spoolDownPerSecond))
+  }
+
+  // Reserve follows thrust actually being produced, not the key state. The light-off and
+  // shutdown transients therefore cost exactly the reheat they deliver, so feathering the
+  // key cannot harvest an unbilled spool-down pulse.
+  if (state.level > 0) {
+    state.cooling = 0
     state.reserve = Math.max(
       0,
       state.reserve - ((step * state.level) / afterburner.burnSeconds),
@@ -147,14 +174,13 @@ export function stepAfterburner(state, { commanded, step }, envelope) {
       state.lit = false
       state.lockedOut = true
     }
-    readAfterburnerClocks(state, afterburner)
-    return state
-  }
-
-  state.level = Math.max(0, state.level - (step * afterburner.spoolDownPerSecond))
-  state.cooling += step
-  if (state.cooling >= afterburner.recoveryDelaySeconds) {
-    state.reserve = Math.min(1, state.reserve + (step / afterburner.recoverySeconds))
+  } else {
+    // Cooling starts only after augmented thrust has genuinely reached zero. A hot nozzle
+    // cannot spend the same half-second both pushing the aircraft and earning fuel back.
+    state.cooling += step
+    if (state.cooling >= afterburner.recoveryDelaySeconds) {
+      state.reserve = Math.min(1, state.reserve + (step / afterburner.recoverySeconds))
+    }
   }
   if (state.lockedOut && state.reserve >= afterburner.relightReserve) state.lockedOut = false
   readAfterburnerClocks(state, afterburner)

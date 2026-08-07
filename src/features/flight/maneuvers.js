@@ -37,11 +37,10 @@ rather than guessed, and three constraints shaped them:
   lets go — that is the post-stall script, the same pull with the energy to carry the flight
   path round with it.
 
-  Reheat goes in on the way out, never into the pull. The burner target ignores the throttle
-  (see `readTargetAirspeedKmh`), so holding it at a slow entry commands roughly 240 km/h per
-  second along the nose — which, the instant the nose comes up, is 240 km/h per second aimed
-  at the sky, dragging the flight path along with it. It is worth the thrust once the nose is
-  coming back down and the manoeuvre wants its energy back.
+  Reheat goes in on the way out, never into the pull. Holding it drives the core through the
+  MIL detent before the burner lights, so the slow entry trim remains intact until the script
+  deliberately asks for combat power. It is worth the thrust once the nose is coming back
+  down and the manoeuvre wants its energy back.
 
   Nothing may descend more than about 40 units below the spawn. The spawn clears the highest
   ground by `map.spawn.clearance` (58) and the range resets a sortie below 9 units of ground
@@ -59,7 +58,10 @@ own entry throttles, not these.
 /*
 Throttle settings, named by the airspeed they hold at demonstration altitude:
 
-  power = (throttle - minThrottle) / (1 - minThrottle), speed = lerp(260, dryLimit, power)
+  power = (throttle - minThrottle) / (1 - minThrottle)
+
+The performance model turns that setting into dry thrust and balances it against drag; the
+speeds below are the resulting trims rather than a direct throttle-to-speed interpolation.
 
 `dryLimit` is the part that bites. It runs from 1100 km/h at sea level to 2230 above
 `highAltitude.worldUnits` (800), and the range spawns a sortie at whatever clears the
@@ -69,7 +71,6 @@ come out roughly 200 km/h slower, which is the sort of error that turns a Cobra 
 */
 const THROTTLE_SLOW = 0.18 // ~475 km/h
 const THROTTLE_LOW = 0.215 // ~550 km/h
-const THROTTLE_CRUISE = 0.237 // ~595 km/h
 const THROTTLE_MIL = 0.26 // ~645 km/h
 const THROTTLE_FAST = 0.328 // ~790 km/h
 
@@ -94,10 +95,10 @@ const MANEUVERS = [
       // Long enough to fly the nose all the way back down through level, because nothing
       // else will: the FCC levels the wings but never the nose, so a push that stops at
       // forty degrees leaves the jet climbing away from the manoeuvre for good.
-      { seconds: 3.5, hold: ['pitch-down'], label: 'NOSE DOWN' },
-      // No reheat on the way out either. The burner target ignores the throttle, so even
-      // here it would overshoot the entry speed by a couple of hundred km/h; the dive off
-      // the top pays the airspeed back on its own, to within a few km/h of where it began.
+      { seconds: 2.8, hold: ['pitch-down'], label: 'NOSE DOWN' },
+      { seconds: 0.5, hold: ['pitch-up'], label: 'LEVEL OFF' },
+      // No reheat on the way out either. The dive off the top pays the airspeed back while
+      // the low dry-power setting keeps the recovery from running away past entry energy.
       { seconds: 3.2, hold: [], label: 'RECOVER' },
     ],
   },
@@ -113,14 +114,15 @@ const MANEUVERS = [
     exitsLevel: true,
     entry: { throttle: THROTTLE_SLOW, settleSeconds: 2.5 },
     steps: [
-      { seconds: 0.85, hold: ['high-aoa', 'pitch-up'], label: 'PULL' },
+      { seconds: 0.6, hold: ['pitch-up', 'throttle-up'], label: 'ZOOM' },
+      { seconds: 0.85, hold: ['high-aoa', 'pitch-up', 'yaw-right', 'throttle-up'], label: 'PULL' },
       // The stick comes forward of the pull but the High-AoA switch stays in: the nose is
       // already across the flight path, and holding aft stick on top of the pedal drives
       // the alpha past 120 degrees and departs the jet rather than swinging it.
-      { seconds: 4.0, hold: ['high-aoa', 'yaw-right'], label: 'PEDAL IN' },
-      { seconds: 2.2, hold: ['pitch-down', 'afterburner'], label: 'UNLOAD' },
-      { seconds: 0.4, hold: ['pitch-up'], label: 'LEVEL OFF' },
-      { seconds: 2.4, hold: [], label: 'RECOVER' },
+      { seconds: 3.3, hold: ['high-aoa', 'yaw-right', 'throttle-up'], label: 'PEDAL IN' },
+      { seconds: 1.0, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
+      { seconds: 0.8, hold: ['pitch-up'], label: 'LEVEL OFF' },
+      { seconds: 1.0, hold: [], label: 'RECOVER' },
     ],
   },
 
@@ -137,9 +139,9 @@ const MANEUVERS = [
     steps: [
       { seconds: 2.2, hold: ['pitch-up'], label: 'ZOOM' },
       { seconds: 4.0, hold: ['high-aoa', 'yaw-right', 'afterburner'], label: 'PEDAL' },
-      { seconds: 1.6, hold: ['pitch-down'], label: 'NOSE DOWN' },
-      { seconds: 0.8, hold: ['pitch-up'], label: 'LEVEL OFF' },
-      { seconds: 1.6, hold: [], label: 'RECOVER' },
+      { seconds: 0.4, hold: ['pitch-down'], label: 'NOSE DOWN' },
+      { seconds: 0.6, hold: [], label: 'SETTLE' },
+      { seconds: 0.5, hold: ['pitch-up'], label: 'LEVEL OFF' },
     ],
   },
 
@@ -157,9 +159,10 @@ const MANEUVERS = [
     steps: [
       { seconds: 1.2, hold: ['high-aoa', 'pitch-up', 'afterburner'], label: 'PULL' },
       { seconds: 1.4, hold: ['high-aoa', 'afterburner'], label: 'HOLD ALPHA' },
-      { seconds: 1.4, hold: ['pitch-down'], label: 'UNLOAD' },
-      { seconds: 0.8, hold: ['pitch-up'], label: 'LEVEL OFF' },
+      { seconds: 3.2, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
+      { seconds: 0.4, hold: ['pitch-down'], label: 'LEVEL OFF' },
       { seconds: 2.4, hold: [], label: 'RECOVER' },
+      { seconds: 0.5, hold: ['pitch-up'], label: 'CAPTURE' },
     ],
   },
 
@@ -167,13 +170,14 @@ const MANEUVERS = [
     id: 'loop',
     name: 'Inside loop',
     brief:
-      'The plain one, and the reference the others are read against. Entered without reheat '
-      + 'so it stays inside the range floor.',
+      'The plain one, and the reference the others are read against. A short powered pull '
+      + 'carries it over the top; the burner comes out before the downhill half.',
     exitsLevel: true,
-    entry: { throttle: THROTTLE_CRUISE, settleSeconds: 2.0 },
+    entry: { throttle: THROTTLE_FAST, settleSeconds: 2.0 },
     steps: [
-      { seconds: 9.0, hold: ['pitch-up'], label: 'PULL THROUGH' },
-      { seconds: 0.4, hold: ['pitch-down'], label: 'LEVEL OFF' },
+      { seconds: 3.0, hold: ['pitch-up', 'afterburner'], label: 'POWER UP' },
+      { seconds: 4.2, hold: ['pitch-up'], label: 'PULL THROUGH' },
+      { seconds: 0.18, hold: ['pitch-up'], label: 'LEVEL OFF' },
       { seconds: 1.6, hold: [], label: 'RECOVER' },
     ],
   },
@@ -213,9 +217,10 @@ const MANEUVERS = [
     entry: { throttle: THROTTLE_LOW, settleSeconds: 2.0 },
     steps: [
       { seconds: 1.8, hold: ['pitch-up', 'afterburner'], label: 'CLIMB' },
-      { seconds: 1.0, hold: [], label: 'EASE' },
-      { seconds: 1.4, hold: ['roll-right'], label: 'ROLL INVERTED' },
-      { seconds: 3.0, hold: ['pitch-up'], label: 'PULL THROUGH' },
+      { seconds: 2.0, hold: ['afterburner'], label: 'EASE' },
+      { seconds: 1.4, hold: ['roll-right', 'afterburner'], label: 'ROLL INVERTED' },
+      { seconds: 1.5, hold: ['pitch-up', 'afterburner'], label: 'POWER THROUGH' },
+      { seconds: 4.2, hold: ['pitch-up'], label: 'PULL THROUGH' },
       { seconds: 0.4, hold: ['pitch-down'], label: 'LEVEL OFF' },
       { seconds: 1.6, hold: [], label: 'RECOVER' },
     ],

@@ -158,7 +158,9 @@ export default function FlightAircraft({
       state.spawn,
       readTargetAirspeedKmh(controls.current.throttle, state.spawn.y, 0, envelope),
       envelope,
+      controls.current.throttle,
     )
+    reheat.current.coreLevel = state.model.engineCoreLevel
     state.accumulator = 0
     state.groundHeight = 0
     state.groundSample = 0
@@ -197,13 +199,17 @@ export default function FlightAircraft({
       1,
     )
 
+    const current = flight.current
+    const aircraftState = current.model
+    const burnerRequested = readAfterburnerCommand(pressed)
     const burner = stepAfterburner(reheat.current, {
-      commanded: readAfterburnerCommand(pressed),
+      // Shift first drives the dry core through the MIL detent. Reheat is allowed to light
+      // only once the core has enough airflow to support it.
+      commanded: burnerRequested
+        && aircraftState.engineCoreLevel >= envelope.afterburner.ignitionCorePower,
       step,
     }, envelope)
 
-    const current = flight.current
-    const aircraftState = current.model
     const attitude = current.attitude
 
     const command = {
@@ -214,6 +220,7 @@ export default function FlightAircraft({
       throttle: controls.current.throttle,
       airBrake: readAirBrake(pressed),
       highAoA: readHighAoA(pressed),
+      afterburnerCommanded: burnerRequested,
       burnerLevel: burner.level,
     }
 
@@ -222,6 +229,9 @@ export default function FlightAircraft({
       stepFlight(aircraftState, command, envelope, FLIGHT_FIXED_STEP)
       current.accumulator -= FLIGHT_FIXED_STEP
     }
+    // The plume consumes this same spooled core reading, so the visible dry exhaust cannot
+    // lag behind or race ahead of the force the aircraft is actually making.
+    reheat.current.coreLevel = aircraftState.engineCoreLevel
 
     // An airframe that ships no condensation block simply makes no vapour, the same way one
     // with no engines list draws no plume.
@@ -353,7 +363,10 @@ export default function FlightAircraft({
       ? 'depleted'
       : burner.lit
         ? 'engaged'
-        : 'off'
+        : burnerRequested
+          ? 'spooling'
+          : 'off'
+    readout.engineCoreLevel = aircraftState.engineCoreLevel
     readout.mach = readMach(aircraftState.speedKmh, aircraftState.position.y, envelope)
     readout.speed = aircraftState.speedKmh
     readout.verticalSpeed = aircraftState.velocity.y

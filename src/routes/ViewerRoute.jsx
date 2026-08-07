@@ -9,7 +9,11 @@ FORM: Aerospace hangar terminal extended with a restrained combat-game HUD.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { getAircraft } from '../aircraft'
-import useFlightControls, { readAxes, readThrottleDirection } from '../features/flight/useFlightControls'
+import useFlightControls, {
+  readAfterburnerCommand,
+  readAxes,
+  readThrottleDirection,
+} from '../features/flight/useFlightControls'
 import Interface from '../features/viewer/Interface'
 import Scene from '../features/viewer/Scene'
 import LoaderScreen from '../ui/LoaderScreen'
@@ -124,17 +128,13 @@ export default function ViewerRoute({ aircraftId }) {
     setAutoRotate(false)
     setIsPlaying(false)
     setThrottle(nextThrottle)
-    if (nextThrottle < 0.65) setAfterburner(false)
   }, [])
 
-  const handleAfterburnerToggle = useCallback(() => {
+  const handleAfterburnerChange = useCallback((enabled) => {
     setManualFlight(true)
     setAutoRotate(false)
     setIsPlaying(false)
-    setAfterburner((enabled) => {
-      if (!enabled) setThrottle((value) => Math.max(value, 0.72))
-      return !enabled
-    })
+    setAfterburner(enabled)
   }, [])
 
   const keyActions = useMemo(() => ({
@@ -172,6 +172,7 @@ export default function ViewerRoute({ aircraftId }) {
     onChange: (pressed) => {
       if (weaponViewRef.current) return
       setFlightInput(readAxes(pressed))
+      setAfterburner(readAfterburnerCommand(pressed))
     },
     keyActions,
   })
@@ -187,7 +188,6 @@ export default function ViewerRoute({ aircraftId }) {
 
       setThrottle((value) => {
         const nextThrottle = Math.min(1, Math.max(0, value + (direction * 0.025)))
-        if (nextThrottle < 0.65) setAfterburner(false)
         return nextThrottle
       })
     }, 50)
@@ -255,7 +255,7 @@ export default function ViewerRoute({ aircraftId }) {
         onManualFlightChange={handleManualFlightChange}
         onFlightInput={handleFlightInput}
         onThrottleChange={handleThrottleChange}
-        onAfterburnerToggle={handleAfterburnerToggle}
+        onAfterburnerChange={handleAfterburnerChange}
         onFlightReset={handleFlightReset}
         onPanelOpen={() => setIsPanelOpen(true)}
         onPanelClose={() => setIsPanelOpen(false)}

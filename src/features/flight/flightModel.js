@@ -12,8 +12,8 @@ impossible by construction. Here the nose and the flight path are separate state
 Aerodynamics are computed from the local airflow — velocity brought into the body frame
 with the inverse quaternion — so angle of attack and sideslip are measured, never assumed.
 Lift turns the flight path toward the nose only as fast as lift can, drag rises steeply
-with AoA and sideslip, and the throttle keeps its familiar target-speed feel by reusing
-the performance curves as the propulsive term.
+with speed, AoA, and sideslip, and the throttle commands a spooled engine core whose
+thrust is evaluated separately from that drag.
 
 Between the pilot and those forces sits an assisted flight control computer: the stick
 commands body rates, the FCC scales them by control authority (dynamic pressure plus
@@ -36,8 +36,9 @@ vector uses pilot sense — x rolls right, y yaws right, z pitches up.
 import { Euler, MathUtils, Quaternion, Vector3 } from 'three'
 
 import {
-  readAccelerationKmhPerSecond,
-  readTargetAirspeedKmh,
+  readDragKmhPerSecond,
+  readPropulsionKmhPerSecond,
+  readThrottlePower,
 } from './performance'
 
 export const FLIGHT_FIXED_STEP = 1 / 120
@@ -83,6 +84,9 @@ export function createFlightState() {
     angularVelocity: new Vector3(),
     // Pilot input after smoothing — also what the control surfaces animate from.
     input: { pitch: 0, roll: 0, yaw: 0 },
+    // Actual dry-engine core power after spool, 0..1. The throttle is its setpoint; an
+    // afterburner request temporarily drives the target through the MIL detent.
+    engineCoreLevel: 0,
     speedKmh: 0,
     thrustVectorDeg: 0,
     aoaDeg: 0,
@@ -102,7 +106,13 @@ export function createFlightState() {
   }
 }
 
-export function resetFlightState(state, position, speedKmh, envelope) {
+export function resetFlightState(
+  state,
+  position,
+  speedKmh,
+  envelope,
+  throttle = envelope.idleThrottle,
+) {
   state.position.copy(position)
   state.orientation.identity()
   state.velocity.set(speedKmh / envelope.performance.kmhPerWorldUnitPerSecond, 0, 0)
@@ -110,6 +120,7 @@ export function resetFlightState(state, position, speedKmh, envelope) {
   state.input.pitch = 0
   state.input.roll = 0
   state.input.yaw = 0
+  state.engineCoreLevel = readThrottlePower(throttle, envelope)
   state.speedKmh = speedKmh
   state.thrustVectorDeg = 0
   state.aoaDeg = 0
@@ -182,7 +193,7 @@ function liftShape(alphaRad, tuning) {
 One fixed step. `command` is the resolved pilot intent:
 
   { pitch, roll, yaw: -1..1, throttle: 0..1, flaps: 0..1,
-    airBrake, highAoA: boolean, burnerLevel: 0..1 }
+    airBrake, highAoA, afterburnerCommanded: boolean, burnerLevel: 0..1 }
 
 Returns nothing; mutates `state` in place.
 */
@@ -197,6 +208,15 @@ export function stepFlight(state, command, envelope, dt) {
   state.input.pitch = approach(state.input.pitch, command.pitch, tuning.inputResponse, dt)
   state.input.roll = approach(state.input.roll, command.roll, tuning.inputResponse, dt)
   state.input.yaw = approach(state.input.yaw, command.yaw, tuning.inputResponse, dt)
+
+  const selectedCorePower = readThrottlePower(command.throttle, envelope)
+  const coreTarget = command.afterburnerCommanded
+    ? Math.max(selectedCorePower, envelope.afterburner.coreTarget)
+    : selectedCorePower
+  const coreResponse = coreTarget > state.engineCoreLevel
+    ? envelope.performance.engineSpoolUpResponse
+    : envelope.performance.engineSpoolDownResponse
+  state.engineCoreLevel = approach(state.engineCoreLevel, coreTarget, coreResponse, dt)
 
   const speed = state.velocity.length()
   state.speedKmh = speed / toWorld
@@ -232,10 +252,11 @@ export function stepFlight(state, command, envelope, dt) {
   const qFactor = (speed / tuning.referenceSpeed) ** 2
 
   // ---------------------------------------------------------------- control authority
-  const throttlePower = MathUtils.clamp(
-    (command.throttle - envelope.minThrottle) / (1 - envelope.minThrottle), 0, 1)
-  // How much engine there is to vector: the core plus whatever reheat is actually alight.
-  const thrustLevel = MathUtils.clamp((throttlePower * 0.75) + (command.burnerLevel * 0.5), 0, 1)
+  // How much engine there is to vector: actual spooled core power plus whatever reheat is
+  // alight. This can no longer claim nozzle authority from a throttle number whose engine
+  // has not caught up yet.
+  const thrustLevel = MathUtils.clamp(
+    (state.engineCoreLevel * 0.75) + (command.burnerLevel * 0.5), 0, 1)
 
   // Surfaces earn their force from the airstream and lose most of it past the stall.
   const surfaceAuthority = MathUtils.clamp(speed / tuning.authorityRefSpeed, 0, 1)
@@ -367,20 +388,15 @@ export function stepFlight(state, command, envelope, dt) {
   // ---------------------------------------------------------------- forces
   worldForward.copy(FORWARD).applyQuaternion(state.orientation)
 
-  const targetKmh = readTargetAirspeedKmh(
-    command.throttle, state.position.y, command.burnerLevel, envelope)
-
   accel.set(0, -gravity, 0)
 
-  // Propulsion keeps the familiar excess-thrust curve, but it acts along the nose: with
-  // the jet stood on its tail, full burner is fighting gravity, not feeding the airspeed
-  // tape.
-  let propulsion = 0
-  if (targetKmh > state.speedKmh) {
-    propulsion = readAccelerationKmhPerSecond(
-      state.speedKmh, targetKmh, command.burnerLevel, state.position.y, envelope) * toWorld
-    accel.addScaledVector(worldForward, propulsion)
-  }
+  // Engine thrust is always present and always acts along the nose. Speed limits now
+  // emerge where this force meets drag rather than from a controller cutting propulsion
+  // at a target airspeed. Stood on its tail, full burner fights gravity instead of feeding
+  // the airspeed tape.
+  const propulsion = readPropulsionKmhPerSecond(
+    state.engineCoreLevel, command.burnerLevel, envelope) * toWorld
+  accel.addScaledVector(worldForward, propulsion)
   state.thrustForce.copy(worldForward).multiplyScalar(propulsion)
 
   // Lift bends the flight path toward wherever the nose has been put — the whole reason
@@ -410,15 +426,11 @@ export function stepFlight(state, command, envelope, dt) {
     accel.addScaledVector(sideDir, -betaRad * tuning.sideForceGain * qFactor)
   }
 
-  // Drag beyond what the performance curves already price in: the coasting decay when the
-  // throttle is behind the airspeed, then the punitive terms — AoA, sideslip, brake,
-  // flaps. This is the energy bill for every post-stall trick; a Cobra without it would
+  // Parasite and wave drag are present at every throttle setting. The punitive terms add
+  // the energy bill for AoA, sideslip, brake, and flaps; a Cobra without them would still
   // be a free 180.
-  let dragMag = 0
-  if (targetKmh <= state.speedKmh) {
-    dragMag += readAccelerationKmhPerSecond(
-      state.speedKmh, targetKmh, command.burnerLevel, state.position.y, envelope) * toWorld
-  }
+  let dragMag = readDragKmhPerSecond(
+    state.speedKmh, state.position.y, envelope) * toWorld
   const sinAlpha = Math.sin(alphaAbs)
   const sinBeta = Math.sin(Math.abs(betaRad))
   dragMag += qFactor * (

@@ -51,6 +51,7 @@ const COMMAND_BAR_CLEARANCE = 130
 // The burner names its own state on the glass rather than making the pilot infer it from a
 // draining bar.
 const AFTERBURNER_LABELS = {
+  spooling: 'A/B·SPL',
   engaged: 'A/B·ON',
   depleted: 'A/B·CLD',
 }

@@ -100,6 +100,44 @@ function FlightControlButton({
   )
 }
 
+function AfterburnerButton({ active, onChange }) {
+  const release = () => onChange(false)
+
+  return (
+    <button
+      type="button"
+      className="afterburner-button"
+      aria-label="Hold for afterburner"
+      aria-pressed={active}
+      onPointerDown={(event) => {
+        event.preventDefault()
+        event.currentTarget.setPointerCapture(event.pointerId)
+        onChange(true)
+      }}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onLostPointerCapture={release}
+      onKeyDown={(event) => {
+        if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
+          event.preventDefault()
+          onChange(true)
+        }
+      }}
+      onKeyUp={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          release()
+        }
+      }}
+      onBlur={release}
+    >
+      <Flame size={15} strokeWidth={1.8} />
+      <span>Afterburner</span>
+      <small>{active ? 'HELD' : 'HOLD'}</small>
+    </button>
+  )
+}
+
 function WeaponOption({ weapon, active, onSelect }) {
   return (
     <button
@@ -142,7 +180,7 @@ function ControlPanel({
   onManualFlightChange,
   onFlightInput,
   onThrottleChange,
-  onAfterburnerToggle,
+  onAfterburnerChange,
   onFlightReset,
   isOpen,
   onClose,
@@ -393,19 +431,10 @@ function ControlPanel({
               </div>
               <kbd>W</kbd>
             </div>
-            <button
-              type="button"
-              className="afterburner-button"
-              aria-pressed={afterburner}
-              onClick={onAfterburnerToggle}
-            >
-              <Flame size={15} strokeWidth={1.8} />
-              <span>Afterburner</span>
-              <small>{afterburner ? 'ENGAGED' : 'ARM'}</small>
-            </button>
+            <AfterburnerButton active={afterburner} onChange={onAfterburnerChange} />
           </div>
 
-          <p className="flight-help">ARROWS: PITCH / ROLL &nbsp; Q E: YAW &nbsp; F: FLAPS &nbsp; W S: THROTTLE</p>
+          <p className="flight-help">ARROWS: PITCH / ROLL &nbsp; Q E: YAW &nbsp; F: FLAPS &nbsp; W S: THROTTLE &nbsp; SHIFT: HOLD A/B</p>
         </section>
       )}
 
@@ -501,7 +530,7 @@ export default function Interface({
   onManualFlightChange,
   onFlightInput,
   onThrottleChange,
-  onAfterburnerToggle,
+  onAfterburnerChange,
   onFlightReset,
   onPanelOpen,
   onPanelClose,
@@ -578,7 +607,7 @@ export default function Interface({
         onManualFlightChange={onManualFlightChange}
         onFlightInput={onFlightInput}
         onThrottleChange={onThrottleChange}
-        onAfterburnerToggle={onAfterburnerToggle}
+        onAfterburnerChange={onAfterburnerChange}
         onFlightReset={onFlightReset}
         isOpen={isPanelOpen}
         onClose={onPanelClose}

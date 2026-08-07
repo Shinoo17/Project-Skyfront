@@ -105,6 +105,7 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
     new Vector3(-260, SPAWN_Y, 0),
     readTargetAirspeedKmh(throttle, SPAWN_Y, 0, envelope),
     envelope,
+    throttle,
   )
 
   const seen = new Set()
@@ -133,9 +134,14 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
         envelope.minThrottle,
         throttle + (readThrottleDirection(pressed) * FRAME * envelope.throttleRate),
       ))
+      const burnerRequested = readAfterburnerCommand(pressed)
       const burner = stepAfterburner(
         reheat,
-        { commanded: readAfterburnerCommand(pressed), step: FRAME },
+        {
+          commanded: burnerRequested
+            && state.engineCoreLevel >= envelope.afterburner.ignitionCorePower,
+          step: FRAME,
+        },
         envelope,
       )
 
@@ -149,6 +155,7 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
           throttle,
           airBrake: readAirBrake(pressed),
           highAoA: readHighAoA(pressed),
+          afterburnerCommanded: burnerRequested,
           burnerLevel: burner.level,
         }, envelope, FLIGHT_FIXED_STEP)
         accumulator -= FLIGHT_FIXED_STEP
@@ -226,7 +233,9 @@ for (const maneuver of MANEUVERS) {
     },
   })
 
-  const labelOk = !maneuver.expect || (seen.has(maneuver.expect) && matchedSeconds >= MATCH_SECONDS)
+  const labelOk = !maneuver.expect || (
+    seen.has(maneuver.expect) && matchedSeconds + (FRAME / 2) >= MATCH_SECONDS
+  )
   const floorOk = stats.dip <= MAX_DIP
   const pathOk = !PATH_HELD.has(maneuver.expect) || stats.pathTurn <= MAX_PATH_TURN
   const levelOk = !maneuver.exitsLevel || Math.abs(stats.exitNose) <= MAX_EXIT_PITCH

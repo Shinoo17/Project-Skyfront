@@ -317,11 +317,13 @@ const f22 = {
       // zero blows the burner out and locks it until enough has come back to relight,
       // which is what stops reheat from being held on permanently by tapping it.
       afterburner: {
-        // Reheat lights at any throttle, from any speed. It is a burst of thrust bolted on
-        // top of whatever the core is already doing, so it is worth most exactly where the
-        // dry engine is worth least — slow, low, and needing speed now.
+        // Shift is the game-friendly equivalent of pushing the throttle through its MIL
+        // detent: the core runs toward full power first, and reheat may light only once
+        // enough airflow is passing through the tailpipe.
+        coreTarget: 1,
+        ignitionCorePower: 0.85,
         burnSeconds: 8,
-        recoverySeconds: 22,
+        recoverySeconds: 14,
         // The nozzle has to be cold before the tanks start giving anything back, or
         // chattering the key would refill it for free.
         recoveryDelaySeconds: 1.5,
@@ -335,18 +337,21 @@ const f22 = {
       performance: {
         minKmh: 260,
         kmhPerWorldUnitPerSecond: 22,
+        // The pilot moves a power lever, the engine follows with inertia, and thrust rises
+        // progressively rather than giving half throttle the same acceleration as MIL.
+        engineSpoolUpResponse: 3.2,
+        engineSpoolDownResponse: 4,
+        throttlePowerExponent: 1.35,
+        // A running F119 still makes useful thrust at flight idle. Keeping that floor in
+        // both thrust and drag preserves the authored trim speeds while preventing a
+        // partial-power vertical manoeuvre from behaving like an engine flameout.
+        idleThrustFraction: 0.25,
         // Compressed the same way the terrain is: a real Raptor takes tens of seconds to
         // do what the range does in a few. The ratio between dry and reheat is the honest
         // part — excess thrust in afterburner is roughly double what military power has
         // left over once drag is paid for.
         accelerationKmhPerSecond: 130,
         afterburnerAccelerationKmhPerSecond: 265,
-        decelerationKmhPerSecond: 190,
-        // Drag climbs with speed, so acceleration falls away toward the limit rather than
-        // holding one flat figure, and a jet coasting down after the burner cuts sheds the
-        // gap it is carrying instead of braking at a constant rate.
-        dragFalloff: 0.45,
-        dragDecayPerSecond: 0.55,
         seaLevel: {
           dryKmh: 1100,
           dryMach: 0.95,

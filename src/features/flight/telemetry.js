@@ -40,13 +40,14 @@ export const EMPTY_TELEMETRY = {
   // The burner publishes what it has worth reading: whether it is alight, how much of it
   // is alight, how much reserve is left to feed it, that reserve as the seconds of burn it
   // is actually worth, the seconds a burnt-out burner still owes before it will relight,
-  // and one word naming the state — 'off', 'engaged', or 'depleted'.
+  // and one word naming the state — 'off', 'spooling', 'engaged', or 'depleted'.
   afterburner: false,
   afterburnerLevel: 0,
   afterburnerReserve: 1,
   afterburnerSeconds: 0,
   afterburnerCooldown: 0,
   afterburnerState: 'off',
+  engineCoreLevel: 0,
   camera: null,
   ceiling: 0,
   edge: 0,
