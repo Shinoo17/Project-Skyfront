@@ -315,29 +315,13 @@ export function stepFlight(state, command, envelope, dt) {
     pitchCmd *= MathUtils.clamp((state.aoaDeg - (negativeLimit - softness)) / softness, 0, 1)
   }
 
-  // Weathervane stability: the airstream pushes the nose back toward the flight path in
-  // both pitch and yaw. This is what decays a Cobra on its own, and relaxing it is most
-  // of what the High-AoA switch actually does. The vane centres on trim AoA rather than
-  // zero — the small positive angle where lift carries the weight — so hands-off flight
-  // holds its altitude instead of sagging into a shallow dive.
-  const noseAlign = (highAoA ? tuning.highAoANoseAlignment : tuning.noseAlignment)
-    * Math.min(qFactor * 2, 1)
-  const stallRad = MathUtils.degToRad(tuning.stallAoADeg)
-  const trimAlpha = MathUtils.clamp(
-    (gravity * stallRad) / Math.max(qFactor * tuning.liftGain, 1e-3),
-    0,
-    MathUtils.degToRad(8),
-  ) * MathUtils.clamp(worldUp.y, 0, 1)
-  pitchCmd -= (alphaRad - trimAlpha) * noseAlign
-
-  // Post-stall recovery assist: slow, deep AoA, stick released — the FCC spends the
-  // nozzles on getting the nose down rather than leaving the jet parked on its tail.
-  if (state.speedKmh < tuning.recoveryMinKmh
-    && alphaDegAbs > tuning.stallAoADeg
-    && Math.abs(state.input.pitch) < 0.25) {
-    pitchCmd -= Math.sign(alphaRad)
-      * Math.min(1, (alphaDegAbs - tuning.stallAoADeg) / 25)
-      * vectorAuthority * 1.6
+  // Pitch attitude belongs to the pilot. With the stick released the FCC commands zero
+  // body rate, regardless of airspeed, AoA, or flight-path angle. Its only attitude help
+  // is a deliberately narrow near-level window: from -5 to +5 degrees it eases the nose
+  // back to the horizon; outside that window it adds no pitch command at all.
+  if (Math.abs(state.input.pitch) < 0.05
+    && Math.abs(pitchAttitudeDeg) <= tuning.pitchAutoLevelWindowDeg + 1e-4) {
+    pitchCmd -= MathUtils.degToRad(pitchAttitudeDeg) * tuning.pitchAutoLevelGain
   }
 
   let rollCmd = state.input.roll

@@ -68,6 +68,10 @@ export function resetChaseCamera(chase, camera, aircraftState) {
   camera.position.copy(chase.position)
   camera.up.copy(LOCAL_UP)
   camera.lookAt(chase.target)
+  // The canvas renderer would update this later, but the HUD reads the camera directly
+  // from its own animation frame. Publish a matching view matrix immediately so projected
+  // symbology cannot combine a fresh aircraft pose with the previous camera pose.
+  camera.updateMatrixWorld()
 }
 
 /*
@@ -147,4 +151,9 @@ export function updateChaseCamera(chase, camera, {
     camera.position.y += (Math.random() - 0.5) * buffet
     camera.position.z += (Math.random() - 0.5) * buffet
   }
+
+  // Keep the HUD's boresight and flight-path marker on the exact camera pose that the
+  // renderer will use this frame. Without this, the camera's world-inverse matrix can lag
+  // one frame behind position/quaternion changes during hard manoeuvres.
+  camera.updateMatrixWorld()
 }

@@ -68,6 +68,8 @@ const PATH_HELD = new Set(['cobra', 'j-turn'])
 // is something the script flies, and if it stops short the jet climbs or dives away for
 // the rest of the demonstration.
 const MAX_EXIT_PITCH = 8
+const PITCH_AXIS = new Vector3(0, 0, 1)
+const BODY_FORWARD = new Vector3(1, 0, 0)
 
 const envelope = f22.flight.envelope
 const [only = 'all', spawnArg] = process.argv.slice(2)
@@ -255,6 +257,68 @@ for (const maneuver of MANEUVERS) {
     + `${pad(stats.exitDy, 4)}y ${pad(stats.exitKmh, 4)}kmh`
     + ` ${pad(readManeuverSeconds(maneuver), 5, 1)}s`,
   )
+}
+
+/*
+Hands-off pitch regression. Attitudes inside the five-degree window must ease toward zero;
+attitudes outside it must stay where the pilot left them. Run the same cases at low and
+normal energy so neither dynamic pressure nor the flight path can secretly become a pitch
+command again.
+*/
+if (only === 'all') {
+  const cases = [
+    { speedKmh: 260, pitchDeg: 5, expected: 'levels' },
+    { speedKmh: 400, pitchDeg: -5, expected: 'levels' },
+    { speedKmh: 260, pitchDeg: 5.5, expected: 'holds' },
+    { speedKmh: 400, pitchDeg: -5.5, expected: 'holds' },
+    { speedKmh: 260, pitchDeg: 30, expected: 'holds' },
+    { speedKmh: 800, pitchDeg: -30, expected: 'holds' },
+  ]
+
+  for (const test of cases) {
+    const state = createFlightState()
+    resetFlightState(
+      state,
+      new Vector3(-260, SPAWN_Y, 0),
+      test.speedKmh,
+      envelope,
+      envelope.idleThrottle,
+    )
+    state.orientation.setFromAxisAngle(PITCH_AXIS, test.pitchDeg * Math.PI / 180)
+    state.velocity.set(
+      test.speedKmh / envelope.performance.kmhPerWorldUnitPerSecond,
+      0,
+      0,
+    )
+
+    let finalPitch = test.pitchDeg
+    for (let elapsed = 0; elapsed < 4; elapsed += FLIGHT_FIXED_STEP) {
+      stepFlight(state, {
+        pitch: 0,
+        roll: 0,
+        yaw: 0,
+        flaps: 0,
+        throttle: envelope.idleThrottle,
+        airBrake: false,
+        highAoA: false,
+        afterburnerCommanded: false,
+        burnerLevel: 0,
+      }, envelope, FLIGHT_FIXED_STEP)
+      const forward = BODY_FORWARD.clone().applyQuaternion(state.orientation)
+      finalPitch = Math.asin(Math.max(-1, Math.min(1, forward.y))) * 180 / Math.PI
+    }
+
+    const pitchOk = test.expected === 'levels'
+      ? Math.abs(finalPitch) < 0.75
+      : Math.abs(finalPitch - test.pitchDeg) < 0.5
+    if (!pitchOk) failures += 1
+    console.log(
+      `${pitchOk ? 'PASS' : 'FAIL'} pitch ${test.expected}`
+      + ` ${String(test.speedKmh).padStart(3)}kmh`
+      + ` start=${test.pitchDeg.toFixed(1).padStart(5)}°`
+      + ` end=${finalPitch.toFixed(1).padStart(5)}°${pitchOk ? '' : ' !'}`,
+    )
+  }
 }
 
 console.log(`\nspawn y=${SPAWN_Y}, floor margin ${MAX_DIP} — ${failures} failing`)

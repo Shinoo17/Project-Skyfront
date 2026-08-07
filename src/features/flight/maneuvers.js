@@ -12,12 +12,10 @@ script runs. It is an assertion the panel shows a tick or a cross for, not an in
 nothing anywhere forces the label, so a cross means the airframe did not actually do it.
 
 `exitsLevel` says the script has to give the jet back the way it found it: it starts from
-level flight, and it has to finish there. Nothing in the FCC will do it for you — the
-wings-leveller is roll only, and there is no attitude hold anywhere — so every script ends
-with a LEVEL OFF step that flies the nose the last few degrees onto the horizon and then a
-release to let it settle. Without one the demonstration simply stops partway through and
-leaves the aircraft climbing or diving away for good, which is what a viewer reads as the
-manoeuvre being wrong even when the interesting part of it was right.
+level flight, and it has to finish there. The bot must fly the nose back into the five-degree
+capture window itself; only there does the FCC ease the final error onto the horizon. A
+script that releases outside that window leaves the aircraft climbing or diving exactly
+where it was put, which is what a viewer reads as a manoeuvre abandoned halfway through.
 
 `requires` gates a script on an aircraft manifest flag. The post-stall set is written for an
 airframe with the nozzles: past the stall the surfaces have lost most of their authority and
@@ -90,16 +88,14 @@ const MANEUVERS = [
     steps: [
       // Short. The pull only has to beat the flight path to deep AoA; held any longer it
       // stops being a pull and starts being the first quarter of a loop.
-      { seconds: 0.85, hold: ['high-aoa', 'pitch-up'], label: 'PULL' },
-      { seconds: 1.0, hold: ['high-aoa'], label: 'HANG' },
-      // Long enough to fly the nose all the way back down through level, because nothing
-      // else will: the FCC levels the wings but never the nose, so a push that stops at
-      // forty degrees leaves the jet climbing away from the manoeuvre for good.
-      { seconds: 2.8, hold: ['pitch-down'], label: 'NOSE DOWN' },
-      { seconds: 0.5, hold: ['pitch-up'], label: 'LEVEL OFF' },
+      { seconds: 0.9, hold: ['high-aoa', 'pitch-up'], label: 'PULL' },
+      { seconds: 0.7, hold: ['high-aoa'], label: 'HANG' },
+      // High-AoA stays selected on the push so the pilot, rather than the removed recovery
+      // assist, spends the nozzles on bringing the nose back into the capture window.
+      { seconds: 2.15, hold: ['high-aoa', 'pitch-down'], label: 'NOSE DOWN' },
       // No reheat on the way out either. The dive off the top pays the airspeed back while
       // the low dry-power setting keeps the recovery from running away past entry energy.
-      { seconds: 3.2, hold: [], label: 'RECOVER' },
+      { seconds: 1.5, hold: [], label: 'RECOVER' },
     ],
   },
 
@@ -119,9 +115,8 @@ const MANEUVERS = [
       // The stick comes forward of the pull but the High-AoA switch stays in: the nose is
       // already across the flight path, and holding aft stick on top of the pedal drives
       // the alpha past 120 degrees and departs the jet rather than swinging it.
-      { seconds: 3.3, hold: ['high-aoa', 'yaw-right', 'throttle-up'], label: 'PEDAL IN' },
-      { seconds: 1.0, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
-      { seconds: 0.8, hold: ['pitch-up'], label: 'LEVEL OFF' },
+      { seconds: 1.5, hold: ['high-aoa', 'yaw-right', 'throttle-up'], label: 'PEDAL IN' },
+      { seconds: 1.15, hold: ['high-aoa', 'pitch-down', 'throttle-up'], label: 'UNLOAD' },
       { seconds: 1.0, hold: [], label: 'RECOVER' },
     ],
   },
@@ -176,7 +171,7 @@ const MANEUVERS = [
     entry: { throttle: THROTTLE_FAST, settleSeconds: 2.0 },
     steps: [
       { seconds: 3.0, hold: ['pitch-up', 'afterburner'], label: 'POWER UP' },
-      { seconds: 4.2, hold: ['pitch-up'], label: 'PULL THROUGH' },
+      { seconds: 3.05, hold: ['pitch-up'], label: 'PULL THROUGH' },
       { seconds: 0.18, hold: ['pitch-up'], label: 'LEVEL OFF' },
       { seconds: 1.6, hold: [], label: 'RECOVER' },
     ],
@@ -202,7 +197,7 @@ const MANEUVERS = [
     entry: { throttle: THROTTLE_FAST, settleSeconds: 2.0 },
     steps: [
       { seconds: 4.0, hold: ['roll-right', 'pitch-up'], label: 'ROLL THROUGH' },
-      { seconds: 0.4, hold: ['pitch-down'], label: 'LEVEL OFF' },
+      { seconds: 0.2, hold: ['pitch-down'], label: 'LEVEL OFF' },
       { seconds: 2.4, hold: [], label: 'RECOVER' },
     ],
   },
@@ -220,7 +215,7 @@ const MANEUVERS = [
       { seconds: 2.0, hold: ['afterburner'], label: 'EASE' },
       { seconds: 1.4, hold: ['roll-right', 'afterburner'], label: 'ROLL INVERTED' },
       { seconds: 1.5, hold: ['pitch-up', 'afterburner'], label: 'POWER THROUGH' },
-      { seconds: 4.2, hold: ['pitch-up'], label: 'PULL THROUGH' },
+      { seconds: 3.7, hold: ['pitch-up'], label: 'PULL THROUGH' },
       { seconds: 0.4, hold: ['pitch-down'], label: 'LEVEL OFF' },
       { seconds: 1.6, hold: [], label: 'RECOVER' },
     ],
@@ -235,7 +230,6 @@ const MANEUVERS = [
     steps: [
       { seconds: 3.0, hold: ['pitch-up', 'afterburner'], label: 'PULL UP' },
       { seconds: 1.5, hold: ['roll-right'], label: 'ROLL UPRIGHT' },
-      { seconds: 0.8, hold: ['pitch-down'], label: 'LEVEL OFF' },
       { seconds: 2.4, hold: [], label: 'RECOVER' },
     ],
   },

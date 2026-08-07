@@ -424,7 +424,7 @@ const f22 = {
         // Pedal turns exist only nose-high and slow; the boost multiplies yaw authority
         // inside that window and nowhere else.
         pedalTurnMaxKmh: 560,
-        pedalTurnMinPitchDeg: 55,
+        pedalTurnMinPitchDeg: 45,
         pedalTurnYawBoost: 2.4,
 
         inputResponse: 7,
@@ -440,8 +440,10 @@ const f22 = {
         thrustVectorResponse: 8,
         normalThrustVectorFactor: 0.35,
 
-        noseAlignment: 1.6,
-        highAoANoseAlignment: 0.22,
+        // Pitch is attitude-hold everywhere except this small hands-off window. Inside it
+        // the FCC eases the nose back to zero; outside it the pilot's attitude is untouched.
+        pitchAutoLevelWindowDeg: 5,
+        pitchAutoLevelGain: 0.65,
         velocityAlignment: 1.5,
         highAoAVelocityAlignment: 0.12,
         sideslipDamping: 1.4,
@@ -456,8 +458,6 @@ const f22 = {
         sideslipDragGain: 9,
         airBrakeDrag: 12,
         flapsDrag: 4,
-
-        recoveryMinKmh: 320,
       },
     },
   },
