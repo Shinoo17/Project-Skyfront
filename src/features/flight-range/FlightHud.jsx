@@ -12,6 +12,8 @@ import {
   ArrowRight,
   ArrowUp,
   ChevronsDown,
+  Camera,
+  Eye,
   Flame,
   Gauge,
   Minus,
@@ -132,6 +134,50 @@ function HoldControl({ control, label, icon: Icon, controls, className, nodeRef,
   )
 }
 
+function FreeLookControl({ controls }) {
+  const pointer = useRef({ id: null, x: 0, y: 0 })
+
+  const release = useCallback((event) => {
+    if (pointer.current.id !== event.pointerId) return
+    pointer.current.id = null
+    controls.current.cameraLook.active = false
+  }, [controls])
+
+  return (
+    <button
+      type="button"
+      className="deck-key"
+      aria-label="Drag to free look around aircraft"
+      onPointerDown={(event) => {
+        event.preventDefault()
+        pointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY }
+        // Not zeroed: the camera owns the return and re-seeds these from the angle on
+        // screen, so resetting them here would snap a re-grab back to the chase pose.
+        controls.current.cameraLook.active = true
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }}
+      onPointerMove={(event) => {
+        if (pointer.current.id !== event.pointerId) return
+        // Same inverted sense as the canvas drag, at twice the gain: the deck key is a
+        // thumb-sized surface, so the same wrist travel has far fewer pixels to spend.
+        const look = controls.current.cameraLook
+        look.yaw -= (event.clientX - pointer.current.x) * 0.012
+        look.pitch = Math.max(-Math.PI, Math.min(Math.PI,
+          look.pitch + ((event.clientY - pointer.current.y) * 0.01),
+        ))
+        pointer.current.x = event.clientX
+        pointer.current.y = event.clientY
+      }}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onLostPointerCapture={release}
+    >
+      <Eye size={18} strokeWidth={1.8} />
+      <span>Free look</span>
+    </button>
+  )
+}
+
 // The debug readout as one preformatted block: a dozen numbers that change every frame
 // belong in a single text write, not a dozen DOM nodes.
 function formatDebug(value) {
@@ -167,6 +213,8 @@ export default function FlightHud({
   telemetry,
   envelope,
   onReset,
+  cameraMode = 'chase',
+  onToggleCameraMode,
   debug = false,
   variant = 'cockpit',
 }) {
@@ -329,9 +377,20 @@ export default function FlightHud({
             <HoldControl control="air-brake" label="Hold for air brake" icon={Wind} controls={controls}>
               Brake
             </HoldControl>
-            <span className="deck-auto-mode" aria-label="Angle of attack assistance is automatic">
-              AUTO AoA
-            </span>
+            <button
+              type="button"
+              className={`deck-key ${cameraMode === 'nose' ? 'is-selected' : ''}`}
+              aria-label={`Switch to ${cameraMode === 'chase' ? 'nose' : 'chase'} camera`}
+              aria-pressed={cameraMode === 'nose'}
+              onClick={onToggleCameraMode}
+            >
+              <Camera size={18} strokeWidth={1.8} />
+              <span>{cameraMode === 'chase' ? 'Chase' : 'Nose'}</span>
+            </button>
+            <FreeLookControl controls={controls} />
+            <HoldControl control="rear-view" label="Hold for rear view" icon={Eye} controls={controls}>
+              Rear
+            </HoldControl>
           </div>
 
           <div className="deck-throttle">
@@ -368,6 +427,9 @@ export default function FlightHud({
         <span>AoA assist automatic</span>
         <kbd>F</kbd><span>flaps</span>
         <kbd>R</kbd><span>reset</span>
+        <kbd>C</kbd><span>camera</span>
+        <kbd>DRAG</kbd><span>free look</span>
+        <kbd>V</kbd><span>hold rear view</span>
         <kbd>I</kbd><span>debug</span>
         <kbd>ESC</kbd><kbd>P</kbd><span>menu</span>
       </p>}

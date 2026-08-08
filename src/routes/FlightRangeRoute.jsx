@@ -13,6 +13,12 @@ import FlightHud from '../features/flight-range/FlightHud'
 import FlightRangeScene from '../features/flight-range/FlightRangeScene'
 import PauseMenu from '../features/flight-range/PauseMenu'
 import useFlightSession from '../features/flight/useFlightSession'
+import {
+  readFlightCameraDistance,
+  readFlightCameraStyle,
+  writeFlightCameraDistance,
+  writeFlightCameraStyle,
+} from '../features/flight/chaseCamera'
 import LoaderScreen from '../ui/LoaderScreen'
 import SceneErrorBoundary from '../ui/SceneErrorBoundary'
 import { readFlightQuality, writeFlightQuality } from '../three/graphics'
@@ -23,6 +29,9 @@ export default function FlightRangeRoute() {
   const handleFullscreen = useFullscreen()
   const navigate = useNavigate()
   const [paused, setPaused] = useState(false)
+  const [cameraMode, setCameraMode] = useState('chase')
+  const [cameraStyle, setCameraStyle] = useState(readFlightCameraStyle)
+  const [cameraDistance, setCameraDistance] = useState(readFlightCameraDistance)
   // Read once, on first render: the choice outlives the session, and the renderer is built
   // from it before anything is drawn.
   const [quality, setQuality] = useState(readFlightQuality)
@@ -32,6 +41,11 @@ export default function FlightRangeRoute() {
   // the keyboard listener is not re-bound on every pause.
   const pausedRef = useRef(paused)
   pausedRef.current = paused
+  const freeLookPointer = useRef({ id: null, x: 0, y: 0 })
+
+  const toggleCameraMode = useCallback(() => {
+    setCameraMode((value) => (value === 'chase' ? 'nose' : 'chase'))
+  }, [])
 
   const extraKeys = useMemo(() => {
     // P opens the same menu as Esc: in fullscreen the browser keeps Esc to leave fullscreen
@@ -41,8 +55,13 @@ export default function FlightRangeRoute() {
       event.preventDefault()
       setPaused(true)
     }
-    return { Escape: open, KeyP: open }
-  }, [])
+    const camera = (event, { fieldFocused }) => {
+      if (pausedRef.current || fieldFocused || event.repeat) return
+      event.preventDefault()
+      toggleCameraMode()
+    }
+    return { Escape: open, KeyP: open, KeyC: camera }
+  }, [toggleCameraMode])
 
   const {
     aircraft,
@@ -63,10 +82,60 @@ export default function FlightRangeRoute() {
     setQuality(value)
     writeFlightQuality(value)
   }, [])
+  const chooseCameraStyle = useCallback((value) => {
+    setCameraStyle(value)
+    writeFlightCameraStyle(value)
+  }, [])
+  const chooseCameraDistance = useCallback((value) => {
+    setCameraDistance(value)
+    writeFlightCameraDistance(value)
+  }, [])
+
+  const beginFreeLook = useCallback((event) => {
+    const isOrbitButton = event.button === 0 || event.button === 2
+    if (pausedRef.current || !isOrbitButton) return
+    event.preventDefault()
+    freeLookPointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY }
+    // Deliberately not zeroed here. The camera owns the return, and re-seeds these from the
+    // angle actually on screen; zeroing them would snap a re-grab back to the chase pose.
+    controls.current.cameraLook.active = true
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }, [controls])
+
+  const moveFreeLook = useCallback((event) => {
+    const pointer = freeLookPointer.current
+    if (pointer.id !== event.pointerId) return
+    // Inverted on both axes: the drag carries the aircraft with the hand rather than
+    // swinging the camera against it. The camera clamps the pitch it can actually use.
+    const look = controls.current.cameraLook
+    look.yaw -= (event.clientX - pointer.x) * 0.006
+    look.pitch = Math.max(-Math.PI, Math.min(Math.PI,
+      look.pitch + ((event.clientY - pointer.y) * 0.005),
+    ))
+    pointer.x = event.clientX
+    pointer.y = event.clientY
+  }, [controls])
+
+  const endFreeLook = useCallback((event) => {
+    if (freeLookPointer.current.id !== event.pointerId) return
+    freeLookPointer.current.id = null
+    controls.current.cameraLook.active = false
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }, [controls])
 
   return (
     <section className="test-flight-surface" aria-label={`Test flight over ${map.name} ${map.region}`}>
-      <div className="flight-canvas-stage">
+      <div
+        className="flight-canvas-stage"
+        onPointerDown={beginFreeLook}
+        onPointerMove={moveFreeLook}
+        onPointerUp={endFreeLook}
+        onPointerCancel={endFreeLook}
+        onLostPointerCapture={endFreeLook}
+        onContextMenu={(event) => event.preventDefault()}
+      >
         <SceneErrorBoundary>
           <FlightRangeScene
             aircraftId={aircraft.id}
@@ -77,6 +146,9 @@ export default function FlightRangeRoute() {
             debug={debug}
             paused={paused}
             quality={quality}
+            cameraMode={cameraMode}
+            cameraStyle={cameraStyle}
+            cameraDistance={cameraDistance}
           />
         </SceneErrorBoundary>
       </div>
@@ -89,6 +161,8 @@ export default function FlightRangeRoute() {
           envelope={envelope}
           onReset={reset}
           debug={debug}
+          cameraMode={cameraMode}
+          onToggleCameraMode={toggleCameraMode}
         />
       </div>
 
@@ -101,6 +175,10 @@ export default function FlightRangeRoute() {
         onToggleDebug={toggleDebug}
         quality={quality}
         onChooseQuality={chooseQuality}
+        cameraStyle={cameraStyle}
+        onChooseCameraStyle={chooseCameraStyle}
+        cameraDistance={cameraDistance}
+        onChooseCameraDistance={chooseCameraDistance}
       />
 
       <LoaderScreen mode="flight" map={map} />

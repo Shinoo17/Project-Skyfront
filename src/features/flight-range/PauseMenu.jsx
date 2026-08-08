@@ -6,10 +6,14 @@ FIRST VIEWPORT: A dimmed frozen frame with a single stack of commands centred on
 FORM: One component owning its own panes, so the route only has to say whether flight is paused.
 */
 
-import { Gauge, Info, LogOut, Maximize, MonitorCog, Play, Settings } from 'lucide-react'
+import { Camera, Gauge, Info, LogOut, Maximize, MonitorCog, Play, Settings } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { FLIGHT_QUALITY_OPTIONS } from '../../three/graphics'
+import {
+  FLIGHT_CAMERA_DISTANCE_OPTIONS,
+  FLIGHT_CAMERA_STYLE_OPTIONS,
+} from '../flight/chaseCamera'
 
 // Credit only what the repository can actually prove: the assets it ships and the libraries
 // it builds on. No names or licences are invented here — an attribution nobody supplied is
@@ -37,6 +41,10 @@ export default function PauseMenu({
   onToggleDebug,
   quality,
   onChooseQuality,
+  cameraStyle,
+  onChooseCameraStyle,
+  cameraDistance,
+  onChooseCameraDistance,
 }) {
   const [pane, setPane] = useState('root')
   const firstCommand = useRef(null)
@@ -118,6 +126,38 @@ export default function PauseMenu({
               <p className="pause-note">
                 Changing quality rebuilds the renderer, which restarts the sortie from the spawn.
               </p>
+            </div>
+
+            <div className="pause-quality" role="group" aria-label="Chase camera style">
+              <span className="pause-quality-head"><Camera size={15} strokeWidth={1.8} /> Camera</span>
+              {FLIGHT_CAMERA_STYLE_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`pause-key is-quality ${option.id === cameraStyle ? 'is-on' : ''}`}
+                  aria-pressed={option.id === cameraStyle}
+                  onClick={() => onChooseCameraStyle(option.id)}
+                >
+                  <span>{option.label}</span>
+                  <i aria-hidden="true">{option.detail}</i>
+                </button>
+              ))}
+            </div>
+
+            <div className="pause-quality" role="group" aria-label="Chase camera distance">
+              <span className="pause-quality-head"><Camera size={15} strokeWidth={1.8} /> Chase distance</span>
+              {FLIGHT_CAMERA_DISTANCE_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`pause-key is-quality ${option.id === cameraDistance ? 'is-on' : ''}`}
+                  aria-pressed={option.id === cameraDistance}
+                  onClick={() => onChooseCameraDistance(option.id)}
+                >
+                  <span>{option.label}</span>
+                  <i aria-hidden="true">{option.detail}</i>
+                </button>
+              ))}
             </div>
 
             <button type="button" className="pause-key" onClick={onFullscreen}>

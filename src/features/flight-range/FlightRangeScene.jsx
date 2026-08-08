@@ -23,6 +23,9 @@ export default function FlightRangeScene({
   telemetry,
   aircraftId,
   mapId,
+  cameraMode = 'chase',
+  cameraStyle = 'normal',
+  cameraDistance = 'normal',
   debug = false,
   paused = false,
   quality = DEFAULT_FLIGHT_QUALITY,
@@ -67,6 +70,9 @@ export default function FlightRangeScene({
           controls={controls}
           resetId={resetId}
           telemetry={telemetry}
+          cameraMode={cameraMode}
+          cameraStyle={cameraStyle}
+          cameraDistance={cameraDistance}
           paused={paused}
         />
       </Suspense>

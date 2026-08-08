@@ -69,6 +69,9 @@ export default function FlightAircraft({
   terrainRef,
   telemetry,
   chaseCamera,
+  cameraMode = 'chase',
+  cameraStyle = 'normal',
+  cameraDistance = 'normal',
   paused = false,
 }) {
   const envelope = aircraft.flight.envelope
@@ -315,6 +318,11 @@ export default function FlightAircraft({
       speed,
       burnerLevel: burner.level,
       step,
+      mode: cameraMode,
+      style: cameraStyle,
+      distance: cameraDistance,
+      cameraLook: controls.current.cameraLook,
+      rearView: controls.current.pressed.has('rear-view'),
     })
 
     // Published every frame straight into the caller's ref. Nothing here calls setState:

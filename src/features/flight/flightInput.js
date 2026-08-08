@@ -21,6 +21,7 @@ export const FLIGHT_BINDINGS = {
   KeyW: 'throttle-up',
   KeyS: 'throttle-down',
   KeyF: 'flaps',
+  KeyV: 'rear-view',
   ShiftLeft: 'afterburner',
   ShiftRight: 'afterburner',
   Space: 'air-brake',
@@ -90,6 +91,11 @@ export function createFlightInputState(throttle = 0) {
   return {
     pressed: new Set(),
     analog: new Map(),
+    cameraLook: {
+      active: false,
+      yaw: 0,
+      pitch: 0,
+    },
     throttle,
     intent: {
       pitch: 0,
@@ -116,6 +122,7 @@ export function clearAnalogFlightInput(state, source) {
 export function releaseFlightInput(state) {
   state.pressed.clear()
   state.analog.clear()
+  state.cameraLook.active = false
 }
 
 export function resetFlightInput(state, throttle = state.throttle) {

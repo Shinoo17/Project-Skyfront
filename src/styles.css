@@ -1934,6 +1934,12 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   transform: translateY(0);
 }
 
+.deck-key.is-selected {
+  color: var(--void);
+  border-color: var(--hud-ice);
+  background: var(--hud-ice);
+}
+
 .deck-key.is-reset {
   color: var(--hud-ice);
 }
@@ -2005,7 +2011,7 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
 /* Air brake remains a held control; the second cell reports how far past the stall the
    wing is. */
 .deck-row.is-modes {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .deck-row.is-modes .deck-key {

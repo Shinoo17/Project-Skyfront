@@ -22,6 +22,9 @@ export default function FlightRange({
   resetId,
   telemetry,
   chaseCamera,
+  cameraMode,
+  cameraStyle,
+  cameraDistance,
   onRangeReady,
   paused = false,
 }) {
@@ -51,6 +54,9 @@ export default function FlightRange({
         terrainRef={terrainRef}
         telemetry={telemetry}
         chaseCamera={chaseCamera}
+        cameraMode={cameraMode}
+        cameraStyle={cameraStyle}
+        cameraDistance={cameraDistance}
         paused={paused}
       />
     </>
