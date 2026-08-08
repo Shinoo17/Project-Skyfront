@@ -37,6 +37,11 @@ as they want the burner, and releasing is what shuts it down. Nothing here latch
 
 `keyActions` handles the keys that are events rather than held axes (reset, pause).
 Each handler receives (event, { fieldFocused }) and does its own preventDefault.
+
+`paused` mutes every held binding without unmounting anything. It has to: the flight
+bindings swallow Space and the arrows, so a pause menu whose buttons are focusable would
+otherwise deploy the air brake instead of being pressed. `keyActions` still runs, because
+the key that opens the menu is also the key that closes it.
 */
 export default function useFlightControls({
   bindings = FLIGHT_BINDINGS,
@@ -44,6 +49,7 @@ export default function useFlightControls({
   onPress,
   onChange,
   keyActions,
+  paused = false,
 } = {}) {
   const controls = useRef(null)
   if (!controls.current) controls.current = createFlightInputState(throttle)
@@ -61,7 +67,8 @@ export default function useFlightControls({
         // Arrows and W/S belong to the throttle slider while it has focus, and to any
         // text field. Everywhere else they fly the aircraft — including on a button,
         // which is exactly where focus lands after the pilot taps a flight pad key.
-        if (fieldFocused) return
+        // A paused sortie hands them all back to the menu, un-prevented.
+        if (fieldFocused || paused) return
         // Repeats have to be swallowed too, or a held arrow key scrolls the page.
         event.preventDefault()
         if (pressed.has(control)) return
@@ -99,7 +106,9 @@ export default function useFlightControls({
       window.removeEventListener('blur', releaseAll)
       releaseAll()
     }
-  }, [bindings])
+    // Re-subscribing on a pause is deliberate: the cleanup's releaseAll is what lets go of
+    // the stick the pilot was holding when they hit the menu, and it keeps the throttle.
+  }, [bindings, paused])
 
   return controls
 }

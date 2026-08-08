@@ -13,8 +13,12 @@ and the HUD reads, and the reset and debug toggles.
 Both the sortie and the observer page mount this, which is what keeps their key bindings,
 their reset semantics and their telemetry contract identical. A surface that wants extra
 keys passes them in `extraKeys`; it never re-declares the ones every flight surface has.
+
+`paused` is the surface saying the pilot is in a menu: held controls stop being read and
+are let go of, while the event keys keep working so the menu can be closed again. Surfaces
+that never pause simply do not pass it.
 */
-export default function useFlightSession({ mapId, aircraftId, extraKeys } = {}) {
+export default function useFlightSession({ mapId, aircraftId, extraKeys, paused = false } = {}) {
   const aircraft = getAircraft(aircraftId)
   const map = getMap(mapId)
   const envelope = aircraft.flight.envelope
@@ -33,6 +37,9 @@ export default function useFlightSession({ mapId, aircraftId, extraKeys } = {}) 
 
   const keyActions = useMemo(() => ({
     KeyR: (event) => {
+      // A reset asked for behind a menu would only land on the frame the pilot resumes,
+      // which is not what pressing it looked like it did.
+      if (paused) return
       event.preventDefault()
       setResetId((value) => value + 1)
     },
@@ -42,9 +49,9 @@ export default function useFlightSession({ mapId, aircraftId, extraKeys } = {}) 
       setDebug((value) => !value)
     },
     ...extraKeys,
-  }), [extraKeys])
+  }), [extraKeys, paused])
 
-  const controls = useFlightControls({ throttle: envelope.idleThrottle, keyActions })
+  const controls = useFlightControls({ throttle: envelope.idleThrottle, keyActions, paused })
 
   return {
     aircraft,

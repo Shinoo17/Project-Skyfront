@@ -23,6 +23,7 @@ export default function FlightRange({
   telemetry,
   chaseCamera,
   onRangeReady,
+  paused = false,
 }) {
   const terrainRef = useRef()
   const renderer = useThree((state) => state.gl)
@@ -50,6 +51,7 @@ export default function FlightRange({
         terrainRef={terrainRef}
         telemetry={telemetry}
         chaseCamera={chaseCamera}
+        paused={paused}
       />
     </>
   )

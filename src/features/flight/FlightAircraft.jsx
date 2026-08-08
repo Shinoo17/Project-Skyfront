@@ -69,6 +69,7 @@ export default function FlightAircraft({
   terrainRef,
   telemetry,
   chaseCamera,
+  paused = false,
 }) {
   const envelope = aircraft.flight.envelope
   const group = useRef()
@@ -178,6 +179,10 @@ export default function FlightAircraft({
 
   useFrame((state, delta) => {
     if (!group.current) return
+    // A paused surface withholds the render tick, but any React commit inside the Canvas —
+    // the pause menu's own debug toggle, for one — still asks for a frame. The model refuses
+    // to integrate on it, so nothing the menu does can nudge the aircraft.
+    if (paused) return
     if (previousResetId.current !== resetId) {
       previousResetId.current = resetId
       resetFlight('manual')

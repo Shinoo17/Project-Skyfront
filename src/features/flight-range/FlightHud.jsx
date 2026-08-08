@@ -363,6 +363,7 @@ export default function FlightHud({
         <kbd>F</kbd><span>flaps</span>
         <kbd>R</kbd><span>reset</span>
         <kbd>I</kbd><span>debug</span>
+        <kbd>ESC</kbd><kbd>P</kbd><span>menu</span>
       </p>}
     </div>
   )

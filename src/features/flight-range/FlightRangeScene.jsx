@@ -10,7 +10,7 @@ import { PerspectiveCamera } from 'three'
 
 import { getAircraft } from '../../aircraft'
 import { getMap } from '../../maps'
-import { useGraphicsProfile } from '../../three/graphics'
+import { DEFAULT_FLIGHT_QUALITY, useGraphicsProfile } from '../../three/graphics'
 import SyncedFrameLoop from '../../three/SyncedFrameLoop'
 import { BASE_FOV } from '../flight/chaseCamera'
 import DebugVectors from '../flight/DebugVectors'
@@ -24,14 +24,22 @@ export default function FlightRangeScene({
   aircraftId,
   mapId,
   debug = false,
+  paused = false,
+  quality = DEFAULT_FLIGHT_QUALITY,
 }) {
   const aircraft = getAircraft(aircraftId)
   const map = getMap(mapId)
-  const graphics = useGraphicsProfile('medium')
+  const graphics = useGraphicsProfile(quality)
 
   return (
     <Canvas
-      frameloop="demand"
+      // Antialiasing and the GPU power preference are fixed when the WebGL context is
+      // created, so a quality change is a new context — which is a new sortie, from the
+      // spawn. The menu says so before it happens.
+      key={quality}
+      // Manual, not on demand: this surface renders every frame it asks for, and demand
+      // mode tops out at half the display's refresh rate. SyncedFrameLoop owns the tick.
+      frameloop="never"
       dpr={graphics.dpr}
       shadows={graphics.shadows}
       camera={{
@@ -59,10 +67,16 @@ export default function FlightRangeScene({
           controls={controls}
           resetId={resetId}
           telemetry={telemetry}
+          paused={paused}
         />
       </Suspense>
       {debug && <DebugVectors telemetry={telemetry} />}
-      <SyncedFrameLoop targetFps={graphics.targetFps} />
+      {/*
+        The pause. The Canvas renders on demand, so withholding the tick is the whole of it:
+        no frame is requested, `useFrame` never runs, and the flight model stops integrating
+        with the last frame still on screen. Nothing in the simulation has to know.
+      */}
+      <SyncedFrameLoop targetFps={paused ? 0 : graphics.targetFps} />
     </Canvas>
   )
 }
