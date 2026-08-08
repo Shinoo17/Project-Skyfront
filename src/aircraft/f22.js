@@ -402,16 +402,30 @@ const f22 = {
         // the player to operate a separate limiter switch.
         performanceAoALimitDeg: 32,
         performancePullThreshold: 0.72,
-        // Far enough past the vertical for the nose to lie down along the flight path,
-        // which is the pose the manoeuvre is named for.
-        postStallAoALimitDeg: 105,
+        /*
+        Far enough past the vertical for the nose to lie down along the flight path, which
+        is the pose the manoeuvre is named for — and now far enough for it to keep going.
+
+        The ceiling is 150 rather than the 180-and-over a tumble travels through, because
+        alpha is an atan2 and wraps: a nose passing straight over the top takes it from +179
+        to -179, and a fence set past the wrap can never engage. What the number therefore
+        buys is the last stretch of a committed pull before the beam. Past it the tumble is
+        held up by nothing but the pilot's stick against the weathervane floor and the drag
+        bill, which is the intended trade — it is a manoeuvre that costs energy to fly and
+        rights itself the moment the stick is released.
+        */
+        postStallAoALimitDeg: 150,
         aoaLimitSoftnessDeg: 9,
         negativeAoAFactor: 0.55,
 
         // The nose has to beat the flight path to deep AoA, not merely lead it: what
         // separates a Cobra from a hard pull is the ratio between the two rates.
-        postStallPitchRateDeg: 240,
-        postStallRollRateDeg: 60,
+        postStallPitchRateDeg: 380,
+        // The nose has to be able to come round the flight path as well as over it, or a
+        // Cobra is a pose rather than a way of pointing the aircraft somewhere. 60 was the
+        // rate a wing that had stopped flying could still ask for; this is the rate the
+        // engines can, and it is what makes the tumble exit in a chosen direction.
+        postStallRollRateDeg: 150,
         maxG: 9,
         maxNegativeG: 3.5,
 
@@ -443,6 +457,10 @@ const f22 = {
         // How many degrees past the stall count as fully post-stall, for the HUD readout,
         // the vapour effect, and the separated-flow drag surcharge.
         postStallDisplayRangeDeg: 30,
+        // Airflow remains meaningful almost to the apex of a tailslide. Below this the last
+        // coherent angle is held until gravity gives the airframe a direction again.
+        airflowSenseMinKmh: 12,
+        backwardFlightThresholdKmh: 8,
 
         // What `detectManeuver` calls a Cobra, and the two-sided test that keeps a loop
         // from answering to the name: the nose this far off the airstream while the
@@ -450,12 +468,23 @@ const f22 = {
         // never the second.
         cobraMinAoADeg: 62,
         cobraMaxPathRateDeg: 26,
+        // And what separates a tumble from the Cobra it passes through: the nose is not
+        // merely off the airstream, it is still going round. Measured off nose-off-path,
+        // which does not wrap, and off a pitch rate that has not stopped.
+        tumbleMinNoseOffDeg: 120,
+        tumbleMinPitchRateDeg: 55,
         pathRateResponse: 9,
         // What separates the yaw-coupled J-turn from a pure-pitch Cobra, and the yaw rate a
         // pedal turn has to actually be producing before it earns the name. Labels only:
         // `detectManeuver` reads the physics, it never feeds it.
         jTurnMinSideslipDeg: 14,
         pedalTurnMinYawRateDeg: 18,
+        tailslideMinPitchDeg: 55,
+        tailslideMinNoseOffDeg: 150,
+        tailslideMinReverseKmh: 22,
+        tailslideMaxKmh: 260,
+        flatTurnMaxKmh: 430,
+        flatTurnMinYawRateDeg: 22,
         // How far alpha has to fall before the HUD stops calling it a recovery — the second,
         // lower figure applies once the label is already showing, so it does not flicker.
         recoveryLabelEnterFactor: 0.6,
@@ -471,6 +500,8 @@ const f22 = {
         pedalTurnYawBoost: 2.4,
         pedalTurnYawShare: 0.4,
         postStallYawBoost: 1.2,
+        postStallYawMinPitchDeg: 20,
+        postStallYawPitchBlendDeg: 20,
         // Rudders are slightly less effective than the pitch and roll surfaces at the same
         // dynamic pressure. The ceiling is above 1 because the pedal-turn and post-stall
         // boosts are allowed to stack on top of plain airflow.
@@ -497,6 +528,14 @@ const f22 = {
         rollAuthorityOnsetDeg: 20,
         rollAuthorityRangeDeg: 45,
         rollAuthorityAoALoss: 0.65,
+        // What the engines put back once the wingtips have stopped voting: differential
+        // tail in the efflux, and a nozzle contribution the real airframe does not have.
+        // Scaled by thin air and by thrust, so it is worth nothing at fighting speed and
+        // nothing at idle — a tumble has to be flown under power. The ceiling is the same
+        // stacking ceiling `maxYawAuthority` is, and for the same reason: `rollAuthority`
+        // multiplies the rate ceiling rather than approaching it.
+        postStallRollBoost: 1.5,
+        maxRollAuthority: 1.35,
         // How much of the rate response survives when an axis has no aerodynamic authority
         // left. This is the FCS rate loop — gyro in, nozzle out — so it never goes to zero,
         // but below it the airframe's own inertia is what the pilot is fighting.
@@ -530,6 +569,12 @@ const f22 = {
         // airframe is broadside or backwards to the flow and no held stick should win.
         pitchWeathervaneOnsetDeg: 88,
         pitchWeathervaneRangeDeg: 40,
+        // How much of that moment survives a pull held against the stops — the one thing
+        // allowed to lean on it, and the reason a tumble is flyable at all. A floor rather
+        // than an off switch: at a quarter strength the airstream still argues, flying
+        // backwards is still not somewhere the airframe can settle, and letting go of the
+        // stick still restores the moment whole and rights the jet.
+        pitchWeathervaneTumbleFloor: 0.25,
         // Ceiling on the restoring rate, deg/s. The gain above is calibrated for the low
         // dynamic pressure this term actually operates at; unbounded, the same gain with the
         // q factor saturated would command four figures. Inactive at every condition the
@@ -543,9 +588,29 @@ const f22 = {
         spinGuardRollLoss: 0.55,
         spinGuardYawLoss: 0.4,
 
+        // Bounded, deterministic falling-leaf coupling. The phase is internal physical
+        // memory; the blend itself is continuous and disappears as soon as the pilot moves
+        // an axis, airspeed returns, or the sink stops.
+        fallingLeafFullKmh: 150,
+        fallingLeafNoneKmh: 330,
+        fallingLeafMinSink: 1.5,
+        fallingLeafSinkRange: 5,
+        fallingLeafInputThreshold: 0.18,
+        fallingLeafFrequencyHz: 0.7,
+        fallingLeafRollRateDeg: 12,
+        fallingLeafYawRateDeg: 9,
+        fallingLeafYawPhaseRad: 1.15,
+        fallingLeafLabelThreshold: 0.32,
+
         aoaDragGain: 26,
-        postStallDragMultiplier: 1.6,
+        postStallDragMultiplier: 1.35,
+        // What the separated-flow bill decays to once the airframe has come round past
+        // broadside and is meeting the air the other way. Held at 1 instead, a tumble stops
+        // dead in about a second; at zero — which is what an unclamped sine gives — it costs
+        // nothing at all and the manoeuvre is free.
+        beyondBeamDragFactor: 0.62,
         sideslipDragGain: 9,
+        postStallSideForceFactor: 0.35,
         airBrakeDrag: 12,
         flapsDrag: 4,
       },

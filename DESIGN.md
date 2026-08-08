@@ -204,7 +204,7 @@ Heading, attitude, speed, altitude, vertical speed, throttle, ground clearance, 
 
 **The Halo Rule.** The range runs from a sunlit sky down to shadowed rock, and no single scrim serves both. Every glass stroke and glyph uses a wider translucent green pass beneath a crisp phosphor mark, with no black outline. The canvas avoids CSS `filter`, which would recomposite the animating layer every frame.
 
-**The One Symbol Rule.** The flight model integrates position straight along the airframe's forward vector, so boresight and flight path are the same direction. Draw one marker, not a gun cross and a velocity vector stacked on the same pixel.
+**The Two-Vector Rule.** The boresight belongs to aircraft orientation and the flight-path marker belongs to the true velocity vector. They overlap in trimmed flight and separate under sideslip, high AoA, Cobra, tailslide, and post-stall rotation. Never move the flight-path marker toward the gun cross merely to make the HUD look tidy; that gap is the pilot's most useful momentum cue.
 
 **Sightline frame rate.** Flight state is never React state. The scene writes one mutable object per frame and the glass reads it from its own animation frame; React re-renders only when the advisory changes, which is also when it is announced.
 

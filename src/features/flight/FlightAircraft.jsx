@@ -363,6 +363,8 @@ export default function FlightAircraft({
     readout.engineCoreLevel = aircraftState.engineCoreLevel
     readout.mach = readMach(aircraftState.speedKmh, aircraftState.position.y, envelope)
     readout.speed = aircraftState.speedKmh
+    readout.forwardSpeed = aircraftState.forwardSpeedKmh
+    readout.backwardFlight = aircraftState.backwardFlight
     readout.verticalSpeed = aircraftState.velocity.y
     readout.throttle = input.throttle
     readout.flaps = input.flaps
@@ -375,6 +377,8 @@ export default function FlightAircraft({
     readout.stallBlend = aircraftState.stallBlend
     readout.postStallBlend = aircraftState.postStallBlend
     readout.postStallActive = aircraftState.postStallActive
+    readout.flightRegime = aircraftState.flightRegime
+    readout.departureBlend = aircraftState.departureBlend
     readout.aeroAuthority = aircraftState.aeroAuthority
     readout.vectorAuthority = aircraftState.vectorAuthority
     readout.lift = aircraftState.liftForce.length()

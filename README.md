@@ -28,7 +28,7 @@ x, y and z move. Fly at the camera and it retreats ahead of you; fly away and it
 ## Manoeuvre demonstrations
 
 The right-hand panel on the developer page flies scripted manoeuvres — Cobra, J-turn, pedal
-turn, post-stall pass, loop, aileron and barrel roll, Split-S, Immelmann — with a bot that
+turn, post-stall pass, tumble, loop, aileron and barrel roll, Split-S, Immelmann — with a bot that
 uses the same device-neutral input state as a pilot. It has no access to the physics, so
 every limiter, authority curve and energy cost applies to it. Picking one resets the
 aircraft first, so each run starts identically.
@@ -43,6 +43,7 @@ npm run maneuver-check -- cobra     # one script with a sampled trace
 npm run maneuver-check -- all 400   # every script from a 400-unit spawn
 npm run input-check                 # digital smoothing, analogue intent, and throttle stops
 npm run flight-physics-check        # banked lift, flight-path separation, G/energy trade
+npm run stall-check                 # high-AoA, TVC, tailslide, falling leaf, bounded Kulbit
 ```
 
 The checker imports the real flight model at the real fixed step and exits non-zero if a
@@ -57,6 +58,13 @@ relative airflow/AoA against the new attitude, then applies lift, drag, thrust, 
 to velocity before integrating position. Lift follows aircraft-up, so banking naturally
 trades vertical lift for lateral turn force; there is no bank-triggered pitch correction or
 velocity snap toward the nose.
+
+Very low speed is allowed to cross through zero instead of being clamped along the old
+flight path. A vertical zoom can therefore become a genuine tailslide with negative signed
+forward speed; gravity and reverse-flow weathercocking then drop the nose into recovery.
+Deep separated flow also carries a small deterministic falling-leaf roll/yaw coupling when
+all three axes are released. It is bounded by the spin guard and disappears immediately
+when the player commands an axis, rebuilds airspeed, or stops sinking.
 
 Routing is `HashRouter`, so every URL survives a reload on any static host without a
 rewrite rule. Route paths live in [src/routes/paths.js](src/routes/paths.js).
@@ -108,7 +116,7 @@ is meant to land.
 - Use the control surface to switch clips, playback speed, camera angle, auto-orbit, and lighting mode.
 - Switch to the Flight tab for direct Three.js control of pitch, roll, and yaw. Hold the on-screen controls, or use arrow keys for pitch/roll and `Q` / `E` for yaw. Hold the A/B control or `Shift` to drive the engine through military power and light the afterburner.
 - Manual flight moves the ailerons, flaperons, leading-edge flaps, rudders, stabilators, and the thrust-vectoring nozzles while rotating the aircraft itself. Pitch vectors both nozzles together; roll vectors them differentially. Use Level to reset attitude.
-- Select `Test flight` in the top bar to fly over `Mountain_Valley_Colorado.glb`. Use arrow keys for pitch/roll, `Q` / `E` for yaw, `W` / `S` for dry throttle, hold `Shift` for afterburner, `Space` for the air brake, `F` for flaps, and `R` to reset. `Esc` (or `P`, which fullscreen does not swallow) stops the simulation and opens the pause menu — resume, settings, credits, or back to the hangar; the sortie itself carries no top bar. Digital axes ramp smoothly instead of snapping. There is no post-stall mode and no entry window: control authority and the AoA fence both follow dynamic pressure, so the slower the air the more the airframe will let a committed pull ask for. Centred stick asks the FCC to recover.
+- Select `Test flight` in the top bar to fly over `Mountain_Valley_Colorado.glb`. Use arrow keys for pitch/roll, `Q` / `E` for yaw, `W` / `S` for dry throttle, hold `Shift` for afterburner, `Space` for the air brake, `F` for flaps, and `R` to reset. `Esc` (or `P`, which fullscreen does not swallow) stops the simulation and opens the pause menu — resume, settings, credits, or back to the hangar; the sortie itself carries no top bar. Digital axes ramp smoothly instead of snapping. There is no post-stall mode and no entry window: control authority and the AoA fence both follow dynamic pressure, so the slower the air the more the airframe will let a committed pull ask for. Centred stick asks the FCC to recover. Held against the stops down in the thin air it does the other thing: the airstream's restoring moment drops to a quarter, the nose carries on over the top and round past the tail while the flight path runs on underneath, and the engines keep enough roll authority to pick which way the jet leaves. Hold to tumble, roll to aim it, let go to recover.
 - Press `Space` to play/pause and `R` to reset the camera.
 
 The Test Flight canvas uses the optimized Meshopt/KTX2 assets and reads its renderer settings from the `low` / `medium` / `high` profiles in [src/three/graphics.js](src/three/graphics.js); the pause menu's Settings pane picks between them and remembers the choice. Antialiasing is fixed when the WebGL context is created, so switching quality rebuilds the renderer and restarts the sortie. The hangar canvas uses the `studio` profile.

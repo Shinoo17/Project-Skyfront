@@ -9,6 +9,10 @@ things that only matter once alpha gets large:
   C  high speed, full aft stick     alpha and G rise, drag bites, and the G fence holds
   D  cobra                          nose leaves the airstream, energy is spent, it recovers
   E  idle throttle, nose down       attitude changes; momentum does not follow it
+  F  vertical tailslide             velocity crosses zero and genuinely reverses
+  G  falling leaf                   hands-off departure oscillates but stays bounded
+  H  low-speed flat yaw             nose pivots faster than the trajectory
+  I  sustained post-stall pull      completes a Kulbit, then rotation bleeds away
 
 Every case flies the real `stepFlight` at the real fixed step. The scenarios enter already
 trimmed so they test the aerodynamics rather than the keyboard ramp.
@@ -275,5 +279,136 @@ function report(label, extra) {
     + `/${fast.maxLag.toFixed(1)}°`)
 }
 
+// ---------------------------------------------------------- F: vertical reverse slide
+{
+  const state = createFlightState()
+  resetFlightState(state, new Vector3(0, altitude, 0), 120, envelope, envelope.idleThrottle)
+  state.orientation.setFromAxisAngle(PITCH_AXIS, Math.PI / 2)
+  state.velocity.set(0, 120 * toWorld, 0)
+
+  let minSpeed = Infinity
+  let minForward = Infinity
+  let sawTailslide = false
+  let lowestNose = 90
+  fly(state, 7, () => command(), (_t, sample) => {
+    minSpeed = Math.min(minSpeed, sample.speedKmh)
+    minForward = Math.min(minForward, sample.forwardSpeedKmh)
+    lowestNose = Math.min(lowestNose, noseDeg(sample))
+    sawTailslide ||= sample.maneuver === 'tailslide'
+  })
+
+  assert.ok(minSpeed < 12, 'F: a vertical zoom must be allowed to pass through near-zero speed')
+  assert.ok(minForward < -25, 'F: velocity must reverse along the nose in a real tailslide')
+  assert.ok(sawTailslide, 'F: axial reverse flight must be identified as a tailslide')
+  assert.ok(lowestNose < 45, 'F: the airstream must eventually weathercock the nose out of reverse')
+
+  report('F vertical tailslide', `min=${minSpeed.toFixed(1)}kmh reverse=${minForward.toFixed(0)}kmh`
+    + ` noseDrop=${(90 - lowestNose).toFixed(0)}° exit=${state.speedKmh.toFixed(0)}kmh`)
+}
+
+// ------------------------------------------------ G: deterministic falling-leaf departure
+{
+  const state = createFlightState()
+  resetFlightState(state, new Vector3(0, altitude, 0), 170, envelope, envelope.idleThrottle)
+  state.orientation.setFromAxisAngle(PITCH_AXIS, MathUtils.degToRad(72))
+  state.velocity.set(150 * toWorld, -90 * toWorld, 0)
+
+  let peakLeaf = 0
+  let maxRollRate = 0
+  let maxYawRate = 0
+  let rollPositive = false
+  let rollNegative = false
+  const startY = state.position.y
+  fly(state, 5, () => command(), (_t, sample) => {
+    const rollRate = MathUtils.radToDeg(sample.angularVelocity.x)
+    peakLeaf = Math.max(peakLeaf, sample.departureBlend)
+    maxRollRate = Math.max(maxRollRate, Math.abs(rollRate))
+    maxYawRate = Math.max(maxYawRate, Math.abs(MathUtils.radToDeg(sample.angularVelocity.y)))
+    rollPositive ||= rollRate > 1
+    rollNegative ||= rollRate < -1
+  })
+
+  const sink = startY - state.position.y
+  assert.ok(peakLeaf > 0.3, 'G: a slow, separated, hands-off sink must excite falling-leaf coupling')
+  assert.ok(rollPositive && rollNegative, 'G: the leaf must swap roll direction rather than spin one way')
+  assert.ok(maxRollRate < 35 && maxYawRate < 35, 'G: the departure must remain bounded')
+  assert.ok(sink > 8, 'G: a falling leaf must lose altitude')
+
+  report('G falling leaf', `blend=${peakLeaf.toFixed(2)} roll=${maxRollRate.toFixed(0)}°/s`
+    + ` yaw=${maxYawRate.toFixed(0)}°/s sink=${sink.toFixed(0)}`)
+}
+
+// --------------------------------------------------------- H: low-speed post-stall yaw
+{
+  function yawProbe(pitchDeg) {
+    const state = createFlightState()
+    resetFlightState(state, new Vector3(0, altitude, 0), 270, envelope, 0.7)
+    state.orientation.setFromAxisAngle(PITCH_AXIS, MathUtils.degToRad(pitchDeg))
+    state.velocity.set(270 * toWorld, 0, 0)
+    const startNose = FORWARD.clone().applyQuaternion(state.orientation)
+    const startPath = state.velocity.clone().normalize()
+    let peakYaw = 0
+    fly(state, 1.2, () => command({ yaw: 1, throttle: 0.7 }), (_t, sample) => {
+      peakYaw = Math.max(peakYaw, Math.abs(MathUtils.radToDeg(sample.angularVelocity.y)))
+    })
+    const endNose = FORWARD.clone().applyQuaternion(state.orientation)
+    const endPath = state.velocity.clone().normalize()
+    const headingDelta = (from, to) => {
+      const start = Math.atan2(from.z, from.x)
+      const end = Math.atan2(to.z, to.x)
+      return Math.abs(MathUtils.radToDeg(Math.atan2(Math.sin(end - start), Math.cos(end - start))))
+    }
+    return {
+      peakYaw,
+      noseTurn: headingDelta(startNose, endNose),
+      pathTurn: headingDelta(startPath, endPath),
+    }
+  }
+
+  const level = yawProbe(0)
+  const highAlpha = yawProbe(60)
+  assert.ok(
+    highAlpha.peakYaw > level.peakYaw * 1.5,
+    'H: low-speed TVC yaw must require the nose-high/high-alpha or pedal window',
+  )
+  assert.ok(
+    highAlpha.noseTurn > highAlpha.pathTurn * 1.45,
+    `H: flat rotation must point the nose faster than the trajectory (nose `
+      + `${highAlpha.noseTurn.toFixed(1)}°, path ${highAlpha.pathTurn.toFixed(1)}°)`,
+  )
+  assert.ok(level.peakYaw < 30, 'H: a level low-speed jet must not yaw like a turntable')
+
+  report('H flat yaw pivot', `level=${level.peakYaw.toFixed(0)}°/s`
+    + ` highAoA=${highAlpha.peakYaw.toFixed(0)}°/s`
+    + ` nose/path=${highAlpha.noseTurn.toFixed(0)}°/${highAlpha.pathTurn.toFixed(0)}°`)
+}
+
+// -------------------------------------------- I: no unlimited powered post-stall rotation
+{
+  const state = trimmed(520, 0.7)
+  const startY = state.position.y
+  let rotationDeg = 0
+  let previous = state.orientation.clone()
+  fly(state, 20, () => command({
+    pitch: 1,
+    throttle: 0.7,
+    afterburnerCommanded: true,
+    burnerLevel: 1,
+  }), (_t, sample) => {
+    rotationDeg += MathUtils.radToDeg(previous.angleTo(sample.orientation))
+    previous.copy(sample.orientation)
+  })
+  const exitPitchRate = Math.abs(MathUtils.radToDeg(state.angularVelocity.z))
+  const altitudeLoss = startY - state.position.y
+
+  assert.ok(rotationDeg > 360, 'I: a committed powered pull must be able to complete a Kulbit')
+  assert.ok(rotationDeg < 1800, 'I: the airframe must not rotate forever under held input')
+  assert.ok(exitPitchRate < 40, 'I: reverse-flow weathercocking must eventually arrest the tumble')
+  assert.ok(altitudeLoss > 30, 'I: sustained post-stall rotation must pay an altitude bill')
+
+  report('I bounded Kulbit', `rotation=${rotationDeg.toFixed(0)}°`
+    + ` exitRate=${exitPitchRate.toFixed(0)}°/s loss=${altitudeLoss.toFixed(0)}`)
+}
+
 for (const line of results) console.log(line)
-console.log('PASS stall checks: aerodynamic stall, G fence, post-stall energy, momentum lag')
+console.log('PASS stall checks: stall, TVC, post-stall energy, reverse flight, bounded departure')

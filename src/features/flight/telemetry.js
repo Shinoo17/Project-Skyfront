@@ -31,6 +31,8 @@ export const EMPTY_TELEMETRY = {
   stallBlend: 0,
   postStallBlend: 0,
   postStallActive: false,
+  flightRegime: 'normal',
+  departureBlend: 0,
   // Control authority split by where it comes from, 0..1. The surfaces answer to dynamic
   // pressure and to separation; the nozzles answer to engine thrust. Losing one is a very
   // different aircraft from losing both.
@@ -82,6 +84,8 @@ export const EMPTY_TELEMETRY = {
   roll: 0,
   sinceReset: 999,
   speed: 0,
+  forwardSpeed: 0,
+  backwardFlight: false,
   throttle: 0,
   verticalSpeed: 0,
 }

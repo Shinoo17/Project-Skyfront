@@ -63,6 +63,13 @@ enough pull reaches the same attitudes with the trajectory swinging round behind
 that is a loop. `pathRateDeg` is the state that tells them apart, and `detectManeuver`
 is the only thing that reads it.
 
+Held rather than released, that same pull is the tumble: past the beam the weathervane
+drops to a floor, the nose keeps going over the top and round past the tail, and the roll
+axis keeps a nozzle-fed share of its authority so the airframe can be pointed somewhere on
+the way out. The floor, the share, and the ceiling the pitch rate is allowed to reach in
+thin air are the arcade half of this model — an F-22's nozzles vector in pitch only and
+would not roll it at all — and they are marked as such where they are read.
+
 Axes follow the rest of the project: local +X forward, +Y up, +Z right wing. The body rate
 vector uses pilot sense — x rolls right, y yaws right, z pitches up.
 */
@@ -119,6 +126,9 @@ export function createFlightState() {
     // afterburner request temporarily drives the target through the MIL detent.
     engineCoreLevel: 0,
     speedKmh: 0,
+    // Signed speed along the nose. Unlike `speedKmh`, this goes negative in a tailslide.
+    forwardSpeedKmh: 0,
+    backwardFlight: false,
     thrustVectorDeg: 0,
     aoaDeg: 0,
     sideslipDeg: 0,
@@ -140,6 +150,12 @@ export function createFlightState() {
     stallBlend: 0,
     postStallBlend: 0,
     postStallActive: false,
+    // Read-only descriptions for telemetry. Physics remains continuously blended and does
+    // not branch on this label.
+    flightRegime: 'normal',
+    // Strength of the deterministic, hands-off falling-leaf oscillation, 0..1.
+    departureBlend: 0,
+    departurePhase: 0,
     /*
     The two control authorities, published separately because they answer to different
     things and a pilot needs to see which one is left.
@@ -182,6 +198,8 @@ export function resetFlightState(
   state.input.yaw = 0
   state.engineCoreLevel = readThrottlePower(throttle, envelope)
   state.speedKmh = speedKmh
+  state.forwardSpeedKmh = speedKmh
+  state.backwardFlight = false
   state.thrustVectorDeg = 0
   state.aoaDeg = 0
   state.sideslipDeg = 0
@@ -190,6 +208,9 @@ export function resetFlightState(
   state.stallBlend = 0
   state.postStallBlend = 0
   state.postStallActive = false
+  state.flightRegime = 'normal'
+  state.departureBlend = 0
+  state.departurePhase = 0
   state.aeroAuthority = 0
   state.vectorAuthority = 0
   state.flightPathDeg = 0
@@ -218,14 +239,48 @@ function detectManeuver(state, tuning, pitchAttitudeDeg, speed, pedalMaxSpeed) {
   const yawRateDeg = Math.abs(MathUtils.radToDeg(state.angularVelocity.y))
   const flying = alpha > tuning.cobraMinAoADeg && state.pathRateDeg < tuning.cobraMaxPathRateDeg
 
+  // A tailslide is axial reverse flight, not merely a very large alpha reading. It gets
+  // first refusal because the same 180-degree airflow can otherwise look like a tumble.
+  if (pitchAttitudeDeg > tuning.tailslideMinPitchDeg
+    && state.noseOffPathDeg > tuning.tailslideMinNoseOffDeg
+    && state.forwardSpeedKmh < -tuning.tailslideMinReverseKmh
+    && state.speedKmh < tuning.tailslideMaxKmh) {
+    return 'tailslide'
+  }
+
+  /*
+  The tumble sits above the Cobra because it satisfies the Cobra test on its way past: deep
+  alpha with the trajectory left alone describes both. What separates them is that a Cobra
+  is a nose held somewhere and a tumble is a nose still going, so the extra term is a pitch
+  rate that has not stopped.
+
+  It reads `noseOffPathDeg` rather than alpha, and that is not a style choice. Alpha is an
+  atan2 and wraps at the beam — the nose passing straight over the top takes it from +179 to
+  -179 — while the nose-off-path angle is an acos of a dot product, runs 0 to 180, and does
+  not care which side of the airstream the airframe came round.
+  */
+  const pitchRateDeg = Math.abs(MathUtils.radToDeg(state.angularVelocity.z))
+  // The rate test is an entry condition only, held afterwards on the nose-off-path angle
+  // alone. Rolling the airframe mid-tumble takes the pitch rate below the threshold for as
+  // long as the roll lasts — which is the middle of the manoeuvre, and a caption that drops
+  // out there and comes back reads as the aircraft having stopped doing it.
+  if (flying && state.noseOffPathDeg > tuning.tumbleMinNoseOffDeg
+    && (pitchRateDeg > tuning.tumbleMinPitchRateDeg || state.maneuver === 'tumble')) {
+    return 'tumble'
+  }
   if (state.postStallActive && flying && beta > tuning.jTurnMinSideslipDeg) return 'j-turn'
   if (state.postStallActive && flying) return 'cobra'
+  if (state.departureBlend > tuning.fallingLeafLabelThreshold) return 'falling-leaf'
+  if (state.postStallActive
+    && state.speedKmh < tuning.flatTurnMaxKmh
+    && yawRateDeg > tuning.flatTurnMinYawRateDeg) return 'flat-turn'
   if (pitchAttitudeDeg > tuning.pedalTurnMinPitchDeg && speed < pedalMaxSpeed
     && yawRateDeg > tuning.pedalTurnMinYawRateDeg) {
     return 'pedal-turn'
   }
   if (alpha > tuning.stallAoADeg) return 'post-stall'
-  if (state.maneuver === 'post-stall' || state.maneuver === 'cobra' || state.maneuver === 'j-turn') {
+  if (state.maneuver === 'post-stall' || state.maneuver === 'cobra'
+    || state.maneuver === 'j-turn' || state.maneuver === 'tumble') {
     // Coming back from beyond the stall: hold the recovery label until the wing is flying
     // again, so the HUD does not flicker between states on the way down.
     if (alpha > tuning.stallAoADeg * tuning.recoveryLabelEnterFactor) return 'recovery'
@@ -303,10 +358,19 @@ export function stepFlight(state, command, envelope, dt) {
   // asin against total speed instead, because the same atan2 would read a jet flying
   // backwards as 180 degrees of slip when it is not sliding sideways at all — which puts
   // a pure-pitch Cobra into the yaw-coupled J-turn branch on nothing but a sign flip.
-  const sensedAlphaRad = speed > 2 ? Math.atan2(-localVelocity.y, localVelocity.x) : 0
-  const sensedBetaRad = speed > 2
+  state.forwardSpeedKmh = localVelocity.x / toWorld
+  state.backwardFlight = state.forwardSpeedKmh < -tuning.backwardFlightThresholdKmh
+
+  const airflowSenseSpeed = tuning.airflowSenseMinKmh * toWorld
+  // At the exact apex airflow angles are undefined. Keep the last coherent reading through
+  // that very short window instead of snapping the HUD/FCC to zero, then reacquire as soon
+  // as gravity establishes a direction again.
+  const sensedAlphaRad = speed > airflowSenseSpeed
+    ? Math.atan2(-localVelocity.y, localVelocity.x)
+    : MathUtils.degToRad(state.aoaDeg)
+  const sensedBetaRad = speed > airflowSenseSpeed
     ? Math.asin(MathUtils.clamp(localVelocity.z / speed, -1, 1))
-    : 0
+    : MathUtils.degToRad(state.sideslipDeg)
   state.aoaDeg = MathUtils.radToDeg(sensedAlphaRad)
   state.sideslipDeg = MathUtils.radToDeg(sensedBetaRad)
 
@@ -314,6 +378,9 @@ export function stepFlight(state, command, envelope, dt) {
     Math.asin(MathUtils.clamp(worldForward.y, -1, 1)),
   )
   const alphaDegAbs = Math.abs(state.aoaDeg)
+  const separation = smooth01(
+    (alphaDegAbs - tuning.stallAoADeg) / tuning.postStallDisplayRangeDeg,
+  )
 
   // Dynamic-pressure factor: how much the air itself can do at this speed, 1 at the
   // reference speed. Every aerodynamic effect — force or stability — scales off it.
@@ -380,9 +447,39 @@ export function stepFlight(state, command, envelope, dt) {
   state.vectorAuthority = vectorAuthority
 
   const pitchAuthority = MathUtils.clamp(surfaceAuthority + vectorAuthority, 0, 1)
-  const rollAuthority = surfaceAuthority
-    * (1 - (tuning.rollAuthorityAoALoss
-      * smooth01((alphaDegAbs - tuning.rollAuthorityOnsetDeg) / tuning.rollAuthorityRangeDeg)))
+  /*
+  Roll has the same two contributors pitch and yaw do, and for the same reason. The
+  surfaces shed authority against alpha faster than anything else — the ailerons are out at
+  the wingtips, which is where the flow breaks down first — so in thin air at deep alpha
+  what is left is the engines: differential tail deflection working in the jet efflux, plus
+  whatever the nozzles can be persuaded to contribute.
+
+  That last part is an arcade licence rather than an F-22: the real nozzles vector in pitch
+  only and cannot roll the airframe at all. It is here because rolling the nose around the
+  flight path is what turns a Cobra from a party trick into something a pilot points
+  somewhere, and without it a full deflection past the stall buys about three degrees of
+  bank a second. The ceiling below is the same stacking ceiling `maxYawAuthority` is.
+
+  Both terms are scheduled on the same number, and it has to be that way round: the engines
+  pick up precisely what the wingtips shed, so the boost is worth nothing at the incidence
+  ordinary flight is trimmed at. Gated on thin air alone it would have been worth
+  everything there — 400 km/h in reheat is thin air by this model's reckoning whatever the
+  alpha is, and the jet would have rolled faster slow than fast, which is the turntable
+  `authorityExponent` was rewritten to stop.
+
+  Only `surfaceAuthority` reaches `state.aeroAuthority` — that number answers for the
+  surfaces, and a nozzle contribution published under it would tell the pilot the wing was
+  still working.
+  */
+  const rollShed = smooth01(
+    (alphaDegAbs - tuning.rollAuthorityOnsetDeg) / tuning.rollAuthorityRangeDeg,
+  )
+  const rollAuthority = MathUtils.clamp(
+    (surfaceAuthority * (1 - (tuning.rollAuthorityAoALoss * rollShed)))
+      + (thinAir * tuning.postStallRollBoost * thrustLevel * rollShed),
+    0,
+    tuning.maxRollAuthority,
+  )
   // Pedal-turn window: nose high and slow, the rudders plus vectoring coupling keep a
   // usable yaw that plain airflow no longer provides. Outside the window it contributes
   // nothing, so level flight can never spin on the spot.
@@ -392,10 +489,15 @@ export function stepFlight(state, command, envelope, dt) {
     * smooth01(
       ((tuning.pedalTurnMaxKmh * toWorld) - speed) / (tuning.pedalTurnSpeedBlendKmh * toWorld),
     )
+  const noseHighYawWindow = smooth01(
+    (sensedPitchAttitudeDeg - tuning.postStallYawMinPitchDeg)
+      / tuning.postStallYawPitchBlendDeg,
+  )
   const yawAuthority = MathUtils.clamp(
     (surfaceAuthority * tuning.yawSurfaceShare)
       + (pedalWindow * tuning.pedalTurnYawBoost * thrustLevel * tuning.pedalTurnYawShare)
-      + (thinAir * tuning.postStallYawBoost * thrustLevel),
+      + (thinAir * tuning.postStallYawBoost * thrustLevel
+        * Math.max(separation, noseHighYawWindow)),
     0,
     tuning.maxYawAuthority,
   )
@@ -435,9 +537,32 @@ export function stepFlight(state, command, envelope, dt) {
     envelopeOpen,
   ))
 
-  // G soft limit: pitch rate times speed is centripetal acceleration, so the allowed rate
-  // shrinks as speed grows — the airframe pulls hard at corner speed, not at Mach 2.
-  const gLimitRate = (tuning.maxG * gravity) / Math.max(speed, 10)
+  /*
+  G soft limit: pitch rate times speed is centripetal acceleration, so the allowed rate
+  shrinks as speed grows — the airframe pulls hard at corner speed, not at Mach 2.
+
+  The identity behind that only holds while the wing is the thing turning the aircraft. Past
+  the stall it is not: the nose swinging round on the nozzles bends the flight path barely at
+  all, which is the whole premise of the manoeuvres this model exists for, and a rate cap
+  derived from a load factor the airframe is not pulling is a cap on nothing but the
+  animation. Left in, it was the binding constraint on a tumble — a flip that should take
+  three quarters of a second took nearly two, and the airframe spent the difference broadside
+  to the airstream, arriving at the far side with no energy left to fly out on.
+
+  So the ceiling relaxes toward the pitch rate the envelope already allows, on the same
+  `envelopeOpen` everything else here reads: at fighting speed it is the structural limit and
+  it bites, and it stops applying exactly where it stops describing anything.
+  */
+  const gLimitRate = MathUtils.lerp(
+    (tuning.maxG * gravity) / Math.max(speed, 10),
+    maxPitchRate,
+    envelopeOpen,
+  )
+  // Only the pull side is relaxed. `commitment` inside `envelopeOpen` is the absolute stick
+  // position, so a bunt reads exactly as committed as a pull does — and the rest of the
+  // model does not agree that it is: the weathervane concession above is deliberately
+  // pull-only, and a nose-down rate ceiling lifted to match would be authority granted to a
+  // manoeuvre nothing else here supports.
   const negGLimitRate = (tuning.maxNegativeG * gravity) / Math.max(speed, 10)
 
   let pitchCmd = state.input.pitch * maxPitchRate * pitchAuthority
@@ -537,9 +662,29 @@ export function stepFlight(state, command, envelope, dt) {
   condition the checks reach; it is here so that no combination of alpha and airspeed can turn
   a stabilising term into a catapult.
   */
+  /*
+  ...with one thing that can lean on it: a pull held against the stops.
+
+  Past the beam the moment above is what stops the nose, and stopping the nose is exactly
+  what a tumble may not have happen — the manoeuvre is the nose carrying on over the top
+  and round while the flight path runs on underneath it. So a committed pull scales the
+  restoring moment down toward a floor. Not to zero, and the difference matters: at the
+  floor the airstream still argues, tail-first is still not an equilibrium, and the pilot is
+  spending real authority to hold the rotation rather than being handed it. Release and the
+  moment comes back whole, which makes the control the same one the rest of the model
+  teaches — hold it to tumble, let go to recover.
+
+  It reads the signed stick and not `commitment`, which is the absolute value. Full forward
+  stick is a bunt, not a tumble, and softening the weathervane there would build the mirror
+  of the bug this term exists to fix on the negative-alpha side.
+  */
+  const pullCommitment = smooth01(
+    (state.input.pitch - tuning.performancePullThreshold)
+      / Math.max(1 - tuning.performancePullThreshold, 1e-3),
+  )
   const weathervaneNeed = smooth01(
     (alphaDegAbs - tuning.pitchWeathervaneOnsetDeg) / tuning.pitchWeathervaneRangeDeg,
-  )
+  ) * MathUtils.lerp(1, tuning.pitchWeathervaneTumbleFloor, pullCommitment)
   const weathervaneRate = MathUtils.clamp(
     Math.sin(MathUtils.clamp(sensedAlphaRad, -Math.PI / 2, Math.PI / 2))
       * tuning.pitchWeathervane
@@ -570,6 +715,37 @@ export function stepFlight(state, command, envelope, dt) {
   const spinGuard = smooth01((alphaDegAbs - tuning.stallAoADeg) / tuning.spinGuardRangeDeg)
   rollCmd *= 1 - (spinGuard * tuning.spinGuardRollLoss)
   yawCmd *= 1 - (spinGuard * tuning.spinGuardYawLoss)
+
+  /*
+  Falling-leaf departure. This is deterministic separated-flow coupling, not random noise:
+  it appears only when the wing is deeply separated, the aircraft is slow and sinking, and
+  the pilot has released all three axes. Small out-of-phase roll/yaw moments make the leaf
+  swap sides while the spin guard keeps the motion bounded. Touching a control removes it,
+  so the instability is something the player can ride or cancel rather than a cutscene.
+  */
+  const leafLowEnergy = 1 - smooth01(
+    (state.speedKmh - tuning.fallingLeafFullKmh)
+      / Math.max(tuning.fallingLeafNoneKmh - tuning.fallingLeafFullKmh, 1),
+  )
+  const leafHandsOff = 1 - smooth01(
+    Math.max(Math.abs(state.input.pitch), Math.abs(state.input.roll), Math.abs(state.input.yaw))
+      / tuning.fallingLeafInputThreshold,
+  )
+  const leafSink = smooth01(
+    (-state.velocity.y - tuning.fallingLeafMinSink)
+      / Math.max(tuning.fallingLeafSinkRange, 1e-3),
+  )
+  state.departureBlend = separation * leafLowEnergy * leafHandsOff * leafSink
+  state.departurePhase = MathUtils.euclideanModulo(
+    state.departurePhase + (dt * Math.PI * 2 * tuning.fallingLeafFrequencyHz),
+    Math.PI * 2,
+  )
+  rollCmd += MathUtils.degToRad(tuning.fallingLeafRollRateDeg)
+    * Math.sin(state.departurePhase)
+    * state.departureBlend
+  yawCmd += MathUtils.degToRad(tuning.fallingLeafYawRateDeg)
+    * Math.sin((state.departurePhase * 0.5) + tuning.fallingLeafYawPhaseRad)
+    * state.departureBlend
 
   // ---------------------------------------------------------------- rate dynamics
   // First-order chase of the commanded rates — the corrective-torque loop, with the
@@ -618,10 +794,12 @@ export function stepFlight(state, command, envelope, dt) {
   inverseOrientation.copy(state.orientation).invert()
   localVelocity.copy(state.velocity).applyQuaternion(inverseOrientation)
 
-  const alphaRad = speed > 2 ? Math.atan2(-localVelocity.y, localVelocity.x) : 0
-  const betaRad = speed > 2
+  const alphaRad = speed > airflowSenseSpeed
+    ? Math.atan2(-localVelocity.y, localVelocity.x)
+    : sensedAlphaRad
+  const betaRad = speed > airflowSenseSpeed
     ? Math.asin(MathUtils.clamp(localVelocity.z / speed, -1, 1))
-    : 0
+    : sensedBetaRad
   state.aoaDeg = MathUtils.radToDeg(alphaRad)
   state.sideslipDeg = MathUtils.radToDeg(betaRad)
   const pitchAttitudeDeg = MathUtils.radToDeg(
@@ -668,7 +846,14 @@ export function stepFlight(state, command, envelope, dt) {
   if (hasPath) sideDir.addScaledVector(pathDir, -sideDir.dot(pathDir))
   if (sideDir.lengthSq() > 1e-4) {
     sideDir.normalize()
-    accel.addScaledVector(sideDir, -betaRad * tuning.sideForceGain * qFactor)
+    // A separated vertical tail cannot instantly drag the trajectory behind a TVC yaw.
+    // Its side force fades with separation just as the control surfaces do, preserving the
+    // useful post-stall gap between where the nose points and where momentum is carrying it.
+    const separatedSideFactor = MathUtils.lerp(1, tuning.postStallSideForceFactor, separation)
+    accel.addScaledVector(
+      sideDir,
+      -betaRad * tuning.sideForceGain * qFactor * separatedSideFactor,
+    )
   }
 
   // Parasite and wave drag are present at every throttle setting. The AoA-squared term is
@@ -685,7 +870,24 @@ export function stepFlight(state, command, envelope, dt) {
   )
   let dragMag = readDragKmhPerSecond(
     state.speedKmh, state.position.y, envelope) * toWorld
-  const sinAlpha = Math.sin(alphaAbs)
+  /*
+  Separated-flow drag shape. Sine up to the beam, and past it a decay toward a floor rather
+  than either of the two obvious wrong answers.
+
+  A plain sine is wrong because alpha is an atan2 and wraps: it reads a jet at 175 degrees —
+  flying very nearly backwards — as barely separated at all, and hands a tumble a free ride
+  over the top on almost no induced drag. Saturating flat at the beam is wrong the other
+  way: broadside is the worst the airframe ever presents to the air, and holding that bill
+  all the way round to tail-first brakes a tumble to a standstill in about a second, which
+  is a manoeuvre that ends with the aircraft parked in the sky rather than flying out of it.
+  So the bill peaks square to the flow and eases off as the airframe comes round to meet it
+  the other way, and the floor is the arcade half of the decision: a tumble should cost
+  energy, not all of it.
+  */
+  const beamBlend = smooth01((MathUtils.radToDeg(alphaAbs) - 90) / 90)
+  const sinAlpha = alphaAbs <= Math.PI / 2
+    ? Math.sin(alphaAbs)
+    : MathUtils.lerp(1, tuning.beyondBeamDragFactor, beamBlend)
   const sinBeta = Math.sin(Math.abs(betaRad))
   dragMag += qFactor * (
     (tuning.aoaDragGain * sinAlpha * sinAlpha
@@ -704,21 +906,20 @@ export function stepFlight(state, command, envelope, dt) {
   // rotation toward the nose: lift, thrust, gravity, and drag are the only things allowed
   // to bend the flight path, preserving sideslips, nose-high descents, and inertial moves.
   state.velocity.addScaledVector(accel, dt)
-  let newSpeed = state.velocity.length()
-  if (newSpeed < 0.5) {
-    state.velocity.copy(hasPath ? entryPathDir : worldForward).multiplyScalar(0.5)
-    newSpeed = 0.5
-  }
-  pathDir.copy(state.velocity).normalize()
+  const newSpeed = state.velocity.length()
+  const hasNewPath = newSpeed > 1e-6
+  if (hasNewPath) pathDir.copy(state.velocity).normalize()
   state.position.addScaledVector(state.velocity, dt)
   state.speedKmh = newSpeed / toWorld
 
   // How far this step actually bent the trajectory. Smoothed, because a single fixed step
   // of it is a very small angle and the regimes read off it should not chatter.
-  if (hasPath) {
+  if (hasPath && hasNewPath && speed > airflowSenseSpeed) {
     const pathTurn = Math.acos(MathUtils.clamp(entryPathDir.dot(pathDir), -1, 1))
     state.pathRateDeg = approach(
       state.pathRateDeg, MathUtils.radToDeg(pathTurn) / dt, tuning.pathRateResponse, dt)
+  } else {
+    state.pathRateDeg = approach(state.pathRateDeg, 0, tuning.pathRateResponse, dt)
   }
 
   // Load factor as the wing feels it: lift over weight, signed by AoA.
@@ -739,16 +940,29 @@ export function stepFlight(state, command, envelope, dt) {
   )
   state.postStallBlend = postStallBlend
   state.postStallActive = alphaDeg > tuning.stallAoADeg
+  state.flightRegime = state.postStallActive
+    ? 'post-stall'
+    : state.stallBlend > 0
+      ? 'high-aoa'
+      : 'normal'
+
+  // Refresh signed axial speed from the newly integrated velocity. This is the value the
+  // HUD and next step's maneuver detector see.
+  localVelocity.copy(state.velocity).applyQuaternion(inverseOrientation)
+  state.forwardSpeedKmh = localVelocity.x / toWorld
+  state.backwardFlight = state.forwardSpeedKmh < -tuning.backwardFlightThresholdKmh
 
   // Where it is going against where it is pointing. `flightPathDeg` is the climb or dive
   // angle of the velocity itself, and `noseOffPathDeg` is the total angle between the nose
   // and the flight path — the number the whole model exists to allow to be large.
-  state.flightPathDeg = MathUtils.radToDeg(
-    Math.asin(MathUtils.clamp(state.velocity.y / Math.max(newSpeed, 1e-6), -1, 1)),
-  )
-  state.noseOffPathDeg = MathUtils.radToDeg(
-    Math.acos(MathUtils.clamp(worldForward.dot(pathDir), -1, 1)),
-  )
+  if (hasNewPath) {
+    state.flightPathDeg = MathUtils.radToDeg(
+      Math.asin(MathUtils.clamp(state.velocity.y / newSpeed, -1, 1)),
+    )
+    state.noseOffPathDeg = MathUtils.radToDeg(
+      Math.acos(MathUtils.clamp(worldForward.dot(pathDir), -1, 1)),
+    )
+  }
 
   state.maneuver = detectManeuver(
     state, tuning, pitchAttitudeDeg, newSpeed, tuning.pedalTurnMaxKmh * toWorld)

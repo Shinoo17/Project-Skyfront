@@ -37,9 +37,13 @@ const RESET_CAPTIONS = {
 // advisory line. Normal flight is not one, and neither is a stall on its own: the AoA
 // envelope is continuous, so there is no mode change to announce.
 const MANEUVER_CAPTIONS = {
+  tumble: 'TUMBLE',
   cobra: 'COBRA',
   'j-turn': 'J-TURN',
   'pedal-turn': 'PEDAL TURN',
+  tailslide: 'TAILSLIDE',
+  'falling-leaf': 'FALLING LEAF',
+  'flat-turn': 'FLAT ROTATION',
   'post-stall': 'POST-STALL',
   recovery: 'RECOVERING',
 }
@@ -136,6 +140,7 @@ function formatDebug(value) {
   return [
     'FLIGHT DEBUG',
     row('SPD', `${value.speed.toFixed(0)} km/h  M${value.mach.toFixed(2)}`),
+    row('FWD', `${value.forwardSpeed.toFixed(0)} km/h  ${value.flightRegime}`),
     row('ALT', `${value.altitude.toFixed(0)}  V/S ${value.verticalSpeed.toFixed(1)}`),
     row('AOA', `${value.aoa.toFixed(1)}°  SLIP ${value.sideslip.toFixed(1)}°`),
     row('G', value.gLoad.toFixed(2)),
@@ -143,6 +148,7 @@ function formatDebug(value) {
     row('THR', `${Math.round(value.throttle * 100)}%  A/B ${value.afterburnerState}`),
     row('TVC', `${value.thrustVector.toFixed(1)}°`),
     row('STALL', `${Math.round(value.postStallBlend * 100)}%${value.airBrake ? ' +brake' : ''}`),
+    row('DEPART', `${Math.round(value.departureBlend * 100)}%`),
     row('MNVR', value.maneuver),
     row('FPS', String(value.fps || 0)),
   ].join('\n')

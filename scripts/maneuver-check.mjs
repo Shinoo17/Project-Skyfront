@@ -64,6 +64,11 @@ const MATCH_SECONDS = 0.6
 // How far the flight path may swing for a manoeuvre that is supposed to leave it alone.
 // A loop entered on the same stick reaches 150 degrees and more.
 const MAX_PATH_TURN = 55
+// The tumble is deliberately not in here. It is a Cobra that keeps rotating, so it holds
+// the trajectory for as long as it has the speed to — and it ends with barely two hundred
+// km/h, at which point gravity owns the flight path and the trajectory does sag. What
+// separates it from a loop is the nose still going round, which is what `detectManeuver`
+// tests and what the `expect` assertion above already gates on.
 const PATH_HELD = new Set(['cobra', 'j-turn'])
 // A script marked `exitsLevel` has to put the nose back where it found it. Nothing in the
 // FCC levels the nose on its own — the wings-leveller is roll only — so returning to level
