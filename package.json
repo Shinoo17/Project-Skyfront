@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",
+    "input-check": "node --import ./scripts/register.mjs scripts/input-check.mjs",
+    "flight-physics-check": "node --import ./scripts/register.mjs scripts/flight-physics-check.mjs",
     "performance-check": "node --import ./scripts/register.mjs scripts/performance-check.mjs",
     "maneuver-check": "node --import ./scripts/register.mjs scripts/maneuver-check.mjs"
   },

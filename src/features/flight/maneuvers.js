@@ -79,7 +79,7 @@ const MANEUVERS = [
     expect: 'cobra',
     requires: 'thrustVectoring',
     brief:
-      'Slow, then a short, violent pull with the limiter relaxed, and no reheat anywhere in '
+      'Slow, then a short, violent pull that opens the automatic AoA envelope, with no reheat anywhere in '
       + 'it. The nose goes past the vertical while the flight path carries straight on, the '
       + 'wing stops flying, drag does the braking — and it comes back to the attitude, the '
       + 'height and the speed it started at.',
@@ -88,11 +88,11 @@ const MANEUVERS = [
     steps: [
       // Short. The pull only has to beat the flight path to deep AoA; held any longer it
       // stops being a pull and starts being the first quarter of a loop.
-      { seconds: 0.9, hold: ['high-aoa', 'pitch-up'], label: 'PULL' },
-      { seconds: 0.7, hold: ['high-aoa'], label: 'HANG' },
-      // High-AoA stays selected on the push so the pilot, rather than the removed recovery
-      // assist, spends the nozzles on bringing the nose back into the capture window.
-      { seconds: 2.15, hold: ['high-aoa', 'pitch-down'], label: 'NOSE DOWN' },
+      { seconds: 0.9, hold: ['pitch-up'], label: 'PULL' },
+      { seconds: 0.7, hold: [], label: 'HANG' },
+      // The automatic envelope stays open while alpha remains beyond the stall, so forward
+      // stick can spend the nozzles on bringing the nose back into the capture window.
+      { seconds: 1.75, hold: ['pitch-down'], label: 'NOSE DOWN' },
       // No reheat on the way out either. The dive off the top pays the airspeed back while
       // the low dry-power setting keeps the recovery from running away past entry energy.
       { seconds: 1.5, hold: [], label: 'RECOVER' },
@@ -111,12 +111,12 @@ const MANEUVERS = [
     entry: { throttle: THROTTLE_SLOW, settleSeconds: 2.5 },
     steps: [
       { seconds: 0.6, hold: ['pitch-up', 'throttle-up'], label: 'ZOOM' },
-      { seconds: 0.85, hold: ['high-aoa', 'pitch-up', 'yaw-right', 'throttle-up'], label: 'PULL' },
-      // The stick comes forward of the pull but the High-AoA switch stays in: the nose is
-      // already across the flight path, and holding aft stick on top of the pedal drives
+      { seconds: 0.85, hold: ['pitch-up', 'yaw-right', 'throttle-up'], label: 'PULL' },
+      // The stick comes forward of the pull while the automatic envelope remains open: the
+      // nose is already across the flight path, and holding aft stick on top of the pedal drives
       // the alpha past 120 degrees and departs the jet rather than swinging it.
-      { seconds: 1.5, hold: ['high-aoa', 'yaw-right', 'throttle-up'], label: 'PEDAL IN' },
-      { seconds: 1.15, hold: ['high-aoa', 'pitch-down', 'throttle-up'], label: 'UNLOAD' },
+      { seconds: 1.5, hold: ['yaw-right', 'throttle-up'], label: 'PEDAL IN' },
+      { seconds: 0.86, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
       { seconds: 1.0, hold: [], label: 'RECOVER' },
     ],
   },
@@ -132,11 +132,10 @@ const MANEUVERS = [
     exitsLevel: true,
     entry: { throttle: THROTTLE_LOW, settleSeconds: 2.2 },
     steps: [
-      { seconds: 2.2, hold: ['pitch-up'], label: 'ZOOM' },
-      { seconds: 4.0, hold: ['high-aoa', 'yaw-right', 'afterburner'], label: 'PEDAL' },
-      { seconds: 0.4, hold: ['pitch-down'], label: 'NOSE DOWN' },
-      { seconds: 0.6, hold: [], label: 'SETTLE' },
-      { seconds: 0.5, hold: ['pitch-up'], label: 'LEVEL OFF' },
+      { seconds: 2.2, hold: [], axes: { pitch: 0.72 }, label: 'ZOOM' },
+      { seconds: 1.8, hold: ['yaw-right', 'afterburner'], label: 'PEDAL' },
+      { seconds: 0.7, hold: [], axes: { pitch: -0.25 }, label: 'LEVEL OFF' },
+      { seconds: 0.8, hold: [], label: 'SETTLE' },
     ],
   },
 
@@ -152,12 +151,10 @@ const MANEUVERS = [
     exitsLevel: true,
     entry: { throttle: THROTTLE_MIL, settleSeconds: 2.5 },
     steps: [
-      { seconds: 1.2, hold: ['high-aoa', 'pitch-up', 'afterburner'], label: 'PULL' },
-      { seconds: 1.4, hold: ['high-aoa', 'afterburner'], label: 'HOLD ALPHA' },
-      { seconds: 3.2, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
-      { seconds: 0.4, hold: ['pitch-down'], label: 'LEVEL OFF' },
-      { seconds: 2.4, hold: [], label: 'RECOVER' },
-      { seconds: 0.5, hold: ['pitch-up'], label: 'CAPTURE' },
+      { seconds: 1.2, hold: ['pitch-up', 'afterburner'], label: 'PULL' },
+      { seconds: 1.4, hold: ['afterburner'], label: 'HOLD ALPHA' },
+      { seconds: 1.05, hold: ['throttle-up'], axes: { pitch: 0.65 }, label: 'PULL THROUGH' },
+      { seconds: 1.5, hold: [], label: 'RECOVER' },
     ],
   },
 
@@ -184,8 +181,9 @@ const MANEUVERS = [
     exitsLevel: true,
     entry: { throttle: THROTTLE_FAST, settleSeconds: 2.0 },
     steps: [
-      { seconds: 3.2, hold: ['roll-right'], label: 'ROLL' },
-      { seconds: 1.6, hold: [], label: 'LEVEL' },
+      { seconds: 3.0, hold: ['roll-right'], label: 'ROLL' },
+      { seconds: 1.0, hold: [], axes: { pitch: 0.14 }, label: 'LEVEL' },
+      { seconds: 0.6, hold: [], label: 'SETTLE' },
     ],
   },
 
@@ -196,8 +194,7 @@ const MANEUVERS = [
     exitsLevel: true,
     entry: { throttle: THROTTLE_FAST, settleSeconds: 2.0 },
     steps: [
-      { seconds: 4.0, hold: ['roll-right', 'pitch-up'], label: 'ROLL THROUGH' },
-      { seconds: 0.2, hold: ['pitch-down'], label: 'LEVEL OFF' },
+      { seconds: 3.75, hold: ['roll-right', 'pitch-up'], label: 'ROLL THROUGH' },
       { seconds: 2.4, hold: [], label: 'RECOVER' },
     ],
   },
@@ -211,12 +208,10 @@ const MANEUVERS = [
     exitsLevel: true,
     entry: { throttle: THROTTLE_LOW, settleSeconds: 2.0 },
     steps: [
-      { seconds: 1.8, hold: ['pitch-up', 'afterburner'], label: 'CLIMB' },
-      { seconds: 2.0, hold: ['afterburner'], label: 'EASE' },
-      { seconds: 1.4, hold: ['roll-right', 'afterburner'], label: 'ROLL INVERTED' },
-      { seconds: 1.5, hold: ['pitch-up', 'afterburner'], label: 'POWER THROUGH' },
-      { seconds: 3.7, hold: ['pitch-up'], label: 'PULL THROUGH' },
-      { seconds: 0.4, hold: ['pitch-down'], label: 'LEVEL OFF' },
+      { seconds: 1.8, hold: ['afterburner'], axes: { pitch: 0.72 }, label: 'CLIMB' },
+      { seconds: 0.5, hold: ['afterburner'], label: 'EASE' },
+      { seconds: 1.5, hold: ['roll-right', 'afterburner'], label: 'ROLL INVERTED' },
+      { seconds: 1.45, hold: ['afterburner'], axes: { pitch: 0.82 }, label: 'PULL THROUGH' },
       { seconds: 1.6, hold: [], label: 'RECOVER' },
     ],
   },
@@ -228,7 +223,7 @@ const MANEUVERS = [
     exitsLevel: true,
     entry: { throttle: THROTTLE_MIL, settleSeconds: 2.0 },
     steps: [
-      { seconds: 3.0, hold: ['pitch-up', 'afterburner'], label: 'PULL UP' },
+      { seconds: 3.7, hold: ['afterburner'], axes: { pitch: 0.82 }, label: 'PULL UP' },
       { seconds: 1.5, hold: ['roll-right'], label: 'ROLL UPRIGHT' },
       { seconds: 2.4, hold: [], label: 'RECOVER' },
     ],

@@ -1,57 +1,24 @@
 import { useEffect, useRef } from 'react'
 
-// Key code -> semantic control. Surfaces read the control names, never the key codes,
-// so a second pilot in a dogfight only needs a second binding map.
-export const FLIGHT_BINDINGS = {
-  ArrowUp: 'pitch-up',
-  ArrowDown: 'pitch-down',
-  ArrowLeft: 'roll-left',
-  ArrowRight: 'roll-right',
-  KeyQ: 'yaw-left',
-  KeyE: 'yaw-right',
-  KeyW: 'throttle-up',
-  KeyS: 'throttle-down',
-  KeyF: 'flaps',
-  ShiftLeft: 'afterburner',
-  ShiftRight: 'afterburner',
-  Space: 'air-brake',
-  AltLeft: 'high-aoa',
-  AltRight: 'high-aoa',
-}
+import {
+  FLIGHT_BINDINGS,
+  createFlightInputState,
+  releaseFlightInput,
+} from './flightInput'
 
-function axis(pressed, positive, negative) {
-  return Number(pressed.has(positive)) - Number(pressed.has(negative))
-}
-
-// The four attitude axes, each -1..1, as the control surfaces want them.
-export function readAxes(pressed) {
-  return {
-    pitch: axis(pressed, 'pitch-up', 'pitch-down'),
-    roll: axis(pressed, 'roll-right', 'roll-left'),
-    yaw: axis(pressed, 'yaw-right', 'yaw-left'),
-    flaps: Number(pressed.has('flaps')),
-  }
-}
-
-export function readThrottleDirection(pressed) {
-  return axis(pressed, 'throttle-up', 'throttle-down')
-}
-
-// Reheat is held, not latched: this only reports that the pilot is asking for it. Whether
-// the burner actually lights is the flight model's answer, not the keyboard's.
-export function readAfterburnerCommand(pressed) {
-  return pressed.has('afterburner')
-}
-
-export function readAirBrake(pressed) {
-  return pressed.has('air-brake')
-}
-
-// The High-AoA modifier is a held mode switch, same as the burner: the flight control
-// computer decides what relaxing the limiters actually buys at the current energy state.
-export function readHighAoA(pressed) {
-  return pressed.has('high-aoa')
-}
+export {
+  FLIGHT_BINDINGS,
+  clearAnalogFlightInput,
+  createFlightInputState,
+  readAfterburnerCommand,
+  readAirBrake,
+  readAxes,
+  readThrottleDirection,
+  releaseFlightInput,
+  resetFlightInput,
+  setAnalogFlightInput,
+  stepFlightInput,
+} from './flightInput'
 
 function isFieldFocused(event) {
   const target = event.target instanceof HTMLElement ? event.target : null
@@ -78,7 +45,8 @@ export default function useFlightControls({
   onChange,
   keyActions,
 } = {}) {
-  const controls = useRef({ pressed: new Set(), throttle })
+  const controls = useRef(null)
+  if (!controls.current) controls.current = createFlightInputState(throttle)
   const handlers = useRef({})
   handlers.current = { onPress, onChange, keyActions }
 
@@ -117,8 +85,8 @@ export default function useFlightControls({
     // A window that loses focus never delivers the keyup, which would leave the stick
     // deflected for as long as the pilot is away.
     const releaseAll = () => {
-      if (!pressed.size) return
-      pressed.clear()
+      if (!pressed.size && !controls.current.analog.size) return
+      releaseFlightInput(controls.current)
       handlers.current.onChange?.(pressed)
     }
 

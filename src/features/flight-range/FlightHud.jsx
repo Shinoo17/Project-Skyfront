@@ -11,7 +11,6 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  ArrowUpRight,
   ChevronsDown,
   Flame,
   Gauge,
@@ -35,7 +34,7 @@ const RESET_CAPTIONS = {
 }
 
 // The detector's regimes, named the way a pilot would call them. Only the ones worth an
-// advisory line — 'normal' and 'high-aoa' are ordinary flying, not events.
+// advisory line — normal flight and the automatic AoA envelope are continuous states.
 const MANEUVER_CAPTIONS = {
   cobra: 'COBRA',
   'j-turn': 'J-TURN',
@@ -79,7 +78,9 @@ function readAdvisory(telemetry) {
   const maneuver = MANEUVER_CAPTIONS[telemetry.maneuver]
   if (maneuver) return { key: `mnv-${telemetry.maneuver}`, label: maneuver, tone: 'caution' }
   if (telemetry.flaps) return { key: 'flaps', label: 'FLAPS DOWN', tone: 'caution' }
-  if (telemetry.highAoA) return { key: 'high-aoa', label: 'HIGH-AOA MODE', tone: 'caution' }
+  if (telemetry.postStallActive) {
+    return { key: 'aoa-assist', label: 'POST-STALL ASSIST', tone: 'caution' }
+  }
   return { key: 'clear', label: 'FLIGHT PATH CLEAR', tone: 'normal' }
 }
 
@@ -137,7 +138,7 @@ function formatDebug(value) {
     row('RATE', `P${value.pitchRate.toFixed(0)} R${value.rollRate.toFixed(0)} Y${value.yawRate.toFixed(0)} °/s`),
     row('THR', `${Math.round(value.throttle * 100)}%  A/B ${value.afterburnerState}`),
     row('TVC', `${value.thrustVector.toFixed(1)}°`),
-    row('MODE', `${value.highAoA ? 'HIGH-AOA' : 'normal'}${value.airBrake ? ' +brake' : ''}`),
+    row('AOA AUTO', `${Math.round(value.postStallBlend * 100)}%${value.airBrake ? ' +brake' : ''}`),
     row('MNVR', value.maneuver),
     row('FPS', String(value.fps || 0)),
   ].join('\n')
@@ -318,14 +319,9 @@ export default function FlightHud({
             <HoldControl control="air-brake" label="Hold for air brake" icon={Wind} controls={controls}>
               Brake
             </HoldControl>
-            <HoldControl
-              control="high-aoa"
-              label="Hold for high angle-of-attack mode"
-              icon={ArrowUpRight}
-              controls={controls}
-            >
-              High-AoA
-            </HoldControl>
+            <span className="deck-auto-mode" aria-label="Angle of attack assistance is automatic">
+              AUTO AoA
+            </span>
           </div>
 
           <div className="deck-throttle">
@@ -359,7 +355,7 @@ export default function FlightHud({
         <kbd>W</kbd><kbd>S</kbd><span>throttle</span>
         <kbd>SHIFT</kbd><span>hold for afterburner</span>
         <kbd>SPACE</kbd><span>air brake</span>
-        <kbd>ALT</kbd><span>high-AoA</span>
+        <span>AoA assist automatic</span>
         <kbd>F</kbd><span>flaps</span>
         <kbd>R</kbd><span>reset</span>
         <kbd>I</kbd><span>debug</span>

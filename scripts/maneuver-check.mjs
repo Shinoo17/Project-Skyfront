@@ -47,14 +47,16 @@ import {
   stepAfterburner,
 } from '../src/features/flight/performance.js'
 import {
-  readAfterburnerCommand,
-  readAirBrake,
-  readAxes,
-  readHighAoA,
-  readThrottleDirection,
+  clearAnalogFlightInput,
+  createFlightInputState,
+  setAnalogFlightInput,
+  stepFlightInput,
 } from '../src/features/flight/useFlightControls.js'
 
-const FRAME = 1 / 60
+// The shipped eco profile renders at 30 FPS; CI defaults to 60 but can replay the outer
+// input loop at the lower cadence with `FLIGHT_CHECK_FPS=30 npm run maneuver-check`.
+const CHECK_FPS = Number(process.env.FLIGHT_CHECK_FPS ?? 60)
+const FRAME = 1 / CHECK_FPS
 const MAX_DIP = 40
 // Kept in step with ManeuverBot's own constant: the panel and this gate should not be able
 // to disagree about whether a run counted.
@@ -70,6 +72,7 @@ const PATH_HELD = new Set(['cobra', 'j-turn'])
 const MAX_EXIT_PITCH = 8
 const PITCH_AXIS = new Vector3(0, 0, 1)
 const BODY_FORWARD = new Vector3(1, 0, 0)
+const SCRIPT_ANALOG_SOURCE = 'maneuver-script'
 
 const envelope = f22.flight.envelope
 const [only = 'all', spawnArg] = process.argv.slice(2)
@@ -100,14 +103,14 @@ const SPAWN_Y = Number(spawnArg ?? OBSERVED_SPAWN_Y)
 function fly(timeline, { throttle: entryThrottle, onSample }) {
   const state = createFlightState()
   const reheat = createAfterburnerState()
-  let throttle = entryThrottle
+  const controls = createFlightInputState(entryThrottle)
 
   resetFlightState(
     state,
     new Vector3(-260, SPAWN_Y, 0),
-    readTargetAirspeedKmh(throttle, SPAWN_Y, 0, envelope),
+    readTargetAirspeedKmh(entryThrottle, SPAWN_Y, 0, envelope),
     envelope,
-    throttle,
+    entryThrottle,
   )
 
   const seen = new Set()
@@ -129,14 +132,16 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
   let clock = 0
 
   for (const step of timeline) {
-    const pressed = new Set(step.hold)
+    controls.pressed.clear()
+    step.hold.forEach((control) => controls.pressed.add(control))
+    if (step.axes) {
+      setAnalogFlightInput(controls, SCRIPT_ANALOG_SOURCE, step.axes)
+    } else {
+      clearAnalogFlightInput(controls, SCRIPT_ANALOG_SOURCE)
+    }
     for (let frame = 0; frame < Math.round(step.seconds / FRAME); frame += 1) {
-      const input = readAxes(pressed)
-      throttle = Math.min(1, Math.max(
-        envelope.minThrottle,
-        throttle + (readThrottleDirection(pressed) * FRAME * envelope.throttleRate),
-      ))
-      const burnerRequested = readAfterburnerCommand(pressed)
+      const input = stepFlightInput(controls, FRAME, envelope)
+      const burnerRequested = input.afterburner
       const burner = stepAfterburner(
         reheat,
         {
@@ -154,9 +159,8 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
           roll: input.roll,
           yaw: input.yaw,
           flaps: input.flaps,
-          throttle,
-          airBrake: readAirBrake(pressed),
-          highAoA: readHighAoA(pressed),
+          throttle: input.throttle,
+          airBrake: input.airBrake,
           afterburnerCommanded: burnerRequested,
           burnerLevel: burner.level,
         }, envelope, FLIGHT_FIXED_STEP)
@@ -260,19 +264,18 @@ for (const maneuver of MANEUVERS) {
 }
 
 /*
-Hands-off pitch regression. Attitudes inside the five-degree window must ease toward zero;
-attitudes outside it must stay where the pilot left them. Run the same cases at low and
-normal energy so neither dynamic pressure nor the flight path can secretly become a pitch
-command again.
+Hands-off pitch regression. The FCC damps angular rate but does not level pitch attitude;
+all attitudes must stay where the pilot left them. Run the same cases at low and normal
+energy so neither dynamic pressure nor the flight path can secretly become a pitch command.
 */
 if (only === 'all') {
   const cases = [
-    { speedKmh: 260, pitchDeg: 5, expected: 'levels' },
-    { speedKmh: 400, pitchDeg: -5, expected: 'levels' },
-    { speedKmh: 260, pitchDeg: 5.5, expected: 'holds' },
-    { speedKmh: 400, pitchDeg: -5.5, expected: 'holds' },
-    { speedKmh: 260, pitchDeg: 30, expected: 'holds' },
-    { speedKmh: 800, pitchDeg: -30, expected: 'holds' },
+    { speedKmh: 260, pitchDeg: 5 },
+    { speedKmh: 400, pitchDeg: -5 },
+    { speedKmh: 260, pitchDeg: 5.5 },
+    { speedKmh: 400, pitchDeg: -5.5 },
+    { speedKmh: 260, pitchDeg: 30 },
+    { speedKmh: 800, pitchDeg: -30 },
   ]
 
   for (const test of cases) {
@@ -300,7 +303,6 @@ if (only === 'all') {
         flaps: 0,
         throttle: envelope.idleThrottle,
         airBrake: false,
-        highAoA: false,
         afterburnerCommanded: false,
         burnerLevel: 0,
       }, envelope, FLIGHT_FIXED_STEP)
@@ -308,12 +310,10 @@ if (only === 'all') {
       finalPitch = Math.asin(Math.max(-1, Math.min(1, forward.y))) * 180 / Math.PI
     }
 
-    const pitchOk = test.expected === 'levels'
-      ? Math.abs(finalPitch) < 0.75
-      : Math.abs(finalPitch - test.pitchDeg) < 0.5
+    const pitchOk = Math.abs(finalPitch - test.pitchDeg) < 0.5
     if (!pitchOk) failures += 1
     console.log(
-      `${pitchOk ? 'PASS' : 'FAIL'} pitch ${test.expected}`
+      `${pitchOk ? 'PASS' : 'FAIL'} pitch holds`
       + ` ${String(test.speedKmh).padStart(3)}kmh`
       + ` start=${test.pitchDeg.toFixed(1).padStart(5)}°`
       + ` end=${finalPitch.toFixed(1).padStart(5)}°${pitchOk ? '' : ' !'}`,

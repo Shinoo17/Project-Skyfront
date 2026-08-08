@@ -1763,14 +1763,27 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   min-height: 50px;
 }
 
-/* The two flight-mode holds — air brake and High-AoA — sit on their own wider keys:
-   they are the pair the thumb rests on during a manoeuvre. */
+/* Air brake remains a held control; the second cell reports the automatic AoA envelope. */
 .deck-row.is-modes {
   grid-template-columns: repeat(2, 1fr);
 }
 
 .deck-row.is-modes .deck-key {
   min-height: 40px;
+}
+
+.deck-auto-mode {
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(98, 255, 132, 0.24);
+  border-radius: 2px;
+  color: var(--hud-green-dim);
+  background: rgba(9, 13, 16, 0.58);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
 }
 
 /* The flight-model debug readout: one monospace block off the sightline, phosphor on

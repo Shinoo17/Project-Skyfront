@@ -2,14 +2,15 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 
 import { createBotStatus } from './botStatus'
+import { clearAnalogFlightInput, setAnalogFlightInput } from './flightInput'
 
 /*
-An autopilot that flies a script by holding the pilot's own controls.
+An autopilot that flies a script through the pilot's own input layer.
 
-It writes into `controls.current.pressed` — the same set the keyboard writes into — and
-nothing else. It cannot reach the flight model, it has no privileged inputs, and it is
-subject to every limiter and every energy cost a person is. That is what makes a
-demonstration worth watching: if the airframe cannot do the thing, the bot cannot fake it.
+It holds the same semantic actions as the keyboard and may publish the same analogue axes
+as a stick. It cannot reach the flight model, it has no privileged inputs, and it is subject
+to every limiter and every energy cost a person is. That is what makes a demonstration
+worth watching: if the airframe cannot do the thing, the bot cannot fake it.
 
 It runs at a negative `useFrame` priority so the inputs are in place before the flight loop
 reads them in the same frame, and it never calls `setState` from that loop except to ask
@@ -29,10 +30,13 @@ const BOT_PRIORITY = -2
 // How long the flight model has to keep reporting the expected regime before the panel
 // will call it a match. Every asserted script holds its regime for at least a second.
 const MATCH_SECONDS = 0.6
+const BOT_ANALOG_SOURCE = 'maneuver-bot'
 
 function releaseControls(controls) {
-  const pressed = controls?.current?.pressed
+  const input = controls?.current
+  const pressed = input?.pressed
   if (pressed && pressed.size) pressed.clear()
+  if (input) clearAnalogFlightInput(input, BOT_ANALOG_SOURCE)
 }
 
 export default function ManeuverBot({
@@ -155,6 +159,11 @@ export default function ManeuverBot({
     const pressed = controls.current.pressed
     pressed.clear()
     current.hold.forEach((control) => pressed.add(control))
+    if (current.axes) {
+      setAnalogFlightInput(controls.current, BOT_ANALOG_SOURCE, current.axes)
+    } else {
+      clearAnalogFlightInput(controls.current, BOT_ANALOG_SOURCE)
+    }
 
     state.stepElapsed += step
     state.elapsed += step

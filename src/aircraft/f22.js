@@ -368,8 +368,8 @@ const f22 = {
           afterburnerMach: 2.25,
         },
       },
-      // Normal-mode body rate ceilings, degrees per second. High-AoA mode has its own
-      // pitch and roll ceilings in `maneuvering`.
+      // Conventional body-rate ceilings, degrees per second. The automatic post-stall
+      // envelope blends toward its own pitch and roll ceilings in `maneuvering`.
       pitchRate: 58,
       rollRate: 120,
       yawRate: 42,
@@ -393,18 +393,42 @@ const f22 = {
         postStallLiftEndDeg: 46,
         postStallLiftFloor: 0.12,
         normalAoALimitDeg: 24,
+        // A committed pull gets a little more alpha before the automatic post-stall
+        // envelope opens. This makes a max-rate turn distinct from a Cobra without asking
+        // the player to operate a separate limiter switch.
+        performanceAoALimitDeg: 32,
+        performancePullThreshold: 0.72,
         // Far enough past the vertical for the nose to lie down along the flight path,
         // which is the pose the manoeuvre is named for.
-        highAoALimitDeg: 105,
+        postStallAoALimitDeg: 105,
         aoaLimitSoftnessDeg: 9,
         negativeAoAFactor: 0.55,
 
         // The nose has to beat the flight path to deep AoA, not merely lead it: what
         // separates a Cobra from a hard pull is the ratio between the two rates.
-        highAoAPitchRateDeg: 240,
-        highAoARollRateDeg: 60,
+        postStallPitchRateDeg: 240,
+        postStallRollRateDeg: 60,
         maxG: 9,
         maxNegativeG: 3.5,
+
+        // Automatic post-stall entry. Full aft intent at low/medium energy progressively
+        // opens the envelope; high-speed pulls stay conventional. Once the wing is stalled
+        // a lower blend is retained until alpha recovers, so forward stick still has nozzle
+        // authority to bring the nose home.
+        postStallPitchThreshold: 0.92,
+        postStallRearmPitchThreshold: 0.55,
+        postStallEntryMinKmh: 320,
+        postStallEntryFullMinKmh: 400,
+        postStallEntryFullMaxKmh: 680,
+        postStallEntryMaxKmh: 760,
+        postStallRecoveryAoAFactor: 0.58,
+        postStallRecoveryBlend: 0.72,
+        postStallRecoveryRangeDeg: 34,
+        postStallRecoveryStickThreshold: 0.35,
+        postStallRecoveryPitchRateDeg: 42,
+        postStallEngageResponse: 5,
+        postStallReleaseResponse: 1.4,
+        postStallActiveThreshold: 0.12,
 
         // The Cobra window sits where the physics puts it: fast enough that there is
         // energy to trade, slow enough that lift can no longer swing the flight path
@@ -426,8 +450,8 @@ const f22 = {
         pedalTurnMaxKmh: 560,
         pedalTurnMinPitchDeg: 45,
         pedalTurnYawBoost: 2.4,
+        postStallYawBoost: 1.2,
 
-        inputResponse: 7,
         pitchResponse: 5.5,
         rollResponse: 9,
         yawResponse: 3.5,
@@ -440,21 +464,15 @@ const f22 = {
         thrustVectorResponse: 8,
         normalThrustVectorFactor: 0.35,
 
-        // Pitch is attitude-hold everywhere except this small hands-off window. Inside it
-        // the FCC eases the nose back to zero; outside it the pilot's attitude is untouched.
-        pitchAutoLevelWindowDeg: 5,
-        pitchAutoLevelGain: 0.65,
-        velocityAlignment: 1.5,
-        highAoAVelocityAlignment: 0.12,
-        sideslipDamping: 1.4,
-        autoLevelGain: 0.35,
-        // The leveller's window: outside this bank the wings stay where the pilot left
-        // them, so held banks and inverted flight are the pilot's business.
-        autoLevelMaxBankDeg: 30,
+        // Hands-off attitude is rate-damped, not levelled. Lift and gravity own the flight
+        // path, so a bank cannot be cancelled by an invisible horizon or velocity assist.
+        // This is only the rudder's light weathervane stability; the side-force calculation
+        // still owns how the velocity itself sheds sideslip.
+        sideslipDamping: 0.55,
         spinDamping: 2.2,
 
         aoaDragGain: 26,
-        highAoADragMultiplier: 1.6,
+        postStallDragMultiplier: 1.6,
         sideslipDragGain: 9,
         airBrakeDrag: 12,
         flapsDrag: 4,

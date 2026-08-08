@@ -29,9 +29,9 @@ x, y and z move. Fly at the camera and it retreats ahead of you; fly away and it
 
 The right-hand panel on the developer page flies scripted manoeuvres — Cobra, J-turn, pedal
 turn, post-stall pass, loop, aileron and barrel roll, Split-S, Immelmann — with a bot that
-holds the same controls a pilot does. It writes into the same `pressed` set the keyboard
-writes into and has no other access, so every limiter, authority curve and energy cost
-applies to it. Picking one resets the aircraft first, so each run starts identically.
+uses the same device-neutral input state as a pilot. It has no access to the physics, so
+every limiter, authority curve and energy cost applies to it. Picking one resets the
+aircraft first, so each run starts identically.
 
 A script may claim a regime (`expect`), and the panel shows a tick only once
 `detectManeuver` in the flight model has actually reported it. Nothing forces the label, so
@@ -41,6 +41,8 @@ a cross means the airframe stopped being able to do the thing.
 npm run maneuver-check              # every script, headless, one line each
 npm run maneuver-check -- cobra     # one script with a sampled trace
 npm run maneuver-check -- all 400   # every script from a 400-unit spawn
+npm run input-check                 # digital smoothing, analogue intent, and throttle stops
+npm run flight-physics-check        # banked lift, flight-path separation, G/energy trade
 ```
 
 The checker imports the real flight model at the real fixed step and exits non-zero if a
@@ -48,6 +50,13 @@ script no longer produces its regime, or if any of them dives more than 40 units
 spawn — the margin the range floor allows over any terrain the map registry can load. Run
 it after touching `maneuvering` in an aircraft manifest. Scripts live in
 [src/features/flight/maneuvers.js](src/features/flight/maneuvers.js).
+
+The flight model keeps aircraft orientation and velocity as separate state. Each fixed
+step runs pilot intent and FCC rate commands first, integrates angular motion, measures
+relative airflow/AoA against the new attitude, then applies lift, drag, thrust, and gravity
+to velocity before integrating position. Lift follows aircraft-up, so banking naturally
+trades vertical lift for lateral turn force; there is no bank-triggered pitch correction or
+velocity snap toward the nose.
 
 Routing is `HashRouter`, so every URL survives a reload on any static host without a
 rewrite rule. Route paths live in [src/routes/paths.js](src/routes/paths.js).
@@ -99,7 +108,7 @@ is meant to land.
 - Use the control surface to switch clips, playback speed, camera angle, auto-orbit, and lighting mode.
 - Switch to the Flight tab for direct Three.js control of pitch, roll, and yaw. Hold the on-screen controls, or use arrow keys for pitch/roll and `Q` / `E` for yaw. Hold the A/B control or `Shift` to drive the engine through military power and light the afterburner.
 - Manual flight moves the ailerons, flaperons, leading-edge flaps, rudders, stabilators, and the thrust-vectoring nozzles while rotating the aircraft itself. Pitch vectors both nozzles together; roll vectors them differentially. Use Level to reset attitude.
-- Select `Test flight` in the top bar to fly over `Mountain_Valley_Colorado.glb`. Use arrow keys for pitch/roll, `Q` / `E` for yaw, `W` / `S` for dry throttle, hold `Shift` for afterburner, `F` for flaps, and `R` to reset. Touch controls are available on screen.
+- Select `Test flight` in the top bar to fly over `Mountain_Valley_Colorado.glb`. Use arrow keys for pitch/roll, `Q` / `E` for yaw, `W` / `S` for dry throttle, hold `Shift` for afterburner, `Space` for the air brake, `F` for flaps, and `R` to reset. Digital axes ramp smoothly instead of snapping. AoA protection is automatic: a fresh full pull in the low/medium-speed entry window opens post-stall authority, and centred stick asks the FCC to recover.
 - Press `Space` to play/pause and `R` to reset the camera.
 
 The Test Flight canvas uses the optimized Meshopt/KTX2 assets at DPR 1, 30 FPS, with no antialiasing, shadows, environment map, or post-processing to keep GPU and battery use low. Both canvases read those settings from the `eco` and `studio` profiles in [src/three/graphics.js](src/three/graphics.js).

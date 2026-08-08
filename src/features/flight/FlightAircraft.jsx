@@ -32,11 +32,8 @@ import {
 } from './performance'
 import { applySurfaceTargets } from './surfaces'
 import {
-  readAfterburnerCommand,
-  readAirBrake,
-  readAxes,
-  readHighAoA,
-  readThrottleDirection,
+  resetFlightInput,
+  stepFlightInput,
 } from './useFlightControls'
 
 /*
@@ -152,7 +149,7 @@ export default function FlightAircraft({
     resetAfterburnerState(reheat.current)
     resetCondensationState(condensation.current)
     state.spawn.copy(spawn)
-    if (!keepThrottle) controls.current.throttle = envelope.idleThrottle
+    if (!keepThrottle) resetFlightInput(controls.current, envelope.idleThrottle)
     resetFlightState(
       state.model,
       state.spawn,
@@ -190,18 +187,11 @@ export default function FlightAircraft({
     // Frame delta is capped so a stalled tab cannot feed the physics a huge step; the
     // model itself always integrates at FLIGHT_FIXED_STEP regardless of refresh rate.
     const step = Math.min(delta, 0.1)
-    const pressed = controls.current.pressed
-    const input = readAxes(pressed)
-    const throttleDirection = readThrottleDirection(pressed)
-    controls.current.throttle = MathUtils.clamp(
-      controls.current.throttle + (throttleDirection * step * envelope.throttleRate),
-      envelope.minThrottle,
-      1,
-    )
+    const input = stepFlightInput(controls.current, step, envelope)
 
     const current = flight.current
     const aircraftState = current.model
-    const burnerRequested = readAfterburnerCommand(pressed)
+    const burnerRequested = input.afterburner
     const burner = stepAfterburner(reheat.current, {
       // Shift first drives the dry core through the MIL detent. Reheat is allowed to light
       // only once the core has enough airflow to support it.
@@ -217,9 +207,8 @@ export default function FlightAircraft({
       roll: input.roll,
       yaw: input.yaw,
       flaps: input.flaps,
-      throttle: controls.current.throttle,
-      airBrake: readAirBrake(pressed),
-      highAoA: readHighAoA(pressed),
+      throttle: input.throttle,
+      airBrake: input.airBrake,
       afterburnerCommanded: burnerRequested,
       burnerLevel: burner.level,
     }
@@ -370,7 +359,7 @@ export default function FlightAircraft({
     readout.mach = readMach(aircraftState.speedKmh, aircraftState.position.y, envelope)
     readout.speed = aircraftState.speedKmh
     readout.verticalSpeed = aircraftState.velocity.y
-    readout.throttle = controls.current.throttle
+    readout.throttle = input.throttle
     readout.flaps = input.flaps
     readout.aoa = aircraftState.aoaDeg
     readout.sideslip = aircraftState.sideslipDeg
@@ -378,7 +367,8 @@ export default function FlightAircraft({
     readout.pitchRate = MathUtils.radToDeg(aircraftState.angularVelocity.z)
     readout.rollRate = MathUtils.radToDeg(aircraftState.angularVelocity.x)
     readout.yawRate = MathUtils.radToDeg(aircraftState.angularVelocity.y)
-    readout.highAoA = aircraftState.highAoA
+    readout.postStallBlend = aircraftState.postStallBlend
+    readout.postStallActive = aircraftState.postStallActive
     readout.airBrake = aircraftState.airBrake
     readout.thrustVector = aircraftState.thrustVectorDeg
     readout.maneuver = aircraftState.maneuver

@@ -69,7 +69,6 @@ const command = {
   flaps: 0,
   throttle: envelope.minThrottle,
   airBrake: false,
-  highAoA: false,
   afterburnerCommanded: true,
   burnerLevel: 0,
 }
