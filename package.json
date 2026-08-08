@@ -11,7 +11,8 @@
     "input-check": "node --import ./scripts/register.mjs scripts/input-check.mjs",
     "flight-physics-check": "node --import ./scripts/register.mjs scripts/flight-physics-check.mjs",
     "performance-check": "node --import ./scripts/register.mjs scripts/performance-check.mjs",
-    "maneuver-check": "node --import ./scripts/register.mjs scripts/maneuver-check.mjs"
+    "maneuver-check": "node --import ./scripts/register.mjs scripts/maneuver-check.mjs",
+    "stall-check": "node --import ./scripts/register.mjs scripts/stall-check.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.6",

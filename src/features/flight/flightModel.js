@@ -19,9 +19,38 @@ Between the pilot and those forces sits an assisted flight control computer: the
 commands body rates, the FCC scales them by control authority (dynamic pressure plus
 thrust vectoring), applies AoA and G soft limits, adds weathervane stability and damping,
 and chases the command with a first-order response — a PD loop on rates, never a slerp
-toward a target attitude. The AoA envelope is continuous: a full pull in the post-stall
-entry-speed window progressively relaxes the limiter. There is no pilot mode switch, and
-the assist stays available until the wing is flying again.
+toward a target attitude.
+
+Both weathervanes are the airstream's own moments and neither is scaled by control
+authority, because neither is a control surface. Yaw's has always been here. Pitch's is
+newer and exists because the alpha fence alone was not one: the fence stops the FCC
+*commanding* more nose-up, but with nothing pushing back, a held stick could park the nose
+at thirty degrees with the pitch rate measurably at zero while gravity swung the flight
+path all the way round behind it, and the jet would sit at 180 degrees of alpha flying
+tail-first for two seconds. The moment is scheduled to arrive past the beam rather than at
+the stall, so it leaves the Cobra — which is a vectored fighter genuinely holding the nose
+off the airstream, and is the aircraft's signature — entirely alone.
+
+The FCC has no modes. It used to: a full-aft stick inside an entry-speed window latched a
+post-stall envelope in behind the conventional one, which meant the same stick produced a
+27-degree pull at 250 km/h, a 93-degree one at 350 and a 10-degree one at 1000, and the
+aircraft changed character on a threshold instead of on the physics. What is left in its
+place is two continuous numbers, both recomputed every step and neither with any memory:
+
+  thinAir      how little the airstream can still enforce, from dynamic pressure alone
+  commitment   how far past the max-performance detent the stick is
+
+Their product is how far the envelope is open. Deliberately absent from both is the
+current angle of attack — a limit that widens because alpha grew feeds itself and is a
+latch with better manners. So a Cobra is not a state the aircraft enters. It is what a
+committed pull does when there is no longer enough air over the tail to argue with the
+nozzles, and the same stick at the same speed with less conviction is a hard turn.
+
+Control authority follows dynamic pressure rather than speed, and the rate response is
+scaled by it as well: the airframe's mass does not change with airspeed, only the moment
+available to accelerate it, so thin air takes its time reaching a rate and takes the same
+time shedding it. Underneath sits a floor for the FCS rate loop, which is a gyro and a
+nozzle and does not ask what the airspeed is.
 
 The force order is intentionally aircraft-like even though the coefficients are tuned for
 an arcade map: angular motion establishes the new airframe attitude first, relative
@@ -98,12 +127,36 @@ export function createFlightState() {
     // the trajectory alone.
     pathRateDeg: 0,
     gLoad: 1,
-    // Automatic envelope extension, 0..1. It rises only on a deliberate full pull in the
-    // entry-energy window and remains available while the airframe recovers through stall.
+    /*
+    The two continuous stall numbers, both measured from alpha and both read by the HUD and
+    the vapour effect rather than by anything inside the model.
+
+      stallBlend      0 in ordinary flight, 1 at the stall — the approach to it
+      postStallBlend  0 at the stall, 1 well past it — how separated the wing already is
+
+    Together they are the whole progression, with no threshold anywhere in it: normal flight,
+    high AoA, stall onset, stall, post-stall. There is no state to be in.
+    */
+    stallBlend: 0,
     postStallBlend: 0,
     postStallActive: false,
-    postStallPullArmed: true,
-    postStallEntryDemand: 0,
+    /*
+    The two control authorities, published separately because they answer to different
+    things and a pilot needs to see which one is left.
+
+      aeroAuthority    what the surfaces can still do, from dynamic pressure and separation
+      vectorAuthority  what the nozzles can still do, from engine thrust
+
+    At idle and low speed both are small. At idle and high speed only the first is there. In
+    a Cobra under power only the second is.
+    */
+    aeroAuthority: 0,
+    vectorAuthority: 0,
+    // Where the aircraft is going versus where it is pointing: flight path angle in degrees,
+    // and the total angle between the nose and the velocity vector. The second is the whole
+    // premise of the model in one number — it is free to be large.
+    flightPathDeg: 0,
+    noseOffPathDeg: 0,
     airBrake: false,
     maneuver: 'normal',
     // World-space accelerations of the last step, published for debug arrows and the HUD.
@@ -134,10 +187,13 @@ export function resetFlightState(
   state.sideslipDeg = 0
   state.pathRateDeg = 0
   state.gLoad = 1
+  state.stallBlend = 0
   state.postStallBlend = 0
   state.postStallActive = false
-  state.postStallPullArmed = true
-  state.postStallEntryDemand = 0
+  state.aeroAuthority = 0
+  state.vectorAuthority = 0
+  state.flightPathDeg = 0
+  state.noseOffPathDeg = 0
   state.airBrake = false
   state.maneuver = 'normal'
   state.liftForce.set(0, 0, 0)
@@ -162,19 +218,20 @@ function detectManeuver(state, tuning, pitchAttitudeDeg, speed, pedalMaxSpeed) {
   const yawRateDeg = Math.abs(MathUtils.radToDeg(state.angularVelocity.y))
   const flying = alpha > tuning.cobraMinAoADeg && state.pathRateDeg < tuning.cobraMaxPathRateDeg
 
-  if (state.postStallActive && flying && beta > 14) return 'j-turn'
+  if (state.postStallActive && flying && beta > tuning.jTurnMinSideslipDeg) return 'j-turn'
   if (state.postStallActive && flying) return 'cobra'
-  if (pitchAttitudeDeg > tuning.pedalTurnMinPitchDeg && speed < pedalMaxSpeed && yawRateDeg > 18) {
+  if (pitchAttitudeDeg > tuning.pedalTurnMinPitchDeg && speed < pedalMaxSpeed
+    && yawRateDeg > tuning.pedalTurnMinYawRateDeg) {
     return 'pedal-turn'
   }
   if (alpha > tuning.stallAoADeg) return 'post-stall'
   if (state.maneuver === 'post-stall' || state.maneuver === 'cobra' || state.maneuver === 'j-turn') {
     // Coming back from beyond the stall: hold the recovery label until the wing is flying
     // again, so the HUD does not flicker between states on the way down.
-    if (alpha > tuning.stallAoADeg * 0.6) return 'recovery'
+    if (alpha > tuning.stallAoADeg * tuning.recoveryLabelEnterFactor) return 'recovery'
   }
-  if (state.maneuver === 'recovery' && alpha > tuning.stallAoADeg * 0.45) return 'recovery'
-  if (state.postStallActive) return 'aoa-assist'
+  if (state.maneuver === 'recovery'
+    && alpha > tuning.stallAoADeg * tuning.recoveryLabelHoldFactor) return 'recovery'
   return 'normal'
 }
 
@@ -267,103 +324,116 @@ export function stepFlight(state, command, envelope, dt) {
   // alight. This can no longer claim nozzle authority from a throttle number whose engine
   // has not caught up yet.
   const thrustLevel = MathUtils.clamp(
-    (state.engineCoreLevel * 0.75) + (command.burnerLevel * 0.5), 0, 1)
+    (state.engineCoreLevel * tuning.coreThrustShare)
+      + (command.burnerLevel * tuning.reheatThrustShare), 0, 1)
 
-  // ---------------------------------------------------------- automatic AoA envelope
-  // A full pull at useful entry energy asks for post-stall authority. The window makes a
-  // high-speed max-performance turn remain a turn, while a low/medium-speed committed pull
-  // can develop naturally into a Cobra. Once alpha is beyond the stall the extension stays
-  // alive through the recovery, including forward stick, so the nozzles can bring the nose
-  // back without a hidden mode button.
-  const entryLow = smooth01(
-    (state.speedKmh - tuning.postStallEntryMinKmh)
-      / Math.max(tuning.postStallEntryFullMinKmh - tuning.postStallEntryMinKmh, 1),
+  // ------------------------------------------------------------------- thin air
+  /*
+  One continuous measure of how little the airstream is able to do: 0 at fighting speed,
+  1 where the wing has effectively stopped voting and the nozzles are the only thing with
+  an opinion about where the nose points.
+
+  This replaces the post-stall *mode* the model used to run. That mode sampled a speed
+  window on the leading edge of a full-aft stick, latched the result, and blended a second
+  set of limits in behind it — so the same stick produced a 27-degree pull at 250 km/h, a
+  93-degree one at 350, and a 10-degree one at 1000. The discontinuity was the point of
+  the design and it was also the thing that felt wrong: the aircraft changed character on
+  a threshold rather than on the physics.
+
+  Thin air is a function of dynamic pressure and of nothing else. Not of stick position,
+  not of throttle, not of the current angle of attack — a limit that widens because alpha
+  grew is a latch with better manners, and it would snap open the moment it was touched.
+  Everything the mode used to switch on now reads off this one number, so a Cobra is not a
+  state the aircraft enters; it is what a hard pull does when there is no longer enough
+  air over the tail to argue with the nozzles.
+  */
+  const thinAir = 1 - smooth01(
+    (state.speedKmh - tuning.thinAirFullKmh)
+      / Math.max(tuning.thinAirNoneKmh - tuning.thinAirFullKmh, 1),
   )
-  const entryHigh = 1 - smooth01(
-    (state.speedKmh - tuning.postStallEntryFullMaxKmh)
-      / Math.max(tuning.postStallEntryMaxKmh - tuning.postStallEntryFullMaxKmh, 1),
-  )
-  // Entry is sampled on the edge of a committed pull, then latched while the stick stays
-  // aft. A max-rate turn begun above the window therefore cannot silently become a Cobra
-  // later as it bleeds through the threshold; the pilot releases and pulls again to make
-  // that request. Analogue pulls below the threshold remain conventional at every speed.
-  if (state.input.pitch <= tuning.postStallRearmPitchThreshold) {
-    state.postStallPullArmed = true
-    state.postStallEntryDemand = 0
-  } else if (state.postStallPullArmed
-    && state.input.pitch >= tuning.postStallPitchThreshold) {
-    state.postStallPullArmed = false
-    state.postStallEntryDemand = entryLow * entryHigh
-  }
-  const entryDemand = state.postStallEntryDemand
-  const pedalDemand = smooth01((Math.abs(state.input.yaw) - 0.7) / 0.3)
-    * smooth01((sensedPitchAttitudeDeg - tuning.pedalTurnMinPitchDeg) / 14)
-    * (1 - smooth01(
-      (state.speedKmh - tuning.pedalTurnMaxKmh * 0.78)
-        / (tuning.pedalTurnMaxKmh * 0.22),
-    ))
-  const recovering = state.postStallBlend > 0.04
-    && alphaDegAbs > tuning.stallAoADeg * tuning.postStallRecoveryAoAFactor
-  const postStallTarget = Math.max(
-    entryDemand,
-    pedalDemand,
-    recovering ? tuning.postStallRecoveryBlend : 0,
-  )
-  const postStallResponse = postStallTarget > state.postStallBlend
-    ? tuning.postStallEngageResponse
-    : tuning.postStallReleaseResponse
-  state.postStallBlend = approach(
-    state.postStallBlend,
-    postStallTarget,
-    postStallResponse,
-    dt,
-  )
-  state.postStallActive = state.postStallBlend > tuning.postStallActiveThreshold
-  const postStallBlend = state.postStallBlend
+
 
   // Surfaces earn their force from the airstream and lose most of it past the stall.
-  const surfaceAuthority = MathUtils.clamp(speed / tuning.authorityRefSpeed, 0, 1)
+  //
+  // Control power follows dynamic pressure, so this is a power law rather than the linear
+  // ramp it used to be: a surface at a quarter of its reference speed has nothing like a
+  // quarter of its authority. The exponent sits between linear and the textbook square
+  // because the compressed range spans eight times the speed end to end, and a true q law
+  // across that would leave the jet dead everywhere below fighting speed while making no
+  // difference at all above it.
+  const surfaceAuthority = MathUtils.clamp(
+    (speed / tuning.authorityRefSpeed) ** tuning.authorityExponent, 0, 1,
+  )
     * (1 - (tuning.postStallSurfaceLoss
-      * smooth01((alphaDegAbs - tuning.stallAoADeg) / (70 - tuning.stallAoADeg))))
+      * smooth01((alphaDegAbs - tuning.stallAoADeg)
+        / (tuning.surfaceLossFullAoADeg - tuning.stallAoADeg))))
 
   // The nozzles answer to thrust, not airspeed — which is exactly why they matter at the
-  // top of a loop and in the middle of a Cobra.
+  // top of a loop and in the middle of a Cobra. The FCC lets them out further as the air
+  // thins, because that is where the tail has stopped being able to do the job on its own.
   const vectorAuthority = tuning.thrustVectorEffectiveness * thrustLevel
-    * MathUtils.lerp(tuning.normalThrustVectorFactor, 1, postStallBlend)
+    * MathUtils.lerp(tuning.normalThrustVectorFactor, 1, thinAir)
+
+  // The two are published separately as well as summed: a pilot losing the surfaces while
+  // the nozzles hold is in a different aircraft from one losing both.
+  state.aeroAuthority = surfaceAuthority
+  state.vectorAuthority = vectorAuthority
 
   const pitchAuthority = MathUtils.clamp(surfaceAuthority + vectorAuthority, 0, 1)
   const rollAuthority = surfaceAuthority
-    * (1 - (0.65 * smooth01((alphaDegAbs - 20) / 45)))
+    * (1 - (tuning.rollAuthorityAoALoss
+      * smooth01((alphaDegAbs - tuning.rollAuthorityOnsetDeg) / tuning.rollAuthorityRangeDeg)))
   // Pedal-turn window: nose high and slow, the rudders plus vectoring coupling keep a
   // usable yaw that plain airflow no longer provides. Outside the window it contributes
   // nothing, so level flight can never spin on the spot.
-  const pedalWindow = smooth01((sensedPitchAttitudeDeg - tuning.pedalTurnMinPitchDeg) / 18)
-    * smooth01(((tuning.pedalTurnMaxKmh * toWorld) - speed) / (14 * toWorld * 22))
+  const pedalWindow = smooth01(
+    (sensedPitchAttitudeDeg - tuning.pedalTurnMinPitchDeg) / tuning.pedalTurnPitchBlendDeg,
+  )
+    * smooth01(
+      ((tuning.pedalTurnMaxKmh * toWorld) - speed) / (tuning.pedalTurnSpeedBlendKmh * toWorld),
+    )
   const yawAuthority = MathUtils.clamp(
-    (surfaceAuthority * 0.9)
-      + (pedalWindow * tuning.pedalTurnYawBoost * thrustLevel * 0.4)
-      + (postStallBlend * tuning.postStallYawBoost * thrustLevel),
+    (surfaceAuthority * tuning.yawSurfaceShare)
+      + (pedalWindow * tuning.pedalTurnYawBoost * thrustLevel * tuning.pedalTurnYawShare)
+      + (thinAir * tuning.postStallYawBoost * thrustLevel),
     0,
-    2.2,
+    tuning.maxYawAuthority,
   )
 
   // ---------------------------------------------------------------- commanded rates
   const gravity = tuning.gravity
 
-  let maxPitchRate = MathUtils.degToRad(MathUtils.lerp(
+  /*
+  How far the envelope is open, 0..1. Two continuous factors and nothing else:
+
+    thinAir            how little the airstream can still enforce
+    commitment         how far past the max-performance detent the stick is
+
+  Both are read fresh every step. Neither latches, neither samples an entry condition, and
+  neither is a function of the alpha the envelope goes on to allow — a fence that widens
+  because alpha grew would open itself the first time it was touched.
+
+  Commitment is what lets a Split-S and a Cobra pass through the same airspeed and come out
+  as different manoeuvres, without either of them being a mode. A three-quarter pull is a
+  hard turn at any speed. A pull held against the stops is a request for everything the
+  airframe has, and in thin air everything the airframe has is the nozzles.
+  */
+  const commitment = smooth01(
+    (Math.abs(state.input.pitch) - tuning.performancePullThreshold)
+      / Math.max(1 - tuning.performancePullThreshold, 1e-3),
+  )
+  const envelopeOpen = thinAir * commitment
+
+  // The nose can be swung much faster in thin air than in thick, and for a reason that is
+  // not a concession to the manoeuvre: at fighting speed the ceiling is the airframe's
+  // structural pitch rate, while down where the nozzles are doing the work there is very
+  // little inertia in the airstream resisting them. This is what used to require a Cobra
+  // speed window and an entry latch to reach.
+  const maxPitchRate = MathUtils.degToRad(MathUtils.lerp(
     envelope.pitchRate,
     tuning.postStallPitchRateDeg,
-    postStallBlend,
+    envelopeOpen,
   ))
-  // The Cobra needs entry energy: full pitch boost only inside the speed window, fading
-  // at both edges. Too slow and there is nothing to trade; too fast and the limiter would
-  // let the airframe fold.
-  if (postStallBlend > 0) {
-    const kmh = state.speedKmh
-    const window = smooth01((kmh - tuning.cobraMinKmh) / 220)
-      * smooth01((tuning.cobraMaxKmh - kmh) / 300)
-    maxPitchRate *= 1 + ((tuning.cobraPitchBoost - 1) * window * postStallBlend)
-  }
 
   // G soft limit: pitch rate times speed is centripetal acceleration, so the allowed rate
   // shrinks as speed grows — the airframe pulls hard at corner speed, not at Mach 2.
@@ -373,22 +443,26 @@ export function stepFlight(state, command, envelope, dt) {
   let pitchCmd = state.input.pitch * maxPitchRate * pitchAuthority
   pitchCmd = MathUtils.clamp(pitchCmd, -negGLimitRate, gLimitRate)
 
-  // AoA soft limiter: authority to raise the nose fades over the last few degrees before
-  // the limit instead of hitting a wall. Automatic envelope extension moves the fence; it
-  // never removes it.
-  const maxPerformancePull = smooth01(
-    (Math.abs(state.input.pitch) - tuning.performancePullThreshold)
-      / Math.max(1 - tuning.performancePullThreshold, 1e-3),
-  )
+  /*
+  AoA soft limiter: authority to move the nose fades over the last few degrees before the
+  limit instead of hitting a wall.
+
+  The fence is a function of dynamic pressure and of the stick, never of the current alpha.
+  That ordering matters — a limit that widens because alpha grew feeds back into itself and
+  is a latch by another name. At fighting speed the limit is the conventional one, and it
+  is a real one: the reasons a fast jet is not allowed to 30 degrees of alpha are
+  structural and they do not go away. As the air thins those reasons go away with it, the
+  fence opens toward the airframe's true aerodynamic limit, and nothing announces itself.
+  */
   const conventionalLimit = MathUtils.lerp(
     tuning.normalAoALimitDeg,
     tuning.performanceAoALimitDeg,
-    maxPerformancePull,
+    commitment,
   )
   const aoaLimit = MathUtils.lerp(
     conventionalLimit,
     tuning.postStallAoALimitDeg,
-    postStallBlend,
+    envelopeOpen,
   )
   const softness = tuning.aoaLimitSoftnessDeg
   if (pitchCmd > 0) {
@@ -398,12 +472,17 @@ export function stepFlight(state, command, envelope, dt) {
     pitchCmd *= MathUtils.clamp((state.aoaDeg - (negativeLimit - softness)) / softness, 0, 1)
   }
 
-  // Centred-stick post-stall recovery points the nose back toward the airstream. It never
-  // overwrites a deliberate pilot command, so unusual attitudes remain flyable; releasing
-  // the stick is the simple, learnable request to make the wing fly again. The correction
-  // is a rate demand and still pays the available surface/vector authority below.
+  // Centred-stick recovery points the nose back toward the airstream. It never overwrites
+  // a deliberate pilot command, so unusual attitudes remain flyable; releasing the stick is
+  // the simple, learnable request to make the wing fly again. The correction is a rate
+  // demand and still pays the available surface/vector authority below.
+  //
+  // It is gated on measured alpha and on the stick, and on nothing else. It used to carry a
+  // post-stall blend factor as well, which meant the one thing that recovers a departure
+  // was only available inside the mode the departure was supposed to have entered.
   const recoveryNeed = smooth01(
-    (alphaDegAbs - (tuning.stallAoADeg * 1.1)) / tuning.postStallRecoveryRangeDeg,
+    (alphaDegAbs - (tuning.stallAoADeg * tuning.postStallRecoveryOnsetFactor))
+      / tuning.postStallRecoveryRangeDeg,
   )
   const centredStick = 1 - smooth01(
     Math.abs(state.input.pitch) / tuning.postStallRecoveryStickThreshold,
@@ -412,34 +491,111 @@ export function stepFlight(state, command, envelope, dt) {
     * MathUtils.degToRad(tuning.postStallRecoveryPitchRateDeg)
     * recoveryNeed
     * centredStick
-    * postStallBlend
     * pitchAuthority
 
+  /*
+  Longitudinal weathervane: the airstream's own restoring moment about the pitch axis.
+
+  The yaw axis has had this all along, a few lines below as `sideslipDamping`. Pitch had
+  nothing, and the asymmetry showed. The alpha fence stops the FCC *commanding* more nose-up
+  once the limit is reached, but nothing pushed back, so with the stick held aft the nose
+  would park — measurably at zero pitch rate — while gravity took the flight path all the way
+  round behind it. The jet sat at 180 degrees of alpha, flying tail-first for a couple of
+  seconds, because at that point there was no moment left in the model to argue with it.
+
+  sin(alpha) is the moment shape: strongest with the airstream square onto the airframe,
+  vanishing as the nose lines up with it, and correctly signed on both sides of zero so it
+  restores from either direction. The argument is clamped at ninety degrees so that past the
+  beam the moment saturates rather than decaying back toward zero — an unclamped sine makes
+  tail-first flight its own equilibrium, which is precisely the state that needed fixing, and
+  a tail that is square to the airstream at 90 degrees is no less immersed at 140.
+
+  It is deliberately not scaled by `pitchAuthority` — this is the air acting on the airframe,
+  not a surface the FCC commands, and it is the one pitch term a held stick cannot switch off.
+  It is what makes the alpha fence a fence rather than merely the point at which the FCC stops
+  helping.
+
+  Two things decide where it is allowed to act, and both are deliberate.
+
+  It reads zero below its onset, because an airframe is trimmed to fly at a non-zero
+  incidence: a restoring moment proportional to raw alpha is not stability, it is a permanent
+  nose-down mistrim, and applied from zero it works out at about seven degrees a second of
+  uncommanded pitch-down in an 800 km/h cruise.
+
+  The onset then sits past the deep-AoA band rather than at the stall, which is what keeps
+  this from quietly deleting the manoeuvres it has no business touching. Between the stall and
+  the beam a vectored fighter genuinely can hold the nose off the airstream — that is the
+  Cobra, and it is the aircraft's signature. Past the beam it cannot: the airframe is broadside
+  or backwards to the flow, every surface and nozzle is working in its wake, and no amount of
+  held stick is a match for the moment the airstream is making. So the term is scheduled to
+  come in exactly across the region where control power stops being the larger of the two.
+
+  The gain is calibrated where the term does its work — deep alpha at a couple of hundred
+  km/h, where the dynamic-pressure factor is a few per cent and the restoring rate lands
+  around seventy degrees a second. The same gain with that factor saturated would ask for
+  something absurd, so the result is capped at a real pitch rate. The cap is inactive at every
+  condition the checks reach; it is here so that no combination of alpha and airspeed can turn
+  a stabilising term into a catapult.
+  */
+  const weathervaneNeed = smooth01(
+    (alphaDegAbs - tuning.pitchWeathervaneOnsetDeg) / tuning.pitchWeathervaneRangeDeg,
+  )
+  const weathervaneRate = MathUtils.clamp(
+    Math.sin(MathUtils.clamp(sensedAlphaRad, -Math.PI / 2, Math.PI / 2))
+      * tuning.pitchWeathervane
+      * weathervaneNeed
+      * Math.min(qFactor * tuning.weathervaneQScale, 1),
+    -MathUtils.degToRad(tuning.pitchWeathervaneMaxRateDeg),
+    MathUtils.degToRad(tuning.pitchWeathervaneMaxRateDeg),
+  )
+  pitchCmd -= weathervaneRate
+
+  // Thin air alone, never `envelopeOpen`: commitment is a reading of the *pitch* stick, and
+  // the roll rate the airframe can hold has nothing to do with how hard the pilot is
+  // pulling. `rollAuthority` above already sheds the rest of it against alpha.
   let rollCmd = state.input.roll
     * MathUtils.degToRad(MathUtils.lerp(
       envelope.rollRate,
       tuning.postStallRollRateDeg,
-      postStallBlend,
+      thinAir,
     ))
     * rollAuthority
   let yawCmd = state.input.yaw * MathUtils.degToRad(envelope.yawRate) * yawAuthority
   // Sideslip weathervane — yaw is a rudder in an airstream, not a reaction wheel.
-  yawCmd += sensedBetaRad * tuning.sideslipDamping * Math.min(qFactor * 2, 1)
+  yawCmd += sensedBetaRad * tuning.sideslipDamping
+    * Math.min(qFactor * tuning.weathervaneQScale, 1)
 
   // Spin prevention: deep post-stall, roll and yaw commands are bled off and the rates
   // themselves damped harder, so the jet mushes instead of departing.
-  const spinGuard = smooth01((alphaDegAbs - tuning.stallAoADeg) / 30)
-  rollCmd *= 1 - (spinGuard * 0.55)
-  yawCmd *= 1 - (spinGuard * 0.4)
+  const spinGuard = smooth01((alphaDegAbs - tuning.stallAoADeg) / tuning.spinGuardRangeDeg)
+  rollCmd *= 1 - (spinGuard * tuning.spinGuardRollLoss)
+  yawCmd *= 1 - (spinGuard * tuning.spinGuardYawLoss)
 
   // ---------------------------------------------------------------- rate dynamics
   // First-order chase of the commanded rates — the corrective-torque loop, with the
   // response constant standing in for inertia. Extra damping while the spin guard is up.
+  //
+  // How fast a rate builds is the same question as how much authority is behind it, so the
+  // response constant is scaled by the axis authority rather than being a fixed number.
+  // The airframe's mass does not change with airspeed; what changes is the moment available
+  // to accelerate it. Thin air therefore takes its time reaching a rate and, with the stick
+  // centred, takes the same time shedding it — which is the inertia that was missing when
+  // every axis snapped to its (smaller) low-speed ceiling just as briskly as it did at Mach
+  // 1. The floor underneath is the FCS rate feedback: that loop is a gyro and a nozzle, and
+  // neither one asks what the airspeed is.
   const w = state.angularVelocity
   const damp = 1 + (spinGuard * tuning.spinDamping)
-  w.z = approach(w.z, pitchCmd, tuning.pitchResponse * damp, dt)
-  w.x = approach(w.x, rollCmd, tuning.rollResponse * damp, dt)
-  w.y = approach(w.y, yawCmd, tuning.yawResponse * damp, dt)
+  const floor = tuning.rateResponseFloor
+  const span = 1 - floor
+  const pitchResponse = tuning.pitchResponse
+    * (floor + (span * MathUtils.clamp(pitchAuthority, 0, 1)))
+  const rollResponse = tuning.rollResponse
+    * (floor + (span * MathUtils.clamp(rollAuthority, 0, 1)))
+  const yawResponse = tuning.yawResponse
+    * (floor + (span * MathUtils.clamp(yawAuthority, 0, 1)))
+  w.z = approach(w.z, pitchCmd, pitchResponse * damp, dt)
+  w.x = approach(w.x, rollCmd, rollResponse * damp, dt)
+  w.y = approach(w.y, yawCmd, yawResponse * damp, dt)
 
   // Body-frame integration. Pilot yaw-right is a negative rotation about local +Y.
   rotationEuler.set(w.x * dt, -w.y * dt, w.z * dt, 'XYZ')
@@ -448,7 +604,7 @@ export function stepFlight(state, command, envelope, dt) {
 
   // The nozzles slew toward what pitch is asking of them; nothing snaps.
   const vectorTarget = state.input.pitch * tuning.maxThrustVectorDeg
-    * MathUtils.lerp(tuning.normalThrustVectorFactor, 1, postStallBlend) * thrustLevel
+    * MathUtils.lerp(tuning.normalThrustVectorFactor, 1, thinAir) * thrustLevel
   state.thrustVectorDeg = approach(
     state.thrustVectorDeg, vectorTarget, tuning.thrustVectorResponse, dt)
 
@@ -519,6 +675,14 @@ export function stepFlight(state, command, envelope, dt) {
   // the compressed induced-drag bill: more pull makes more lift/G and spends more energy.
   // Sideslip, brake, and flaps add their own penalties; a Cobra without them would still
   // be a free 180.
+  //
+  // The separated-flow surcharge is billed against measured alpha, because separation is a
+  // property of the airflow over the wing and has nothing to do with how fast the aircraft
+  // happens to be going. This is the same number the HUD publishes, computed once.
+  const alphaDeg = MathUtils.radToDeg(alphaAbs)
+  const postStallBlend = smooth01(
+    (alphaDeg - tuning.stallAoADeg) / tuning.postStallDisplayRangeDeg,
+  )
   let dragMag = readDragKmhPerSecond(
     state.speedKmh, state.position.y, envelope) * toWorld
   const sinAlpha = Math.sin(alphaAbs)
@@ -559,6 +723,32 @@ export function stepFlight(state, command, envelope, dt) {
 
   // Load factor as the wing feels it: lift over weight, signed by AoA.
   state.gLoad = liftMag / gravity
+
+  /*
+  Published for the HUD and the effects. These are descriptions of how far past the stall the
+  wing is, not control inputs — nothing above reads them, which is the whole point.
+
+  `stallBlend` is the approach to the stall and `postStallBlend` the departure from it, so
+  between them they cover the progression end to end with no threshold in it: normal flight,
+  high AoA, stall onset, stall, post-stall. `postStallActive` is the one boolean left and it
+  says exactly one thing, "the wing is stalled" — it reaches the maneuver label and the HUD
+  and stops there. No force in this function branches on it.
+  */
+  state.stallBlend = smooth01(
+    (alphaDeg - tuning.stallOnsetDeg) / Math.max(tuning.stallAoADeg - tuning.stallOnsetDeg, 1e-3),
+  )
+  state.postStallBlend = postStallBlend
+  state.postStallActive = alphaDeg > tuning.stallAoADeg
+
+  // Where it is going against where it is pointing. `flightPathDeg` is the climb or dive
+  // angle of the velocity itself, and `noseOffPathDeg` is the total angle between the nose
+  // and the flight path — the number the whole model exists to allow to be large.
+  state.flightPathDeg = MathUtils.radToDeg(
+    Math.asin(MathUtils.clamp(state.velocity.y / Math.max(newSpeed, 1e-6), -1, 1)),
+  )
+  state.noseOffPathDeg = MathUtils.radToDeg(
+    Math.acos(MathUtils.clamp(worldForward.dot(pathDir), -1, 1)),
+  )
 
   state.maneuver = detectManeuver(
     state, tuning, pitchAttitudeDeg, newSpeed, tuning.pedalTurnMaxKmh * toWorld)

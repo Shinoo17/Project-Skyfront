@@ -26,8 +26,23 @@ export const EMPTY_TELEMETRY = {
   pitchRate: 0,
   rollRate: 0,
   yawRate: 0,
+  // The stall progression as two continuous numbers rather than a mode: `stallBlend` is the
+  // approach to the stall, `postStallBlend` how far past it the wing already is.
+  stallBlend: 0,
   postStallBlend: 0,
   postStallActive: false,
+  // Control authority split by where it comes from, 0..1. The surfaces answer to dynamic
+  // pressure and to separation; the nozzles answer to engine thrust. Losing one is a very
+  // different aircraft from losing both.
+  aeroAuthority: 0,
+  vectorAuthority: 0,
+  // Lift and drag as scalar accelerations, for the readout. The full vectors are below.
+  lift: 0,
+  drag: 0,
+  // Climb or dive angle of the velocity itself, and the total angle between the nose and the
+  // flight path. Degrees.
+  flightPath: 0,
+  noseOffPath: 0,
   airBrake: false,
   thrustVector: 0,
   maneuver: 'normal',

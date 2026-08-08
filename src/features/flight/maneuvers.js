@@ -27,13 +27,20 @@ Every number below was found by replaying these scripts through the flight model
 rather than guessed, and three constraints shaped them:
 
   The Cobra is a race between two rates, and the pull has to win it quickly. Nose rate comes
-  from surface authority (which scales with speed) plus vector authority (which scales with
-  thrust). Path rate comes from lift, which scales with speed squared and collapses once the
-  wing is properly past the stall. So the pull is short and hard: long enough to throw the
-  nose through the stall and out the far side, and no longer, because every extra tenth with
-  the wing still flying is a tenth of a loop being drawn. Enter fast instead and lift never
-  lets go — that is the post-stall script, the same pull with the energy to carry the flight
-  path round with it.
+  from surface authority (which follows dynamic pressure) plus vector authority (which
+  follows thrust and does not care about airspeed at all). Path rate comes from lift, which
+  scales with speed squared and collapses once the wing is properly past the stall. So the
+  pull is short and hard: long enough to throw the nose through the stall and out the far
+  side, and no longer, because every extra tenth with the wing still flying is a tenth of a
+  loop being drawn. Enter fast instead and lift never lets go — that is the post-stall
+  script, the same pull with the energy to carry the flight path round with it.
+
+  The stick has to be held against the stops, and that is a physical requirement rather than
+  a convention. The FCC opens its AoA fence on `thinAir` multiplied by how far past the
+  max-performance detent the stick is, so a three-quarter pull is a hard turn at any speed
+  and only a committed one asks for everything the nozzles have. It is why the Split-S and
+  the Immelmann can hold 0.82 through the same airspeeds the Cobra passes through and stay
+  conventional manoeuvres, with no mode and no entry window separating them.
 
   Reheat goes in on the way out, never into the pull. Holding it drives the core through the
   MIL detent before the burner lights, so the slow entry trim remains intact until the script
@@ -79,7 +86,7 @@ const MANEUVERS = [
     expect: 'cobra',
     requires: 'thrustVectoring',
     brief:
-      'Slow, then a short, violent pull that opens the automatic AoA envelope, with no reheat anywhere in '
+      'Slow, then a short, violent pull held against the stops, with no reheat anywhere in '
       + 'it. The nose goes past the vertical while the flight path carries straight on, the '
       + 'wing stops flying, drag does the braking — and it comes back to the attitude, the '
       + 'height and the speed it started at.',
@@ -90,8 +97,9 @@ const MANEUVERS = [
       // stops being a pull and starts being the first quarter of a loop.
       { seconds: 0.9, hold: ['pitch-up'], label: 'PULL' },
       { seconds: 0.7, hold: [], label: 'HANG' },
-      // The automatic envelope stays open while alpha remains beyond the stall, so forward
-      // stick can spend the nozzles on bringing the nose back into the capture window.
+      // The envelope is open because the speed has gone, not because the last pull opened
+      // it, so forward stick has the same nozzle authority the pull did and can spend it on
+      // bringing the nose back into the capture window.
       { seconds: 1.75, hold: ['pitch-down'], label: 'NOSE DOWN' },
       // No reheat on the way out either. The dive off the top pays the airspeed back while
       // the low dry-power setting keeps the recovery from running away past entry energy.
@@ -112,11 +120,16 @@ const MANEUVERS = [
     steps: [
       { seconds: 0.6, hold: ['pitch-up', 'throttle-up'], label: 'ZOOM' },
       { seconds: 0.85, hold: ['pitch-up', 'yaw-right', 'throttle-up'], label: 'PULL' },
-      // The stick comes forward of the pull while the automatic envelope remains open: the
-      // nose is already across the flight path, and holding aft stick on top of the pedal drives
-      // the alpha past 120 degrees and departs the jet rather than swinging it.
+      // The stick comes forward of the pull. The nose is already across the flight path, and
+      // holding aft stick on top of the pedal drives the alpha past 120 degrees and departs
+      // the jet rather than swinging it.
       { seconds: 1.5, hold: ['yaw-right', 'throttle-up'], label: 'PEDAL IN' },
-      { seconds: 0.86, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
+      // Shorter than it used to be, and for a physics reason rather than a cosmetic one. The
+      // airframe now makes its own nose-down moment past about ninety degrees of alpha, so
+      // part of the unload that this step used to fly by hand is flown by the airstream. Held
+      // for the old duration on top of that, the recovery overshoots and the jet exits some
+      // thirty degrees nose-low instead of level.
+      { seconds: 0.4, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
       { seconds: 1.0, hold: [], label: 'RECOVER' },
     ],
   },
@@ -135,7 +148,10 @@ const MANEUVERS = [
       { seconds: 2.2, hold: [], axes: { pitch: 0.72 }, label: 'ZOOM' },
       { seconds: 1.8, hold: ['yaw-right', 'afterburner'], label: 'PEDAL' },
       { seconds: 0.7, hold: [], axes: { pitch: -0.25 }, label: 'LEVEL OFF' },
-      { seconds: 0.8, hold: [], label: 'SETTLE' },
+      // The jet comes out of the pedal turn at about 340 km/h, and at that energy the nose
+      // keeps falling on its own — the FCC damps rate, it does not hold an attitude. A
+      // little back stick on the way out is what a pilot would be doing anyway.
+      { seconds: 1.8, hold: [], axes: { pitch: 0.62 }, label: 'SETTLE' },
     ],
   },
 
@@ -149,12 +165,17 @@ const MANEUVERS = [
       + 'stall, but at this speed the wing has enough left to drag the flight path round '
       + 'after it — a stalled, seven-G pull through, and not a Cobra.',
     exitsLevel: true,
-    entry: { throttle: THROTTLE_MIL, settleSeconds: 2.5 },
+    // Between THROTTLE_LOW and THROTTLE_MIL, and it has to be: the band this script is
+    // demonstrating is the one where the wing is still strong enough to drag the flight
+    // path round after a stalled nose. Enter it at 550 and the pull stops being a pull
+    // through and becomes a Cobra that runs out of airspeed at the top; enter it at 645
+    // and the lift never lets the alpha past the stall at all.
+    entry: { throttle: 0.235, settleSeconds: 2.5 },
     steps: [
-      { seconds: 1.2, hold: ['pitch-up', 'afterburner'], label: 'PULL' },
-      { seconds: 1.4, hold: ['afterburner'], label: 'HOLD ALPHA' },
-      { seconds: 1.05, hold: ['throttle-up'], axes: { pitch: 0.65 }, label: 'PULL THROUGH' },
-      { seconds: 1.5, hold: [], label: 'RECOVER' },
+      { seconds: 1.3, hold: ['pitch-up', 'afterburner'], label: 'PULL' },
+      { seconds: 0.8, hold: ['afterburner'], label: 'HOLD ALPHA' },
+      { seconds: 1.65, hold: ['throttle-up'], axes: { pitch: 0.65 }, label: 'PULL THROUGH' },
+      { seconds: 1.5, hold: ['throttle-up'], label: 'RECOVER' },
     ],
   },
 

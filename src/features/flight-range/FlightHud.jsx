@@ -34,7 +34,8 @@ const RESET_CAPTIONS = {
 }
 
 // The detector's regimes, named the way a pilot would call them. Only the ones worth an
-// advisory line — normal flight and the automatic AoA envelope are continuous states.
+// advisory line. Normal flight is not one, and neither is a stall on its own: the AoA
+// envelope is continuous, so there is no mode change to announce.
 const MANEUVER_CAPTIONS = {
   cobra: 'COBRA',
   'j-turn': 'J-TURN',
@@ -78,8 +79,11 @@ function readAdvisory(telemetry) {
   const maneuver = MANEUVER_CAPTIONS[telemetry.maneuver]
   if (maneuver) return { key: `mnv-${telemetry.maneuver}`, label: maneuver, tone: 'caution' }
   if (telemetry.flaps) return { key: 'flaps', label: 'FLAPS DOWN', tone: 'caution' }
+  // There is no assist mode left to announce — `postStallActive` now says only that the
+  // wing is past its stalling angle. The regime captions above catch nearly every case
+  // that reaches here; this is the stall warning for the rest.
   if (telemetry.postStallActive) {
-    return { key: 'aoa-assist', label: 'POST-STALL ASSIST', tone: 'caution' }
+    return { key: 'stall', label: 'STALL', tone: 'caution' }
   }
   return { key: 'clear', label: 'FLIGHT PATH CLEAR', tone: 'normal' }
 }
@@ -138,7 +142,7 @@ function formatDebug(value) {
     row('RATE', `P${value.pitchRate.toFixed(0)} R${value.rollRate.toFixed(0)} Y${value.yawRate.toFixed(0)} °/s`),
     row('THR', `${Math.round(value.throttle * 100)}%  A/B ${value.afterburnerState}`),
     row('TVC', `${value.thrustVector.toFixed(1)}°`),
-    row('AOA AUTO', `${Math.round(value.postStallBlend * 100)}%${value.airBrake ? ' +brake' : ''}`),
+    row('STALL', `${Math.round(value.postStallBlend * 100)}%${value.airBrake ? ' +brake' : ''}`),
     row('MNVR', value.maneuver),
     row('FPS', String(value.fps || 0)),
   ].join('\n')

@@ -367,8 +367,15 @@ export default function FlightAircraft({
     readout.pitchRate = MathUtils.radToDeg(aircraftState.angularVelocity.z)
     readout.rollRate = MathUtils.radToDeg(aircraftState.angularVelocity.x)
     readout.yawRate = MathUtils.radToDeg(aircraftState.angularVelocity.y)
+    readout.stallBlend = aircraftState.stallBlend
     readout.postStallBlend = aircraftState.postStallBlend
     readout.postStallActive = aircraftState.postStallActive
+    readout.aeroAuthority = aircraftState.aeroAuthority
+    readout.vectorAuthority = aircraftState.vectorAuthority
+    readout.lift = aircraftState.liftForce.length()
+    readout.drag = aircraftState.dragForce.length()
+    readout.flightPath = aircraftState.flightPathDeg
+    readout.noseOffPath = aircraftState.noseOffPathDeg
     readout.airBrake = aircraftState.airBrake
     readout.thrustVector = aircraftState.thrustVectorDeg
     readout.maneuver = aircraftState.maneuver

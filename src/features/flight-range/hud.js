@@ -508,7 +508,7 @@ export function createFlightHud(canvas) {
     // Its own slot in every layout: under the flap row when the block is stacked, under
     // the attitude row when the columns are side by side.
     const aoaRow = layout.tight ? attitudeRow + 40 : layout.compact ? second + 80 : second
-    text(`α ${aoa}°   ${g}G${state.postStallActive ? '   AOA AUTO' : ''}${state.airBrake ? '   BRAKE' : ''}`,
+    text(`α ${aoa}°   ${g}G${state.postStallActive ? '   STALL' : ''}${state.airBrake ? '   BRAKE' : ''}`,
       right, aoaRow, display(12), aoaColor, align)
 
     // Flap and range-edge state belong to the tacmap deck, which is opaque, larger, and the

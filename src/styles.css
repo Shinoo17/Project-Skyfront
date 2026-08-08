@@ -1763,7 +1763,8 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   min-height: 50px;
 }
 
-/* Air brake remains a held control; the second cell reports the automatic AoA envelope. */
+/* Air brake remains a held control; the second cell reports how far past the stall the
+   wing is. */
 .deck-row.is-modes {
   grid-template-columns: repeat(2, 1fr);
 }

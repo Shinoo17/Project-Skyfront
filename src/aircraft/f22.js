@@ -386,6 +386,10 @@ const f22 = {
         liftGain: 175,
         sideForceGain: 55,
 
+        // Where the wing starts running out of linear lift, and where it has run out. The
+        // onset figure drives the HUD's approach-to-the-stall readout only; the stall angle
+        // itself is what the aerodynamics are built on.
+        stallOnsetDeg: 16,
         stallAoADeg: 26,
         // Past the stall the lift is gone by about twenty degrees, not eighty: a wing
         // still making most of its lift at 40 degrees keeps pulling the flight path
@@ -411,31 +415,34 @@ const f22 = {
         maxG: 9,
         maxNegativeG: 3.5,
 
-        // Automatic post-stall entry. Full aft intent at low/medium energy progressively
-        // opens the envelope; high-speed pulls stay conventional. Once the wing is stalled
-        // a lower blend is retained until alpha recovers, so forward stick still has nozzle
-        // authority to bring the nose home.
-        postStallPitchThreshold: 0.92,
-        postStallRearmPitchThreshold: 0.55,
-        postStallEntryMinKmh: 320,
-        postStallEntryFullMinKmh: 400,
-        postStallEntryFullMaxKmh: 680,
-        postStallEntryMaxKmh: 760,
-        postStallRecoveryAoAFactor: 0.58,
-        postStallRecoveryBlend: 0.72,
+        /*
+        Thin air: the single continuous number that replaced the old post-stall mode.
+
+        Above `thinAirNoneKmh` the wing is fully in charge and the aircraft is a
+        conventional fighter — conventional alpha fence, conventional pitch rate, nozzles
+        held to their normal schedule. Below `thinAirFullKmh` the airstream has stopped
+        being able to enforce anything and the nozzles are the only vote that counts.
+        Between the two it is a smooth interpolation with no threshold, no latch, and no
+        test on what the pilot is asking for.
+
+        The top of the window sits below the speeds the loop, split-s and immelmann scripts
+        actually fly, so those manoeuvres never see a widened envelope; it sits above the
+        Cobra and pedal-turn band, which is where an F-22 does exactly this for real.
+        */
+        thinAirFullKmh: 460,
+        thinAirNoneKmh: 760,
+
+        // Centred-stick recovery toward the airstream. Gated on measured alpha and on the
+        // stick alone. The onset factor keeps it clear of attitudes that are merely
+        // nose-high — a hands-off 30-degree pitch attitude is not a departure and must not
+        // be quietly flown out of.
+        postStallRecoveryOnsetFactor: 1.25,
         postStallRecoveryRangeDeg: 34,
         postStallRecoveryStickThreshold: 0.35,
         postStallRecoveryPitchRateDeg: 42,
-        postStallEngageResponse: 5,
-        postStallReleaseResponse: 1.4,
-        postStallActiveThreshold: 0.12,
-
-        // The Cobra window sits where the physics puts it: fast enough that there is
-        // energy to trade, slow enough that lift can no longer swing the flight path
-        // after the nose. Above it the same stick is just a very hard pull.
-        cobraPitchBoost: 1.35,
-        cobraMinKmh: 380,
-        cobraMaxKmh: 820,
+        // How many degrees past the stall count as fully post-stall, for the HUD readout,
+        // the vapour effect, and the separated-flow drag surcharge.
+        postStallDisplayRangeDeg: 30,
 
         // What `detectManeuver` calls a Cobra, and the two-sided test that keeps a loop
         // from answering to the name: the nose this far off the airstream while the
@@ -444,20 +451,62 @@ const f22 = {
         cobraMinAoADeg: 62,
         cobraMaxPathRateDeg: 26,
         pathRateResponse: 9,
+        // What separates the yaw-coupled J-turn from a pure-pitch Cobra, and the yaw rate a
+        // pedal turn has to actually be producing before it earns the name. Labels only:
+        // `detectManeuver` reads the physics, it never feeds it.
+        jTurnMinSideslipDeg: 14,
+        pedalTurnMinYawRateDeg: 18,
+        // How far alpha has to fall before the HUD stops calling it a recovery — the second,
+        // lower figure applies once the label is already showing, so it does not flicker.
+        recoveryLabelEnterFactor: 0.6,
+        recoveryLabelHoldFactor: 0.45,
 
         // Pedal turns exist only nose-high and slow; the boost multiplies yaw authority
-        // inside that window and nowhere else.
+        // inside that window and nowhere else. The two blend spans are how wide the edges of
+        // that window are — degrees of pitch attitude, and km/h of airspeed.
         pedalTurnMaxKmh: 560,
         pedalTurnMinPitchDeg: 45,
+        pedalTurnPitchBlendDeg: 18,
+        pedalTurnSpeedBlendKmh: 308,
         pedalTurnYawBoost: 2.4,
+        pedalTurnYawShare: 0.4,
         postStallYawBoost: 1.2,
+        // Rudders are slightly less effective than the pitch and roll surfaces at the same
+        // dynamic pressure. The ceiling is above 1 because the pedal-turn and post-stall
+        // boosts are allowed to stack on top of plain airflow.
+        yawSurfaceShare: 0.9,
+        maxYawAuthority: 2.2,
 
         pitchResponse: 5.5,
         rollResponse: 9,
         yawResponse: 3.5,
 
         authorityRefSpeed: 34,
+        // Control power follows dynamic pressure. Pure q (exponent 2) over a range that
+        // spans 180 to 1500 km/h leaves the jet unflyable at the bottom; linear (the old
+        // behaviour) let it roll at 48 deg/s while barely moving, which is what made slow
+        // flight feel like a turntable. This sits between: roughly 20 deg/s of roll at
+        // 180 km/h, still 115 by 700.
+        authorityExponent: 1.25,
         postStallSurfaceLoss: 0.6,
+        // The alpha at which separated flow has taken everything it is going to take from
+        // the surfaces, and the window over which roll authority sheds against alpha. Roll
+        // goes first and goes further: the ailerons are out at the wingtips, which is where
+        // the flow breaks down first.
+        surfaceLossFullAoADeg: 70,
+        rollAuthorityOnsetDeg: 20,
+        rollAuthorityRangeDeg: 45,
+        rollAuthorityAoALoss: 0.65,
+        // How much of the rate response survives when an axis has no aerodynamic authority
+        // left. This is the FCS rate loop — gyro in, nozzle out — so it never goes to zero,
+        // but below it the airframe's own inertia is what the pilot is fighting.
+        rateResponseFloor: 0.38,
+
+        // How much nozzle authority the spooled core and the reheat each vouch for. This is
+        // what stops a 5% throttle claiming the vectoring a full-burner pull has: the numbers
+        // are read off the engine that is actually running, not off the lever.
+        coreThrustShare: 0.75,
+        reheatThrustShare: 0.5,
 
         thrustVectorEffectiveness: 0.55,
         maxThrustVectorDeg: 20,
@@ -469,7 +518,30 @@ const f22 = {
         // This is only the rudder's light weathervane stability; the side-force calculation
         // still owns how the velocity itself sheds sideslip.
         sideslipDamping: 0.55,
+        // Longitudinal weathervane, rad/s of restoring pitch rate at the reference dynamic
+        // pressure with the airstream square onto the airframe. This is the airstream's own
+        // moment, not a control surface, so no stick input and no fence can switch it off —
+        // it is what stops a held-back stick parking the nose while the flight path falls
+        // away behind it. Both weathervanes saturate their q term at the same rate.
+        pitchWeathervane: 18,
+        // Where the restoring moment starts and where it is fully in. The onset sits above
+        // the Cobra band on purpose: below the beam a vectored fighter really can hold the
+        // nose off the airstream, and this term must not take that away. Past the beam the
+        // airframe is broadside or backwards to the flow and no held stick should win.
+        pitchWeathervaneOnsetDeg: 88,
+        pitchWeathervaneRangeDeg: 40,
+        // Ceiling on the restoring rate, deg/s. The gain above is calibrated for the low
+        // dynamic pressure this term actually operates at; unbounded, the same gain with the
+        // q factor saturated would command four figures. Inactive at every condition the
+        // checks reach — it exists so the stabiliser can never become a catapult.
+        pitchWeathervaneMaxRateDeg: 90,
+        weathervaneQScale: 2,
         spinDamping: 2.2,
+        // Deep post-stall the roll and yaw commands are bled off over this many degrees past
+        // the stall, so the jet mushes instead of departing.
+        spinGuardRangeDeg: 30,
+        spinGuardRollLoss: 0.55,
+        spinGuardYawLoss: 0.4,
 
         aoaDragGain: 26,
         postStallDragMultiplier: 1.6,
