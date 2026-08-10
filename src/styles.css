@@ -2034,10 +2034,11 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   min-height: 50px;
 }
 
-/* Secondary touch controls stay out of the stick and throttle groups. Maneuver Assist is
-   the only advanced flight action promoted here; camera utilities remain quieter peers. */
+/* Secondary touch controls stay out of the stick and throttle groups. The two flight
+   actions — the high-G turn and Maneuver Assist — are promoted here side by side, because
+   the pair is what the pilot has to tell apart; camera utilities remain quieter peers. */
 .deck-row.is-modes {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
 }
 
 .deck-row.is-modes .deck-key {
@@ -2106,8 +2107,22 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   letter-spacing: 0.17em;
 }
 
-/* Thrust reads as a bar first and a number second — it is the value the pilot trims by
-   feel, not one they need to three digits. */
+/* The commanded speed is the control, so it gets the digits and the bright ink. Everything
+   else in this block is the cost of serving it. */
+.deck-command-speed {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.deck-command-speed b {
+  color: var(--hud-green, #62ff84);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+/* Thrust reads as a bar, not a number — it is what the commanded speed is costing, which
+   the pilot judges by feel rather than to three digits. */
 .deck-thrust {
   position: relative;
   flex: 1;
@@ -2552,6 +2567,12 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
 
   .deck-row .deck-key {
     min-height: 40px;
+  }
+
+  /* Five keys across a 174px bezel is a row of slivers, so the mode row wraps into
+     3 + 2 instead. The flight actions lead, which keeps them on the same line. */
+  .deck-row.is-modes {
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .deck-throttle {

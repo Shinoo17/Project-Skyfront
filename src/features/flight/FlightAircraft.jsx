@@ -27,11 +27,13 @@ import {
   createAfterburnerState,
   readMach,
   readTargetAirspeedKmh,
+  readThrottleForAirspeedKmh,
   resetAfterburnerState,
   stepAfterburner,
 } from './performance'
 import { applySurfaceTargets } from './surfaces'
 import {
+  clampCommandSpeedKmh,
   resetFlightInput,
   stepFlightInput,
 } from './useFlightControls'
@@ -153,11 +155,23 @@ export default function FlightAircraft({
     resetAfterburnerState(reheat.current)
     resetCondensationState(condensation.current)
     state.spawn.copy(spawn)
-    if (!keepThrottle) resetFlightInput(controls.current, envelope.idleThrottle)
+    // The commanded speed is the spawn speed: one number seeds both, so a sortie always
+    // begins already flying what the pilot's control says it is flying. A full reset picks
+    // the speed `idleThrottle` holds at this map's spawn altitude, which is what makes a
+    // low-spawning map enter its own band rather than a borrowed one.
+    if (!keepThrottle) {
+      resetFlightInput(
+        controls.current,
+        readTargetAirspeedKmh(envelope.idleThrottle, state.spawn.y, 0, envelope),
+      )
+    }
+    const spawnSpeedKmh = clampCommandSpeedKmh(controls.current.commandSpeedKmh, envelope)
+    controls.current.commandSpeedKmh = spawnSpeedKmh
+    controls.current.throttle = readThrottleForAirspeedKmh(spawnSpeedKmh, state.spawn.y, envelope)
     resetFlightState(
       state.model,
       state.spawn,
-      readTargetAirspeedKmh(controls.current.throttle, state.spawn.y, 0, envelope),
+      spawnSpeedKmh,
       envelope,
       controls.current.throttle,
     )
@@ -195,7 +209,12 @@ export default function FlightAircraft({
     // Frame delta is capped so a stalled tab cannot feed the physics a huge step; the
     // model itself always integrates at FLIGHT_FIXED_STEP regardless of refresh rate.
     const step = Math.min(delta, 0.1)
-    const input = stepFlightInput(controls.current, step, envelope)
+    const input = stepFlightInput(
+      controls.current,
+      step,
+      envelope,
+      flight.current.model.position.y,
+    )
 
     const current = flight.current
     const aircraftState = current.model
@@ -217,7 +236,12 @@ export default function FlightAircraft({
       flaps: input.flaps,
       throttle: input.throttle,
       airBrake: input.airBrake,
+      // The four semantic intents, published exactly as the input layer resolved them. The
+      // bot writes the same actions into the same layer, so player and AI hand the model
+      // the same object and fly the same physics.
       accelerate: input.accelerate,
+      decelerate: input.decelerate,
+      highG: input.highG,
       psmArm: input.psmArm,
       afterburnerCommanded: burnerRequested,
       burnerLevel: burner.level,
@@ -377,6 +401,9 @@ export default function FlightAircraft({
     readout.backwardFlight = aircraftState.backwardFlight
     readout.verticalSpeed = aircraftState.velocity.y
     readout.throttle = input.throttle
+    // The speed the pilot asked for, next to the speed they have. The pair is the point:
+    // the gap is what a hard turn or an open brake is costing them.
+    readout.commandSpeed = controls.current.commandSpeedKmh
     readout.flaps = input.flaps
     readout.aoa = aircraftState.aoaDeg
     readout.sideslip = aircraftState.sideslipDeg
@@ -387,6 +414,7 @@ export default function FlightAircraft({
     readout.stallBlend = aircraftState.stallBlend
     readout.postStallBlend = aircraftState.postStallBlend
     readout.postStallActive = aircraftState.postStallActive
+    readout.highGBlend = aircraftState.highGBlend
     readout.flightRegime = aircraftState.flightRegime
     readout.departureBlend = aircraftState.departureBlend
     readout.psmPhase = aircraftState.psmPhase

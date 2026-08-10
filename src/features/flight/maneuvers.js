@@ -40,6 +40,12 @@ rather than guessed, and three constraints shaped them:
   pull remains behind the protected conventional fence, which keeps the Split-S and
   Immelmann conventional even when they pass through the same airspeeds as the Cobra.
 
+  The other flight action, `high-g`, is available to these scripts on exactly the same
+  terms — it is a semantic action, so a step holds it the way it holds a stick axis — and it
+  is deliberately absent from every script below. It buys a tighter conventional turn at a
+  steep energy price and reaches nothing post-stall, so it is the wrong control for the
+  manoeuvres here and the right one for a scripted hard turn if one is ever added.
+
   Reheat goes in on the way out, never into the pull. Holding it drives the core through the
   MIL detent before the burner lights, so the slow entry trim remains intact until the script
   deliberately asks for combat power. It is worth the thrust once the nose is coming back

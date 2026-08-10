@@ -5,13 +5,22 @@ These scenarios exercise the deliberate PSM state machine rather than maneuver l
   - releasing Pitch Up holds the attitude without a recovery timer;
   - holding Pitch Up can carry one continuous rotation past 360 degrees;
   - a 180-degree reversal preserves old momentum and engine force reverses it over time;
-  - Pitch Down is the only input that starts assisted recovery.
+  - Pitch Down is the only input that starts assisted recovery;
+  - the reversal survives the spring-loaded power lever returning to trim.
+
+The first four drive the model with hand-built command objects, which deliberately skips
+the input layer. The last one goes through `stepFlightInput` instead, because the thing it
+is guarding lives there.
 */
 
 import assert from 'node:assert/strict'
 import { MathUtils, Vector3 } from 'three'
 
 import f22 from '../src/aircraft/f22.js'
+import {
+  createFlightInputState,
+  stepFlightInput,
+} from '../src/features/flight/flightInput.js'
 import {
   FLIGHT_FIXED_STEP,
   createFlightState,
@@ -169,4 +178,63 @@ function stepFor(state, seconds, input, sample) {
   console.log(`RECOVERY interrupt=${state.psmPhase} aoa=${state.aoaDeg.toFixed(1)}°`)
 }
 
-console.log('PASS PSM control: hold, continuous flip, inertial reversal, player-owned recovery')
+/*
+The same reversal flown through the real input layer, with the pilot commanding a slow
+speed rather than a fast one. If the reversal depended on the speed control being pushed
+up, this is where that breaks. It does not: Shift drives the core through the MIL detent
+on its own, which is what makes the manoeuvre a burner decision rather than a
+speed-selector decision — and what lets the pilot enter it slow, as the manoeuvre requires.
+*/
+{
+  const state = createEntry(480)
+  const controls = createFlightInputState(480)
+  let released = false
+  let minVx = state.velocity.x
+  let maxVxAfterRelease = -Infinity
+
+  for (let t = 0; t < 6; t += FLIGHT_FIXED_STEP) {
+    controls.pressed.clear()
+    if (!released && state.psmPitchTravelDeg >= 168) released = true
+    if (released) {
+      controls.pressed.add('afterburner')
+    } else {
+      controls.pressed.add('maneuver-assist')
+      controls.pressed.add('pitch-up')
+    }
+
+    const input = stepFlightInput(controls, FLIGHT_FIXED_STEP, envelope, state.position.y)
+    stepFlight(state, {
+      pitch: input.pitch,
+      roll: input.roll,
+      yaw: input.yaw,
+      flaps: input.flaps,
+      throttle: input.throttle,
+      airBrake: input.airBrake,
+      accelerate: input.accelerate,
+      psmArm: input.psmArm,
+      afterburnerCommanded: input.afterburner,
+      burnerLevel: input.afterburner ? 1 : 0,
+    }, envelope, FLIGHT_FIXED_STEP)
+
+    if (released) {
+      minVx = Math.min(minVx, state.velocity.x)
+      maxVxAfterRelease = Math.max(maxVxAfterRelease, state.velocity.x)
+    }
+  }
+
+  assert.ok(released, 'Speed command: the entry must still reach the reversal point')
+  assert.equal(controls.commandSpeedKmh, 480,
+    'Speed command: the manoeuvre must not need the speed control touched at all')
+  assert.ok(controls.throttle < 1,
+    'Speed command: a slow command must leave the lever well off full power')
+  assert.ok(maxVxAfterRelease > 5, 'Speed command: old forward momentum must survive the turn')
+  assert.ok(minVx < -2,
+    `Speed command: reheat must reverse world velocity on its own (min ${minVx.toFixed(1)})`)
+
+  console.log(`SPEED COMMAND cmd=${controls.commandSpeedKmh.toFixed(0)}kmh`
+    + ` thr=${controls.throttle.toFixed(2)}`
+    + ` range=${maxVxAfterRelease.toFixed(1)}..${minVx.toFixed(1)} speed=${state.speedKmh.toFixed(0)}kmh`)
+}
+
+console.log('PASS PSM control: hold, continuous flip, inertial reversal, player-owned recovery,'
+  + ' reversal from a slow speed command')

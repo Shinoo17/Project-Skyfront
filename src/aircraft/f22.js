@@ -309,9 +309,17 @@ const f22 = {
     envelope: {
       idleThrottle: 0.42,
       minThrottle: 0.08,
-      // Arcade power lever: the player can dump or restore power quickly enough to make an
-      // energy decision inside a dogfight instead of waiting several seconds for the lever.
-      throttleRate: 0.62,
+      // W and S do not move a power lever, they name a speed: the pilot asks for 900 and
+      // the aircraft goes and gets 900. Power is derived from that number rather than
+      // selected directly, which is the whole arcade simplification — one control, one
+      // unit, and the same unit the HUD already shouts in.
+      //
+      // Per second of held key, and deliberately quick: this is the same authority the old
+      // power lever had, so a dogfight can still dump or restore its whole energy state in
+      // about a second and a half. Slowing it down makes the aircraft feel like it is
+      // arguing with the pilot, and the engine is already the thing that decides how fast
+      // the speed actually arrives — the command is only how fast it can be asked for.
+      commandKmhPerSecond: 1320,
       // S is one arcade slow-down intent. It lowers the power lever and opens enough brake
       // to be immediately readable without making a short throttle correction dump all of
       // the aircraft's energy. A committed pull promotes it to the full high-G brake.
@@ -628,6 +636,50 @@ const f22 = {
         postStallSideForceFactor: 0.35,
         airBrakeDrag: 12,
         flapsDrag: 4,
+
+        /*
+        High-G turn. The other half of the two-button arcade scheme, and deliberately not
+        the same half as the block below it.
+
+        This is a max-performance *aerodynamic* turn: the FCC is allowed a faster pitch
+        rate, a higher structural G ceiling, a slightly wider alpha fence and a quicker
+        roll into the turn — and it is billed for all of it in induced drag. Nothing here
+        touches `envelopeOpen`, the post-stall alpha limit, or the PSM state machine, so
+        holding Space can never produce a Cobra.
+
+        `aoaLimitDeg` is the number that keeps the regimes apart. It sits just under
+        `stallAoADeg`, which means a maximum high-G pull leaves the wing flying: the nose
+        stays near the flight path, `postStallActive` stays false, and the HUD never labels
+        a hard turn as post-stall. The turn rate is bought with pitch rate and G, not with
+        separation.
+        */
+        highGTurn: {
+          capable: true,
+          // Structural ceilings while the trigger is held. The pitch rate is what the pilot
+          // feels at fighting speed; the G ceiling is what binds once fast enough that the
+          // load factor, not the rate loop, is the limit.
+          pitchRateDeg: 96,
+          rollRateDeg: 155,
+          maxG: 12,
+          aoaLimitDeg: 25.5,
+          // Induced drag surcharge on top of the alpha the harder pull is already making.
+          // The alpha term alone is worth roughly a third of the bleed; this is what makes
+          // a sustained high-G turn a decision rather than a free upgrade.
+          dragMultiplier: 2.2,
+          /*
+          Energy gate. A wing with no dynamic pressure cannot make a high-G turn, and
+          without this the pitch-rate ceiling would be the only lever still active down
+          there — which is a slow aircraft spinning on the spot, i.e. the thing Alt is for.
+          Below `lowEnergyKmh` the trigger is worth `lowEnergyAuthority` of itself.
+          */
+          lowEnergyKmh: 300,
+          fullEnergyKmh: 640,
+          lowEnergyAuthority: 0.22,
+          // Blended in and out rather than switched, so the turn tightens and eases instead
+          // of stepping. Release is slower than engage: energy already spent stays spent.
+          engageResponse: 6,
+          releaseResponse: 4,
+        },
 
         /*
         Explicit arcade PSM assist. This block is aircraft-owned: another manifest may omit

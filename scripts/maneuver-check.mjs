@@ -108,12 +108,16 @@ const SPAWN_Y = Number(spawnArg ?? OBSERVED_SPAWN_Y)
 function fly(timeline, { throttle: entryThrottle, onSample }) {
   const state = createFlightState()
   const reheat = createAfterburnerState()
-  const controls = createFlightInputState(entryThrottle)
+  // Scripts are still calibrated by entry throttle, because that is what the band notes
+  // above are written in. The control the pilot actually holds is a speed, so convert once
+  // here: the map is linear both ways, so the round trip hands back this exact throttle.
+  const entrySpeedKmh = readTargetAirspeedKmh(entryThrottle, SPAWN_Y, 0, envelope)
+  const controls = createFlightInputState(entrySpeedKmh)
 
   resetFlightState(
     state,
     new Vector3(-260, SPAWN_Y, 0),
-    readTargetAirspeedKmh(entryThrottle, SPAWN_Y, 0, envelope),
+    entrySpeedKmh,
     envelope,
     entryThrottle,
   )
@@ -145,7 +149,7 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
       clearAnalogFlightInput(controls, SCRIPT_ANALOG_SOURCE)
     }
     for (let frame = 0; frame < Math.round(step.seconds / FRAME); frame += 1) {
-      const input = stepFlightInput(controls, FRAME, envelope)
+      const input = stepFlightInput(controls, FRAME, envelope, state.position.y)
       const burnerRequested = input.afterburner
       const burner = stepAfterburner(
         reheat,

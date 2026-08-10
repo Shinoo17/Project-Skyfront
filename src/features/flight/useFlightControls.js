@@ -8,17 +8,22 @@ import {
 
 export {
   FLIGHT_BINDINGS,
+  clampCommandSpeedKmh,
   clearAnalogFlightInput,
   createFlightInputState,
   readAccelerate,
   readAfterburnerCommand,
   readAirBrake,
   readAxes,
+  readCommandSpeedLimits,
+  readDecelerate,
+  readHighG,
   readPsmArm,
   readThrottleDirection,
   releaseFlightInput,
   resetFlightInput,
   setAnalogFlightInput,
+  setCommandSpeedKmh,
   stepFlightInput,
 } from './flightInput'
 
@@ -32,7 +37,7 @@ Holds pilot input in a ref rather than React state: the render loop reads it eve
 frame, and a dogfight will read two of these per frame. Only the surfaces that show
 input in the DOM re-render, and they do it from onChange.
 
-  controls.current = { pressed: Set<controlName>, throttle: number }
+  controls.current = { pressed: Set<controlName>, commandSpeedKmh: number }
 
 Every binding is a held control, including the afterburner: the pilot holds it for as long
 as they want the burner, and releasing is what shuts it down. Nothing here latches.
@@ -47,14 +52,14 @@ the key that opens the menu is also the key that closes it.
 */
 export default function useFlightControls({
   bindings = FLIGHT_BINDINGS,
-  throttle = 0,
+  commandSpeedKmh = 0,
   onPress,
   onChange,
   keyActions,
   paused = false,
 } = {}) {
   const controls = useRef(null)
-  if (!controls.current) controls.current = createFlightInputState(throttle)
+  if (!controls.current) controls.current = createFlightInputState(commandSpeedKmh)
   const handlers = useRef({})
   handlers.current = { onPress, onChange, keyActions }
 

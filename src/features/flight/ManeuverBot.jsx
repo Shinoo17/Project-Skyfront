@@ -2,7 +2,12 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 
 import { createBotStatus } from './botStatus'
-import { clearAnalogFlightInput, setAnalogFlightInput } from './flightInput'
+import { readTargetAirspeedKmh } from './performance'
+import {
+  clearAnalogFlightInput,
+  setAnalogFlightInput,
+  setCommandSpeedKmh,
+} from './useFlightControls'
 
 /*
 An autopilot that flies a script through the pilot's own input layer.
@@ -17,9 +22,9 @@ reads them in the same frame, and it never calls `setState` from that loop excep
 the surface for a reset. Progress goes into `status`, a plain ref the panel reads from its
 own animation frame.
 
-A run is: set the entry throttle, ask for a reset (the aircraft respawns at whatever speed
-that throttle holds, so every run starts identically), wait for the reset to land, settle,
-then walk the steps. A reset the bot did not ask for — the range floor, the range edge, the
+A run is: command the entry speed, ask for a reset (the aircraft respawns already flying
+it, so every run starts identically), wait for the reset to land, settle, then walk the
+steps. A reset the bot did not ask for — the range floor, the range edge, the
 ceiling — restarts the script rather than leaving it flying a timeline against a state that
 no longer matches it.
 */
@@ -48,6 +53,8 @@ export default function ManeuverBot({
   telemetry,
   status,
   loop = false,
+  envelope,
+  spawn = null,
   onRequestReset,
   onFinished,
 }) {
@@ -110,7 +117,19 @@ export default function ManeuverBot({
     const flight = telemetry.current
 
     if (state.phase === 'arm') {
-      controls.current.throttle = maneuver.entry.throttle
+      // The bot holds the pilot's speed control, not a private throttle: it converts the
+      // script's authored entry throttle into the speed that throttle holds at the spawn
+      // altitude, and the reset then respawns the aircraft already flying it.
+      setCommandSpeedKmh(
+        controls.current,
+        readTargetAirspeedKmh(
+          maneuver.entry.throttle,
+          spawn?.y ?? telemetry.current.altitude,
+          0,
+          envelope,
+        ),
+        envelope,
+      )
       releaseControls(controls)
       state.previousSinceReset = flight.sinceReset
       state.waited = 0

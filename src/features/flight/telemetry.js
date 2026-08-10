@@ -31,6 +31,10 @@ export const EMPTY_TELEMETRY = {
   stallBlend: 0,
   postStallBlend: 0,
   postStallActive: false,
+  // How much of the max-performance turn is engaged, 0..1. A different control and a
+  // different regime from `psmBlend` below: this one stays inside the conventional
+  // envelope and pays for itself in drag.
+  highGBlend: 0,
   flightRegime: 'normal',
   departureBlend: 0,
   // Explicit arcade PSM state. `high-aoa` is the Maneuver Assist consent phase;
@@ -94,6 +98,7 @@ export const EMPTY_TELEMETRY = {
   forwardSpeed: 0,
   backwardFlight: false,
   throttle: 0,
+  commandSpeed: 0,
   verticalSpeed: 0,
 }
 

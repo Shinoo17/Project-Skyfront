@@ -22,9 +22,11 @@ import SceneErrorBoundary from '../ui/SceneErrorBoundary'
 import useFullscreen from '../ui/useFullscreen'
 import { resolveLoadout } from '../weapons'
 
-// The shared range mapping puts Maneuver Assist on Space. The hangar has no PSM and owns
-// Space as playback/direct-flight escape, so leave that one code to `keyActions` below.
-const VIEWER_FLIGHT_BINDINGS = { ...FLIGHT_BINDINGS, Space: undefined }
+// The shared range mapping puts the high-G turn on Space and Maneuver Assist on Left Alt.
+// The hangar has neither — it has no flight model to ask them of — and it owns Space as its
+// playback/direct-flight escape, so both codes are dropped here: Space goes to `keyActions`
+// below, and Alt is left to the browser rather than being swallowed for nothing.
+const VIEWER_FLIGHT_BINDINGS = { ...FLIGHT_BINDINGS, Space: undefined, AltLeft: undefined }
 
 export default function ViewerRoute({ aircraftId }) {
   const aircraft = getAircraft(aircraftId)

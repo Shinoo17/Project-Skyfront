@@ -17,6 +17,7 @@ import {
   Flame,
   Gauge,
   Minus,
+  Orbit,
   Plus,
   RotateCcw,
   RotateCw,
@@ -26,6 +27,8 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { createFlightHud } from './hud'
+import { readCommandSpeedLimits, setCommandSpeedKmh } from '../flight/useFlightControls'
+import { readDryCeilingKmh } from '../flight/performance'
 import { EMPTY_TELEMETRY } from '../flight/telemetry'
 
 const RESET_CAPTIONS = {
@@ -102,6 +105,12 @@ function readAdvisory(telemetry) {
   // and calling the regime is the cheapest feedback the range can give.
   const maneuver = MANEUVER_CAPTIONS[telemetry.maneuver]
   if (maneuver) return { key: `mnv-${telemetry.maneuver}`, label: maneuver, tone: 'caution' }
+  // The max-performance turn, named while it is being flown. It ranks below the manoeuvre
+  // captions because it cannot happen at the same time as any of them, and it says what it
+  // costs: the whole point of the control is that the pilot is spending energy for rate.
+  if (telemetry.highGBlend > 0.5) {
+    return { key: 'high-g', label: 'HIGH-G TURN · ENERGY BLEED', tone: 'caution' }
+  }
   if (telemetry.flaps) return { key: 'flaps', label: 'FLAPS DOWN', tone: 'caution' }
   return { key: 'clear', label: 'FLIGHT PATH CLEAR', tone: 'normal' }
 }
@@ -197,7 +206,8 @@ function formatDebug(value) {
   const row = (label, text) => `${label.padEnd(9)}${text}`
   return [
     'FLIGHT DEBUG',
-    row('SPD', `${value.speed.toFixed(0)} km/h  M${value.mach.toFixed(2)}`),
+    row('SPD', `${value.speed.toFixed(0)} km/h  M${value.mach.toFixed(2)}`
+      + `  CMD ${value.commandSpeed.toFixed(0)}`),
     row('FWD', `${value.forwardSpeed.toFixed(0)} km/h  ${value.flightRegime}`),
     row('ALT', `${value.altitude.toFixed(0)}  V/S ${value.verticalSpeed.toFixed(1)}`),
     row('AOA', `${value.aoa.toFixed(1)}°  SLIP ${value.sideslip.toFixed(1)}°`),
@@ -206,6 +216,7 @@ function formatDebug(value) {
     row('THR', `${Math.round(value.throttle * 100)}%  A/B ${value.afterburnerState}`),
     row('TVC', `${value.thrustVector.toFixed(1)}°`),
     row('STALL', `${Math.round(value.postStallBlend * 100)}%${value.airBrake ? ' +brake' : ''}`),
+    row('HI-G', `${Math.round(value.highGBlend * 100)}%`),
     row('PSM', `${value.psmPhase} ${Math.round(value.psmBlend * 100)}%`
       + ` float ${Math.round(value.psmFloatBlend * 100)}% g×${value.gravityScale.toFixed(2)}`),
     row('DEPART', `${Math.round(value.departureBlend * 100)}%`),
@@ -233,6 +244,9 @@ export default function FlightHud({
   variant = 'cockpit',
 }) {
   const glassOnly = variant === 'glass'
+  // The widest band the selector ever spans. Its live `max` is narrowed to the dry ceiling
+  // at the current altitude every frame; this is only the outer bound.
+  const commandSpeedLimits = readCommandSpeedLimits(envelope)
   const dom = useRef({})
   const [advisory, setAdvisory] = useState(() => readAdvisory(EMPTY_TELEMETRY))
   const advisoryKey = useRef(advisory.key)
@@ -301,9 +315,17 @@ export default function FlightHud({
         nodes.afterburner.classList.toggle('is-depleted', value.afterburnerState === 'depleted')
       }
       if (nodes.slider && document.activeElement !== nodes.slider) {
-        const rounded = Math.round(value.throttle * 100) / 100
+        const rounded = Math.round(value.commandSpeed / 10) * 10
         if (Number(nodes.slider.value) !== rounded) nodes.slider.value = String(rounded)
       }
+      // The selector tops out at the dry speed this altitude can actually hold, so its
+      // travel always means something. The stored command is left alone — only the range
+      // of the widget moves, and reheat is a separate burst past the end of it.
+      if (nodes.slider && value.live) {
+        const ceiling = String(Math.round(readDryCeilingKmh(value.altitude, envelope)))
+        if (nodes.slider.max !== ceiling) nodes.slider.max = ceiling
+      }
+      setText(nodes.commandSpeed, value.live ? value.commandSpeed.toFixed(0) : '–')
       if (nodes.debug) setText(nodes.debug, formatDebug(value))
     }
 
@@ -312,18 +334,20 @@ export default function FlightHud({
       window.cancelAnimationFrame(request)
       observer.disconnect()
     }
-  }, [telemetry])
+  }, [telemetry, envelope])
 
   useEffect(() => {
     const slider = dom.current.slider
     if (!slider) return undefined
 
-    const setThrottle = (event) => {
-      controls.current.throttle = Number(event.currentTarget.value)
+    // The slider names a speed, the same as W and S do. Nothing here touches the throttle:
+    // power is derived from the commanded speed every frame.
+    const setSpeed = (event) => {
+      setCommandSpeedKmh(controls.current, Number(event.currentTarget.value), envelope)
     }
-    slider.addEventListener('input', setThrottle)
-    return () => slider.removeEventListener('input', setThrottle)
-  }, [controls])
+    slider.addEventListener('input', setSpeed)
+    return () => slider.removeEventListener('input', setSpeed)
+  }, [controls, envelope])
 
   return (
     <div
@@ -403,6 +427,17 @@ export default function FlightHud({
           </div>
 
           <div className="deck-row is-modes">
+            {/* The two flight-action keys, side by side because the difference between them
+                is the thing the pilot has to learn: HI-G turns as hard as the wing can,
+                MNV consents to leaving the wing behind. */}
+            <HoldControl
+              control="high-g"
+              label="Hold for a high-G turn"
+              icon={Orbit}
+              controls={controls}
+            >
+              HI-G
+            </HoldControl>
             <HoldControl
               control="maneuver-assist"
               label="Hold for maneuver assist"
@@ -429,26 +464,31 @@ export default function FlightHud({
 
           <div className="deck-throttle">
             <div className="deck-throttle-head">
-              <span><Gauge size={14} strokeWidth={1.9} /> THROTTLE</span>
+              <span><Gauge size={14} strokeWidth={1.9} /> SPEED</span>
+              {/* The commanded number in words, and the power serving it as a bar. The
+                  pilot flies the number; the bar is only there to show what it costs. */}
+              <span className="deck-command-speed">
+                <b ref={(node) => { dom.current.commandSpeed = node }}>–</b> km/h
+              </span>
               <div className="deck-thrust" ref={(node) => { dom.current.throttleFill = node }} aria-hidden="true">
                 <i />
               </div>
             </div>
             <div className="deck-throttle-row">
-              <HoldControl control="throttle-down" label="Slow down with air brake" icon={Minus} controls={controls}>
+              <HoldControl control="throttle-down" label="Ask for less speed and open the air brake" icon={Minus} controls={controls}>
                 Slow
               </HoldControl>
               <input
                 type="range"
-                min={envelope.minThrottle}
-                max="1"
-                step="0.01"
-                defaultValue={envelope.idleThrottle}
+                min={commandSpeedLimits.min}
+                max={commandSpeedLimits.max}
+                step="10"
+                defaultValue={commandSpeedLimits.min}
                 ref={(node) => { dom.current.slider = node }}
-                aria-label="Flight throttle"
+                aria-label="Commanded airspeed in kilometres per hour"
               />
-              <HoldControl control="throttle-up" label="Increase throttle" icon={Plus} controls={controls}>
-                Power
+              <HoldControl control="throttle-up" label="Ask for more speed" icon={Plus} controls={controls}>
+                Fast
               </HoldControl>
             </div>
           </div>
@@ -459,7 +499,7 @@ export default function FlightHud({
         <kbd>↑</kbd><kbd>↓</kbd><span>pitch</span>
         <kbd>←</kbd><kbd>→</kbd><span>roll</span>
         <kbd>Q</kbd><kbd>E</kbd><span>yaw</span>
-        <kbd>W</kbd><kbd>S</kbd><span>power · slow / brake</span>
+        <kbd>W</kbd><kbd>S</kbd><span>faster / slower · S brakes</span>
         <kbd>SHIFT</kbd><span>afterburner</span>
         <kbd>SPACE</kbd><kbd>↑</kbd><span>maneuver</span>
         <kbd>C</kbd><kbd>ESC</kbd><span>camera · menu</span>

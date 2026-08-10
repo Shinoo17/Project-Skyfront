@@ -58,6 +58,33 @@ export function readTargetAirspeedKmh(throttle, altitude, reheat, envelope) {
   return lerp(dryTarget, readAfterburnerLimitKmh(altitudeMix, envelope), level)
 }
 
+// The dry ceiling the aircraft can actually hold at this altitude, which is what a speed
+// selector has to top out at. Reheat goes past it, but reheat is a burst the pilot spends
+// rather than a setting they park on, so it does not belong on the same control.
+export function readDryCeilingKmh(altitude, envelope) {
+  return readDryLimitKmh(readAltitudePerformance(altitude, envelope), envelope)
+}
+
+/*
+The inverse of the dry branch above, and the whole of the arcade speed control: the pilot
+names an airspeed, this turns it back into the power setting that holds it, and the flight
+model never learns that anything changed. Both directions are linear in `power`, so the
+round trip is exact — seeding a command from `idleThrottle` gives `idleThrottle` back.
+
+It is feedforward, not a speed hold, and that is deliberate. A hard turn bills induced and
+brake drag the power lever never hears about, so the aircraft bleeds below the commanded
+number and has to be flown back up to it. That bleed is the energy game; closing a loop
+around it would hand the player their speed back for free.
+*/
+export function readThrottleForAirspeedKmh(speedKmh, altitude, envelope) {
+  const { performance } = envelope
+  const ceiling = readDryCeilingKmh(altitude, envelope)
+  const power = clamp01(
+    (speedKmh - performance.minKmh) / Math.max(ceiling - performance.minKmh, 1),
+  )
+  return envelope.minThrottle + (power * (1 - envelope.minThrottle))
+}
+
 /*
 Propulsion and drag are deliberately separate. Core power owns dry thrust, reheat adds
 augmented thrust, and neither vanishes because the aircraft crossed a target speed. The

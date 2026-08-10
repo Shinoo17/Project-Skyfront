@@ -211,6 +211,10 @@ export default function DevFlightScene({
           telemetry={telemetry}
           status={botStatus}
           loop={botLoop}
+          // Scripts are authored by entry throttle; the control the bot actually holds is a
+          // speed, so it needs the envelope and the spawn altitude to convert between them.
+          envelope={aircraft.flight.envelope}
+          spawn={spawn}
           onRequestReset={onRequestReset}
         />
       )}

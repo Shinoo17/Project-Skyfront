@@ -38,6 +38,20 @@ envelope, and pitch-down requests recovery. It changes available rate authority 
 modifiers; it never writes orientation or velocity, so the nose and flight path remain
 independent.
 
+Above the aerodynamics and beside that state machine sits the second pilot intent, and the
+two are kept apart on purpose:
+
+  highG    everything the conventional envelope has — faster pitch rate, a higher G
+           ceiling, an alpha fence that still stops short of the stall, and an induced-drag
+           bill several times the ordinary one. The wing is flying throughout.
+  psmArm   consent to leave that envelope: the post-stall alpha limit, the nozzle-fed rate
+           authority, and the phases that go with them.
+
+`highGBlend` and `psmBlend` are therefore separate numbers with separate consumers.
+`envelopeOpen` — the one door to post-stall authority — reads `psmBlend` and never
+`highGBlend`, which is what makes "hold Space and pull" a hard turn rather than a Cobra no
+matter how long it is held or how slow the aircraft gets.
+
 Unassisted high-AoA control still reads two continuous numbers every step:
 
   thinAir      how little the airstream can still enforce, from dynamic pressure alone
@@ -220,6 +234,42 @@ function stepPsmAssist(state, command, tuning, dt) {
   state.psmBlend = approach(state.psmBlend, target, response, dt)
 }
 
+/*
+The High-G trigger, resolved to one continuous blend before any force is computed.
+
+It is a request, an energy gate, and a first-order chase — nothing else. What the blend
+then buys lives entirely inside the conventional envelope: a faster pitch rate, a higher G
+ceiling, an alpha fence that stays below the stall, a quicker roll, and a much larger
+induced-drag bill. It is deliberately never mixed into `envelopeOpen`, which is the only
+door to post-stall authority, so Space cannot open what Alt is for.
+
+An armed PSM owns the pitch axis outright, so the trigger stands down there rather than
+having two assists bidding for the same axis. Releasing Alt hands the blend straight back,
+on the same smooth chase everything else here uses.
+*/
+function stepHighG(state, command, tuning, dt) {
+  const highG = tuning.highGTurn
+  if (!highG?.capable) {
+    state.highGBlend = approach(state.highGBlend, 0, 5, dt)
+    return
+  }
+
+  // Low energy is exactly where a turn stops being available, and exactly where an
+  // ungated rate ceiling would start looking like a jet pivoting on the spot.
+  const energy = MathUtils.lerp(
+    highG.lowEnergyAuthority,
+    1,
+    smooth01(
+      (state.speedKmh - highG.lowEnergyKmh)
+        / Math.max(highG.fullEnergyKmh - highG.lowEnergyKmh, 1),
+    ),
+  )
+  const psmOwnsPitch = isControlledPsmPhase(state.psmPhase) || state.psmPhase === 'recovery'
+  const target = command.highG && !psmOwnsPitch ? energy : 0
+  const response = target > state.highGBlend ? highG.engageResponse : highG.releaseResponse
+  state.highGBlend = approach(state.highGBlend, target, response, dt)
+}
+
 export function createFlightState() {
   return {
     position: new Vector3(),
@@ -257,6 +307,11 @@ export function createFlightState() {
     stallBlend: 0,
     postStallBlend: 0,
     postStallActive: false,
+    // How far into the max-performance turn the aircraft is, 0..1. This is the High-G
+    // trigger after the energy gate and the engage/release blend, and it is deliberately a
+    // separate number from `psmBlend`: one widens the conventional envelope, the other
+    // opens the post-stall one, and nothing lets the first become the second.
+    highGBlend: 0,
     // Read-only descriptions for telemetry. Physics remains continuously blended and does
     // not branch on this label.
     flightRegime: 'normal',
@@ -329,6 +384,7 @@ export function resetFlightState(
   state.stallBlend = 0
   state.postStallBlend = 0
   state.postStallActive = false
+  state.highGBlend = 0
   state.flightRegime = 'normal'
   state.departureBlend = 0
   state.departurePhase = 0
@@ -446,8 +502,14 @@ function liftShape(alphaRad, tuning) {
 One fixed step. `command` is the resolved pilot intent:
 
   { pitch, roll, yaw: -1..1, throttle: 0..1, flaps: 0..1,
-    airBrake: 0..1, accelerate: boolean, psmArm: boolean,
+    airBrake: 0..1, accelerate: boolean, decelerate: boolean,
+    highG: boolean, psmArm: boolean,
     afterburnerCommanded: boolean, burnerLevel: 0..1 }
+
+`highG` and `psmArm` are the two intent flags and they mean different things. `highG` asks
+for everything the conventional envelope has — rate, G, alpha up to just short of the
+stall — and pays for it in induced drag. `psmArm` is consent to leave that envelope
+altogether. A player, a gamepad, or the bot publishes the same object either way.
 
 Returns nothing; mutates `state` in place.
 */
@@ -475,6 +537,7 @@ export function stepFlight(state, command, envelope, dt) {
   const speed = state.velocity.length()
   state.speedKmh = speed / toWorld
   stepPsmAssist(state, command, tuning, dt)
+  stepHighG(state, command, tuning, dt)
 
   state.orientation.normalize()
   inverseOrientation.copy(state.orientation).invert()
@@ -700,8 +763,19 @@ export function stepFlight(state, command, envelope, dt) {
   // structural pitch rate, while down where the nozzles are doing the work there is very
   // little inertia in the airstream resisting them. This is what used to require a Cobra
   // speed window and an entry latch to reach.
-  const maxPitchRate = MathUtils.degToRad(MathUtils.lerp(
+  //
+  // High-G raises the *conventional* ceiling underneath that interpolation and nothing
+  // else. At fighting speed this is the lever the pilot actually feels — the G fence below
+  // does not bite until well past it — and it is the whole of "turn harder": a higher
+  // sustained body rate is a higher turn rate and a smaller radius at the same speed.
+  const highG = tuning.highGTurn
+  const conventionalPitchRateDeg = MathUtils.lerp(
     envelope.pitchRate,
+    highG?.pitchRateDeg ?? envelope.pitchRate,
+    state.highGBlend,
+  )
+  const maxPitchRate = MathUtils.degToRad(MathUtils.lerp(
+    conventionalPitchRateDeg,
     tuning.postStallPitchRateDeg,
     envelopeOpen,
   ))
@@ -722,8 +796,11 @@ export function stepFlight(state, command, envelope, dt) {
   `envelopeOpen` everything else here reads: at fighting speed it is the structural limit and
   it bites, and it stops applying exactly where it stops describing anything.
   */
+  // High-G spends structural margin, so it raises the load factor the fence allows. This
+  // is the binding constraint at high speed, where the rate ceiling above is not.
+  const maxGLoad = MathUtils.lerp(tuning.maxG, highG?.maxG ?? tuning.maxG, state.highGBlend)
   const gLimitRate = MathUtils.lerp(
-    (tuning.maxG * gravity) / Math.max(speed, 10),
+    (maxGLoad * gravity) / Math.max(speed, 10),
     maxPitchRate,
     envelopeOpen,
   )
@@ -750,8 +827,21 @@ export function stepFlight(state, command, envelope, dt) {
     tuning.performanceAoALimitDeg,
     commitment,
   )
+  /*
+  High-G widens the protected fence, and the ceiling it widens to is the line between the
+  two regimes. `highGTurn.aoaLimitDeg` sits just under `stallAoADeg`, so a maximum
+  high-G pull still has a flying wing: alpha rises, induced drag rises with its square,
+  the nose stays close to the flight path, and `postStallActive` never latches. Anything
+  past the stall belongs to Maneuver Assist and arrives through `envelopeOpen`, which this
+  term is deliberately not part of.
+  */
+  const highGAoALimit = MathUtils.lerp(
+    tuning.stallProtectionAoALimitDeg,
+    highG?.aoaLimitDeg ?? tuning.stallProtectionAoALimitDeg,
+    state.highGBlend,
+  )
   const protectedConventionalLimit = psm?.capable
-    ? Math.min(conventionalLimit, tuning.stallProtectionAoALimitDeg)
+    ? Math.min(conventionalLimit, highGAoALimit)
     : conventionalLimit
   // Aircraft without a flip capability retain their configured controlled-AoA fence.
   // Flip-capable aircraft bypass this fence below while deliberate PSM owns pitch, allowing
@@ -926,9 +1016,16 @@ export function stepFlight(state, command, envelope, dt) {
   // Thin air alone, never `envelopeOpen`: commitment is a reading of the *pitch* stick, and
   // the roll rate the airframe can hold has nothing to do with how hard the pilot is
   // pulling. `rollAuthority` above already sheds the rest of it against alpha.
+  // High-G raises the conventional roll ceiling as well: a turn is a bank before it is a
+  // pull, and a max-performance turn that took the ordinary time to roll into would spend
+  // its first half-second going the wrong way.
   let rollCmd = state.input.roll
     * MathUtils.degToRad(MathUtils.lerp(
-      envelope.rollRate,
+      MathUtils.lerp(
+        envelope.rollRate,
+        highG?.rollRateDeg ?? envelope.rollRate,
+        state.highGBlend,
+      ),
       tuning.postStallRollRateDeg,
       thinAir,
     ))
@@ -1170,9 +1267,20 @@ export function stepFlight(state, command, envelope, dt) {
     ? Math.sin(alphaAbs)
     : MathUtils.lerp(1, tuning.beyondBeamDragFactor, beamBlend)
   const sinBeta = Math.sin(Math.abs(betaRad))
+  /*
+  The High-G bill, and the reason the trigger is a decision rather than a free upgrade.
+
+  The harder pull already costs more by itself — alpha is higher and this term is squared
+  in it — but at arcade thrust levels that alone is a bleed the pilot can ignore. The
+  surcharge is billed on the same induced-drag term, against the same measured alpha, so
+  it rises and falls with how hard the turn actually is: rolling wings-level with the
+  trigger still held costs nothing extra, and a maximum pull costs several times what the
+  same pull costs without it.
+  */
   dragMag += qFactor * (
     (tuning.aoaDragGain * sinAlpha * sinAlpha
       * MathUtils.lerp(1, tuning.postStallDragMultiplier, postStallBlend)
+      * MathUtils.lerp(1, highG?.dragMultiplier ?? 1, state.highGBlend)
       * MathUtils.lerp(1, psm?.dragMultiplier ?? 1, state.psmBlend))
     + (tuning.sideslipDragGain * sinBeta * sinBeta)
     + (tuning.airBrakeDrag * command.airBrake)
@@ -1222,11 +1330,17 @@ export function stepFlight(state, command, envelope, dt) {
   )
   state.postStallBlend = postStallBlend
   state.postStallActive = alphaDeg > tuning.stallAoADeg
+  // The named progression, read off the physics rather than driving it: normal flight, the
+  // max-performance turn, the approach to the stall, and past it. `high-g` sits below
+  // `high-aoa` because it is still an ordinary flying wing — it only says the pilot has
+  // asked for everything the conventional envelope has.
   state.flightRegime = state.postStallActive
     ? 'post-stall'
     : state.stallBlend > 0
       ? 'high-aoa'
-      : 'normal'
+      : state.highGBlend > 0.5
+        ? 'high-g'
+        : 'normal'
 
   // Refresh signed axial speed from the newly integrated velocity. This is the value the
   // HUD and next step's maneuver detector see.
