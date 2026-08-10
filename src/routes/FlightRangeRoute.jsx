@@ -12,6 +12,11 @@ import { useNavigate } from 'react-router-dom'
 import FlightHud from '../features/flight-range/FlightHud'
 import FlightRangeScene from '../features/flight-range/FlightRangeScene'
 import PauseMenu from '../features/flight-range/PauseMenu'
+import {
+  clearAnalogFlightInput,
+  readMouseFlightAxes,
+  setAnalogFlightInput,
+} from '../features/flight/flightInput'
 import useFlightSession from '../features/flight/useFlightSession'
 import {
   readFlightCameraDistance,
@@ -24,6 +29,8 @@ import SceneErrorBoundary from '../ui/SceneErrorBoundary'
 import { readFlightQuality, writeFlightQuality } from '../three/graphics'
 import useFullscreen from '../ui/useFullscreen'
 import { VIEWER_PATH } from './paths'
+
+const MOUSE_STICK_SOURCE = 'mouse-stick'
 
 export default function FlightRangeRoute() {
   const handleFullscreen = useFullscreen()
@@ -91,20 +98,47 @@ export default function FlightRangeRoute() {
     writeFlightCameraDistance(value)
   }, [])
 
+  const clearMouseFlightControl = useCallback(() => {
+    clearAnalogFlightInput(controls.current, MOUSE_STICK_SOURCE)
+  }, [controls])
+
+  const moveMouseFlightControl = useCallback((event) => {
+    // Touch owns the on-screen deck. A mouse over the world is an absolute virtual stick:
+    // where it sits relative to the centre is the command, so stopping the hand keeps the
+    // chosen deflection instead of silently centring the aircraft.
+    if (pausedRef.current
+      || event.pointerType === 'touch'
+      || freeLookPointer.current.id !== null) return
+    setAnalogFlightInput(
+      controls.current,
+      MOUSE_STICK_SOURCE,
+      readMouseFlightAxes(
+        event.clientX,
+        event.clientY,
+        event.currentTarget.getBoundingClientRect(),
+      ),
+    )
+  }, [controls])
+
   const beginFreeLook = useCallback((event) => {
-    const isOrbitButton = event.button === 0 || event.button === 2
-    if (pausedRef.current || !isOrbitButton) return
+    // Right drag is deliberately camera-only. Ordinary pointer movement flies pitch and
+    // roll, while left click remains available to weapons without changing either system.
+    if (pausedRef.current || event.button !== 2) return
     event.preventDefault()
     freeLookPointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY }
+    clearAnalogFlightInput(controls.current, MOUSE_STICK_SOURCE)
     // Deliberately not zeroed here. The camera owns the return, and re-seeds these from the
     // angle actually on screen; zeroing them would snap a re-grab back to the chase pose.
     controls.current.cameraLook.active = true
     event.currentTarget.setPointerCapture(event.pointerId)
   }, [controls])
 
-  const moveFreeLook = useCallback((event) => {
+  const movePointer = useCallback((event) => {
     const pointer = freeLookPointer.current
-    if (pointer.id !== event.pointerId) return
+    if (pointer.id !== event.pointerId) {
+      moveMouseFlightControl(event)
+      return
+    }
     // Inverted on both axes: the drag carries the aircraft with the hand rather than
     // swinging the camera against it. The camera clamps the pitch it can actually use.
     const look = controls.current.cameraLook
@@ -114,7 +148,7 @@ export default function FlightRangeRoute() {
     ))
     pointer.x = event.clientX
     pointer.y = event.clientY
-  }, [controls])
+  }, [controls, moveMouseFlightControl])
 
   const endFreeLook = useCallback((event) => {
     if (freeLookPointer.current.id !== event.pointerId) return
@@ -130,10 +164,11 @@ export default function FlightRangeRoute() {
       <div
         className="flight-canvas-stage"
         onPointerDown={beginFreeLook}
-        onPointerMove={moveFreeLook}
+        onPointerMove={movePointer}
         onPointerUp={endFreeLook}
         onPointerCancel={endFreeLook}
         onLostPointerCapture={endFreeLook}
+        onPointerLeave={clearMouseFlightControl}
         onContextMenu={(event) => event.preventDefault()}
       >
         <SceneErrorBoundary>

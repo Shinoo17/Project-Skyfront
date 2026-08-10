@@ -100,7 +100,9 @@ const MANEUVERS = [
       { seconds: 0.25, hold: ['maneuver-assist'], label: 'PSM READY' },
       { seconds: 0.7, hold: ['maneuver-assist', 'pitch-up'], label: 'PULL' },
       { seconds: 0.65, hold: ['throttle-up'], label: 'HANG / POWER' },
-      { seconds: 0.9, hold: ['throttle-up', 'pitch-down'], label: 'NOSE DOWN' },
+      // The player PSM rate is now slower and stops closer to the beam, so recovery needs a
+      // shorter forward-stick sweep to avoid carrying the nose below the horizon.
+      { seconds: 0.75, hold: ['throttle-up', 'pitch-down'], label: 'NOSE DOWN' },
       { seconds: 1.4, hold: ['throttle-up'], label: 'RECOVER' },
     ],
   },
@@ -124,7 +126,7 @@ const MANEUVERS = [
       { seconds: 1.0, hold: ['yaw-right', 'throttle-up'], label: 'PEDAL IN' },
       // Recovery is deliberately rate-limited, so keep the stick forward through the smooth
       // sweep instead of relying on a short pulse to snap the nose back onto the flight path.
-      { seconds: 1.2, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
+      { seconds: 0.95, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
       { seconds: 1.15, hold: [], label: 'RECOVER' },
     ],
   },

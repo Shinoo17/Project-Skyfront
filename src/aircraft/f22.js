@@ -442,8 +442,10 @@ const f22 = {
         negativeAoAFactor: 0.55,
 
         // The nose has to beat the flight path to deep AoA, not merely lead it: what
-        // separates a Cobra from a hard pull is the ratio between the two rates.
-        postStallPitchRateDeg: 210,
+        // separates a Cobra from a hard pull is the ratio between the two rates. 180 keeps
+        // that separation while giving the pilot a wider window to stop near 90 or 180
+        // degrees before committing to a full 360-degree Kulbit.
+        postStallPitchRateDeg: 180,
         // The nose has to be able to come round the flight path as well as over it, or a
         // Cobra is a pose rather than a way of pointing the aircraft somewhere. 60 was the
         // rate a wing that had stopped flying could still ask for; this is the rate the

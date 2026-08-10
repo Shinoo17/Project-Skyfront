@@ -60,6 +60,15 @@ export const FLIGHT_BINDINGS = {
 
 const AXES = ['pitch', 'roll', 'yaw']
 
+// The canvas is a virtual flight stick. The first few percent around its centre are quiet,
+// then the curve opens progressively: small wrist movements trim the flight path while a
+// deliberate move toward an edge can still command the full airframe. The reach is a share
+// of the whole viewport rather than of one half, so 39% puts full deflection comfortably
+// inside either edge without making the centre nervous.
+const MOUSE_STICK_DEAD_ZONE = 0.08
+const MOUSE_STICK_REACH = 0.39
+const MOUSE_STICK_EXPO = 1.35
+
 const RESPONSE = {
   pitch: { engage: 4.6, release: 7.5 },
   roll: { engage: 5.5, release: 8.5 },
@@ -70,6 +79,30 @@ const RESPONSE = {
 
 function clampAxis(value) {
   return Math.max(-1, Math.min(1, Number(value) || 0))
+}
+
+function shapeMouseAxis(value) {
+  const clamped = clampAxis(value)
+  const magnitude = Math.abs(clamped)
+  if (magnitude <= MOUSE_STICK_DEAD_ZONE) return 0
+  const live = (magnitude - MOUSE_STICK_DEAD_ZONE) / (1 - MOUSE_STICK_DEAD_ZONE)
+  return Math.sign(clamped) * (live ** MOUSE_STICK_EXPO)
+}
+
+// Translate an absolute pointer position into the same analogue stick axes a gamepad or bot
+// publishes. Up is positive pitch and right is positive roll. Keeping this calculation in
+// the device-neutral layer makes it testable and, more importantly, keeps the route from
+// inventing a second control path around `stepFlightInput`.
+export function readMouseFlightAxes(clientX, clientY, bounds = {}) {
+  const width = Math.max(Number(bounds.width) || 0, 1)
+  const height = Math.max(Number(bounds.height) || 0, 1)
+  const centreX = (Number(bounds.left) || 0) + (width * 0.5)
+  const centreY = (Number(bounds.top) || 0) + (height * 0.5)
+  return {
+    pitch: shapeMouseAxis((centreY - clientY) / (height * MOUSE_STICK_REACH)),
+    roll: shapeMouseAxis((clientX - centreX) / (width * MOUSE_STICK_REACH)),
+    yaw: 0,
+  }
 }
 
 function moveToward(current, target, amount) {

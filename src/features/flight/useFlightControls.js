@@ -18,6 +18,7 @@ export {
   readCommandSpeedLimits,
   readDecelerate,
   readHighG,
+  readMouseFlightAxes,
   readPsmArm,
   readThrottleDirection,
   releaseFlightInput,

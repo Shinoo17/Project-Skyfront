@@ -24,7 +24,7 @@ export default function FlightRangeScene({
   aircraftId,
   mapId,
   cameraMode = 'chase',
-  cameraStyle = 'normal',
+  cameraStyle = 'combat',
   cameraDistance = 'normal',
   debug = false,
   paused = false,

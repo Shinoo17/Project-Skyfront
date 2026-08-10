@@ -142,6 +142,10 @@ export default function PauseMenu({
                   <i aria-hidden="true">{option.detail}</i>
                 </button>
               ))}
+              <p className="pause-note">
+                Action holds the entry shot after PSM, then arcs behind the aircraft when
+                you press W. Move the mouse to fly; right-drag to free look.
+              </p>
             </div>
 
             <div className="pause-quality" role="group" aria-label="Chase camera distance">

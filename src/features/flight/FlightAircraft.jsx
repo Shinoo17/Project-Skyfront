@@ -72,7 +72,7 @@ export default function FlightAircraft({
   telemetry,
   chaseCamera,
   cameraMode = 'chase',
-  cameraStyle = 'normal',
+  cameraStyle = 'combat',
   cameraDistance = 'normal',
   paused = false,
 }) {
@@ -349,6 +349,7 @@ export default function FlightAircraft({
       distance: cameraDistance,
       cameraLook: controls.current.cameraLook,
       rearView: controls.current.pressed.has('rear-view'),
+      accelerateRequested: input.accelerate,
     })
 
     // Published every frame straight into the caller's ref. Nothing here calls setState:

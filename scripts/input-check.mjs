@@ -6,6 +6,7 @@ import {
   clearAnalogFlightInput,
   createFlightInputState,
   readCommandSpeedLimits,
+  readMouseFlightAxes,
   setAnalogFlightInput,
   setCommandSpeedKmh,
   stepFlightInput,
@@ -127,6 +128,42 @@ for (let frame = 0; frame < 10; frame += 1) step()
 assert.equal(input.intent.roll, 0.42, 'analogue roll must retain its requested magnitude')
 assert.equal(input.intent.pitch, -0.25, 'analogue pitch must retain its requested magnitude')
 clearAnalogFlightInput(input, 'test-stick')
+
+// The canvas mouse is another analogue stick, not a private rotation path. Its centre is
+// quiet, the axes have the same signs as the keyboard, and the authored curve preserves
+// fine control before reaching full authority near the edge.
+{
+  const bounds = { left: 100, top: 50, width: 1000, height: 800 }
+  assert.deepEqual(
+    readMouseFlightAxes(600, 450, bounds),
+    { pitch: 0, roll: 0, yaw: 0 },
+    'mouse at canvas centre must be a neutral stick',
+  )
+  assert.deepEqual(
+    readMouseFlightAxes(600, 50, bounds),
+    { pitch: 1, roll: 0, yaw: 0 },
+    'mouse up must command full positive pitch without yaw',
+  )
+  assert.deepEqual(
+    readMouseFlightAxes(1100, 450, bounds),
+    { pitch: 0, roll: 1, yaw: 0 },
+    'mouse right must command full positive roll without yaw',
+  )
+  assert.equal(
+    readMouseFlightAxes(625, 450, bounds).roll,
+    0,
+    'mouse stick must have a quiet dead zone around the centre',
+  )
+  const fine = readMouseFlightAxes(750, 350, bounds)
+  assert.ok(fine.pitch > 0 && fine.pitch < 0.5, 'mouse pitch curve must retain fine control')
+  assert.ok(fine.roll > 0 && fine.roll < 0.5, 'mouse roll curve must retain fine control')
+  setAnalogFlightInput(input, 'mouse-stick', fine)
+  for (let frame = 0; frame < 12; frame += 1) step()
+  assert.equal(input.intent.pitch, fine.pitch, 'mouse pitch must reach the shared flight intent')
+  assert.equal(input.intent.roll, fine.roll, 'mouse roll must reach the shared flight intent')
+  clearAnalogFlightInput(input, 'mouse-stick')
+  for (let frame = 0; frame < 12; frame += 1) step()
+}
 
 /*
 W and S name a speed. The three things that matter about that: the command holds where it

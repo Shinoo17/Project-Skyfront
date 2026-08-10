@@ -26,12 +26,16 @@ const FRAME = 1 / 60
 const FORWARD = new Vector3(1, 0, 0)
 const LOCAL_UP = new Vector3(0, 1, 0)
 
-function createAircraft() {
+function createAircraft(speed = 200) {
   return {
     position: new Vector3(0, 400, 0),
     orientation: new Quaternion(),
-    velocity: new Vector3(200, 0, 0),
+    velocity: new Vector3(speed, 0, 0),
     aoaDeg: 0,
+    highGBlend: 0,
+    psmBlend: 0,
+    psmPhase: 'normal',
+    input: { pitch: 0 },
   }
 }
 
@@ -57,8 +61,14 @@ function refreshAttitude(attitude, aircraft) {
   attitude.cross.crossVectors(attitude.levelUp, attitude.up)
 }
 
-function createRig({ mode = 'chase', style = 'normal', distance = 'normal', pitchDeg = 0 } = {}) {
-  const aircraft = createAircraft()
+function createRig({
+  mode = 'chase',
+  style = 'combat',
+  distance = 'normal',
+  pitchDeg = 0,
+  speed = 200,
+} = {}) {
+  const aircraft = createAircraft(speed)
   const attitude = createAttitude()
   const camera = new PerspectiveCamera(48, 16 / 9, 0.1, 20000)
   const chase = createChaseCameraState()
@@ -66,17 +76,19 @@ function createRig({ mode = 'chase', style = 'normal', distance = 'normal', pitc
   resetChaseCamera(chase, camera, aircraft)
   if (pitchDeg !== 0) {
     aircraft.orientation.setFromAxisAngle(new Vector3(0, 0, 1), MathUtils.degToRad(pitchDeg))
-    aircraft.velocity.copy(FORWARD).applyQuaternion(aircraft.orientation).multiplyScalar(200)
+    aircraft.velocity.copy(FORWARD).applyQuaternion(aircraft.orientation).multiplyScalar(speed)
   }
   refreshAttitude(attitude, aircraft)
 
-  const step = ({ bodyRate } = {}) => {
+  const step = ({ bodyRate, preserveVelocity = false, accelerateRequested = false } = {}) => {
     if (bodyRate) {
       aircraft.orientation
         .multiply(new Quaternion().setFromAxisAngle(bodyRate.axis, bodyRate.rate * FRAME))
         .normalize()
       refreshAttitude(attitude, aircraft)
-      aircraft.velocity.copy(FORWARD).applyQuaternion(aircraft.orientation).multiplyScalar(200)
+      if (!preserveVelocity) {
+        aircraft.velocity.copy(FORWARD).applyQuaternion(aircraft.orientation).multiplyScalar(speed)
+      }
     }
     aircraft.position.addScaledVector(aircraft.velocity, FRAME)
     updateChaseCamera(chase, camera, {
@@ -90,6 +102,7 @@ function createRig({ mode = 'chase', style = 'normal', distance = 'normal', pitc
       distance,
       cameraLook: look,
       rearView: false,
+      accelerateRequested,
     })
   }
 
@@ -425,9 +438,18 @@ for (let pitchDeg = -80; pitchDeg <= 80; pitchDeg += 10) {
 
 // ------------------------------------------------------------------ the camera options
 // Every option the pause menu offers has to resolve to a real profile, and the two axes
-// have to do what their labels claim: distance moves the camera out, action frames closer
-// through a wider lens.
+// have to do what their labels claim: distance moves the camera out, Combat keeps its
+// specified lens, and Action brings the aircraft materially closer with a calmer lens.
 {
+  assert.deepEqual(
+    FLIGHT_CAMERA_STYLE_OPTIONS.map(({ id, label }) => ({ id, label })),
+    [
+      { id: 'combat', label: 'Combat Chase' },
+      { id: 'action', label: 'Action' },
+    ],
+    'settings must expose exactly Combat Chase and Action',
+  )
+
   const distances = {}
   for (const option of FLIGHT_CAMERA_DISTANCE_OPTIONS) {
     const rig = createRig({ distance: option.id })
@@ -449,16 +471,198 @@ for (let pitchDeg = -80; pitchDeg <= 80; pitchDeg += 10) {
     }
   }
   assert.ok(
-    styles.action.radius < styles.normal.radius && styles.action.fov > styles.normal.fov,
-    `action must frame closer through a wider lens, got ${JSON.stringify(styles)}`,
+    styles.action.radius < styles.combat.radius * 0.78
+      && styles.action.fov <= styles.combat.fov,
+    `action must frame at least 22% closer without a wider lens, got ${JSON.stringify(styles)}`,
+  )
+
+  const combatBase = createRig({ style: 'combat', speed: 45 })
+  const actionBase = createRig({ style: 'action', speed: 45 })
+  settle(combatBase)
+  settle(actionBase)
+  assert.ok(
+    combatBase.camera.fov >= 68 && combatBase.camera.fov <= 72,
+    `Combat Chase base FOV must be 68-72 degrees, got ${combatBase.camera.fov}`,
+  )
+  assert.ok(
+    Math.abs(actionBase.camera.fov - 69) < 0.01,
+    `Action must settle on its authored 69 degree base lens, got ${actionBase.camera.fov}`,
   )
 
   // No storage here at all, which is the same shape as a browser in private mode: both
   // readers have to fall back rather than throw on the way to the range.
-  assert.equal(readFlightCameraStyle(), 'normal', 'camera style must fall back without storage')
+  assert.equal(readFlightCameraStyle(), 'combat', 'camera style must fall back without storage')
   assert.equal(
     readFlightCameraDistance(), 'normal', 'camera distance must fall back without storage',
   )
+
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => (key === 'f22-flight-camera-style' ? 'normal' : null),
+    },
+  }
+  assert.equal(
+    readFlightCameraStyle(),
+    'combat',
+    'the retired Normal preference must migrate to Combat Chase',
+  )
+  delete globalThis.window
+}
+
+// --------------------------------------------------------- Combat Chase is a flight frame
+// Nose and velocity are deliberately separated here. The camera's follow axis must land
+// between them, proving it does not merely copy the aircraft quaternion, while the bank
+// axis follows enough roll to show attitude without rolling the horizon one-for-one.
+{
+  const rig = createRig({ style: 'combat' })
+  settle(rig)
+  rig.aircraft.orientation.setFromAxisAngle(
+    new Vector3(0, 1, 0),
+    MathUtils.degToRad(70),
+  )
+  refreshAttitude(rig.attitude, rig.aircraft)
+  // Momentum continues along world +X while the nose yaws away from it.
+  for (let frame = 0; frame < 180; frame += 1) rig.step({ preserveVelocity: true })
+  const noseGap = MathUtils.radToDeg(rig.chase.followForward.angleTo(rig.attitude.forward))
+  const pathGap = MathUtils.radToDeg(rig.chase.followForward.angleTo(
+    new Vector3().copy(rig.aircraft.velocity).normalize(),
+  ))
+  assert.ok(
+    noseGap > 5 && pathGap > noseGap,
+    `Combat Chase must blend nose and velocity, got nose ${noseGap}° path ${pathGap}°`,
+  )
+
+  rig.aircraft.orientation.setFromAxisAngle(
+    new Vector3(1, 0, 0),
+    MathUtils.degToRad(60),
+  )
+  rig.aircraft.velocity.set(200, 0, 0)
+  refreshAttitude(rig.attitude, rig.aircraft)
+  rig.step({ preserveVelocity: true })
+  const bankFollow = MathUtils.radToDeg(rig.chase.followUp.angleTo(LOCAL_UP))
+  assert.ok(
+    bankFollow > 25 && bankFollow < 50,
+    `Combat Chase must follow roughly 50-70% of a 60° roll, got ${bankFollow}°`,
+  )
+}
+
+// ------------------------------------------------------------ Action holds the entry shot
+// A four-second PSM flip must happen inside one world-space camera angle. Position still
+// rides aircraft translation, but the relative offset, sightline, and horizon stay fixed.
+{
+  const rig = createRig({ style: 'action' })
+  settle(rig)
+  rig.aircraft.psmPhase = 'post-stall'
+  rig.aircraft.psmBlend = 1
+  rig.aircraft.input.pitch = 1
+  const entryOffset = new Vector3().subVectors(rig.camera.position, rig.aircraft.position)
+  const entryView = new Quaternion().copy(rig.camera.quaternion)
+  const fullFlip = { axis: new Vector3(0, 0, 1), rate: Math.PI / 2 }
+  let worstOffset = 0
+  let worstView = 0
+  for (let frame = 0; frame < 240; frame += 1) {
+    rig.step({ bodyRate: fullFlip, preserveVelocity: true })
+    worstOffset = Math.max(worstOffset, new Vector3()
+      .subVectors(rig.camera.position, rig.aircraft.position)
+      .distanceTo(entryOffset))
+    worstView = Math.max(worstView, rig.camera.quaternion.angleTo(entryView))
+  }
+  assert.equal(rig.chase.actionHeld, true, 'Action must stay held through a 360° PSM flip')
+  assert.ok(worstOffset < 1e-6, `Action offset must stay world-held, drifted ${worstOffset}`)
+  assert.ok(
+    worstView < 1e-6,
+    `Action sightline must not follow the nose through the flip, moved ${worstView}`,
+  )
+}
+
+// Releasing pitch and Alt after a half flip must leave the shot alone for a full five
+// seconds. W is the only flight-control handoff, and its return starts smoothly rather
+// than spending the first frame snapping toward the new tail position.
+{
+  const rig = createRig({ style: 'action' })
+  settle(rig)
+  rig.aircraft.psmPhase = 'post-stall-flip'
+  rig.aircraft.psmBlend = 1
+  rig.aircraft.input.pitch = 1
+  const halfFlip = { axis: new Vector3(0, 0, 1), rate: Math.PI / 2 }
+  for (let frame = 0; frame < 120; frame += 1) {
+    rig.step({ bodyRate: halfFlip, preserveVelocity: true })
+  }
+  const heldView = new Quaternion().copy(rig.camera.quaternion)
+  rig.aircraft.input.pitch = 0
+  rig.aircraft.psmPhase = 'cobra-hold'
+  let worstHeldView = 0
+  for (let frame = 0; frame < 120; frame += 1) {
+    rig.step({ preserveVelocity: true })
+    worstHeldView = Math.max(worstHeldView, heldView.angleTo(rig.camera.quaternion))
+  }
+  // Alt release / PSM completion is represented by the model returning to NORMAL. It must
+  // not be treated as camera intent: the shot remains where the player left it.
+  rig.aircraft.psmPhase = 'normal'
+  rig.aircraft.psmBlend = 0
+  for (let frame = 0; frame < 180; frame += 1) {
+    rig.step({ preserveVelocity: true })
+    worstHeldView = Math.max(worstHeldView, heldView.angleTo(rig.camera.quaternion))
+  }
+  assert.equal(rig.chase.actionHeld, true, 'Pitch/Alt release must keep Action held for 5s')
+  assert.equal(rig.chase.actionReturning, false, 'elapsed time must never return Action')
+  assert.ok(
+    worstHeldView < 1e-6,
+    `the held Action sightline must remain unchanged for 5s, moved ${worstHeldView}`,
+  )
+
+  rig.step({ preserveVelocity: true, accelerateRequested: true })
+  assert.equal(rig.chase.actionHeld, false, 'W acceleration must release the Action shot')
+  assert.equal(rig.chase.actionReturning, true, 'W must enter a smooth camera return')
+  assert.ok(
+    heldView.angleTo(rig.camera.quaternion) < MathUtils.degToRad(2),
+    'the first W-return frame must not snap toward the tail',
+  )
+  const returnStartRadius = rig.camera.position.distanceTo(rig.aircraft.position)
+  let nearestReturnRadius = returnStartRadius
+  for (let frame = 0; frame < 360; frame += 1) {
+    rig.step({ preserveVelocity: true })
+    nearestReturnRadius = Math.min(
+      nearestReturnRadius,
+      rig.camera.position.distanceTo(rig.aircraft.position),
+    )
+  }
+  assert.ok(
+    nearestReturnRadius > returnStartRadius * 0.72,
+    `Action return must orbit around the aircraft, not cut a chord through it: ${nearestReturnRadius}`,
+  )
+  assert.ok(
+    rig.camera.position.distanceTo(rig.chase.position) < 0.06,
+    'Action must settle back onto the live chase position',
+  )
+  assert.equal(rig.chase.actionReturning, false, 'Action return must finish cleanly')
+}
+
+// ------------------------------------------------------- manoeuvre buffet is intentionally calm
+// At full High-G/PSM blend the random positional buffet is reduced to 15% of its normal
+// amplitude. Pinning Math.random makes that camera-only feedback measurable.
+{
+  const savedRandom = Math.random
+  Math.random = () => 1
+  try {
+    const normal = createRig({ style: 'combat' })
+    const manoeuvring = createRig({ style: 'combat' })
+    settle(normal)
+    settle(manoeuvring)
+    normal.aircraft.aoaDeg = 55
+    manoeuvring.aircraft.aoaDeg = 55
+    manoeuvring.aircraft.highGBlend = 1
+    normal.step()
+    manoeuvring.step()
+    const ordinaryShake = normal.camera.position.distanceTo(normal.chase.position)
+    const calmShake = manoeuvring.camera.position.distanceTo(manoeuvring.chase.position)
+    assert.ok(
+      calmShake < ordinaryShake * 0.2,
+      `full-manoeuvre buffet must be strongly reduced, ${calmShake} vs ${ordinaryShake}`,
+    )
+  } finally {
+    Math.random = savedRandom
+  }
 }
 
 console.log('camera checks passed')

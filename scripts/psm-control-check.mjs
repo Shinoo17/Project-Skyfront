@@ -84,6 +84,8 @@ function stepFor(state, seconds, input, sample) {
   const holdDrift = Math.abs(state.psmPitchTravelDeg - releasedAt)
 
   assert.ok(sawHold, 'Cobra: releasing near the beam must enter COBRA_HOLD')
+  assert.ok(releasedAt >= 85 && releasedAt <= 115,
+    `Cobra: a 0.72s pull must leave a usable 90° stop window (travel ${releasedAt.toFixed(1)}°)`)
   assert.equal(sawRecovery, false, 'Cobra: elapsed time must never request recovery')
   assert.ok(holdDrift < 35, `Cobra: angular damping must hold attitude (drift ${holdDrift.toFixed(1)}°)`)
   assert.ok(Math.abs(MathUtils.radToDeg(state.angularVelocity.z)) < 8,

@@ -496,6 +496,7 @@ export default function FlightHud({
       </div>}
 
       {!glassOnly && <p className="deck-keymap">
+        <kbd>MOUSE</kbd><span>pitch / roll · right-drag view</span>
         <kbd>↑</kbd><kbd>↓</kbd><span>pitch</span>
         <kbd>←</kbd><kbd>→</kbd><span>roll</span>
         <kbd>Q</kbd><kbd>E</kbd><span>yaw</span>
