@@ -68,6 +68,8 @@ const AXES = ['pitch', 'roll', 'yaw']
 const MOUSE_STICK_DEAD_ZONE = 0.08
 const MOUSE_STICK_REACH = 0.39
 const MOUSE_STICK_EXPO = 1.35
+const MOUSE_FLIGHT_ENABLED_KEY = 'f22-flight-mouse-stick-enabled'
+const MOUSE_PITCH_INVERTED_KEY = 'f22-flight-mouse-pitch-inverted'
 
 const RESPONSE = {
   pitch: { engage: 4.6, release: 7.5 },
@@ -93,16 +95,52 @@ function shapeMouseAxis(value) {
 // publishes. Up is positive pitch and right is positive roll. Keeping this calculation in
 // the device-neutral layer makes it testable and, more importantly, keeps the route from
 // inventing a second control path around `stepFlightInput`.
-export function readMouseFlightAxes(clientX, clientY, bounds = {}) {
+export function readMouseFlightAxes(clientX, clientY, bounds = {}, { invertPitch = false } = {}) {
   const width = Math.max(Number(bounds.width) || 0, 1)
   const height = Math.max(Number(bounds.height) || 0, 1)
   const centreX = (Number(bounds.left) || 0) + (width * 0.5)
   const centreY = (Number(bounds.top) || 0) + (height * 0.5)
+  const pitch = shapeMouseAxis((centreY - clientY) / (height * MOUSE_STICK_REACH))
   return {
-    pitch: shapeMouseAxis((centreY - clientY) / (height * MOUSE_STICK_REACH)),
+    pitch: invertPitch ? -pitch : pitch,
     roll: shapeMouseAxis((clientX - centreX) / (width * MOUSE_STICK_REACH)),
     yaw: 0,
   }
+}
+
+function readStoredBoolean(key, fallback) {
+  try {
+    const stored = window.localStorage.getItem(key)
+    if (stored === 'true') return true
+    if (stored === 'false') return false
+  } catch {
+    // Privacy modes may refuse storage; a usable in-session default still matters more.
+  }
+  return fallback
+}
+
+function writeStoredBoolean(key, value) {
+  try {
+    window.localStorage.setItem(key, String(Boolean(value)))
+  } catch {
+    // The current session still uses the choice even when the browser cannot remember it.
+  }
+}
+
+export function readMouseFlightEnabled() {
+  return readStoredBoolean(MOUSE_FLIGHT_ENABLED_KEY, true)
+}
+
+export function writeMouseFlightEnabled(value) {
+  writeStoredBoolean(MOUSE_FLIGHT_ENABLED_KEY, value)
+}
+
+export function readMousePitchInverted() {
+  return readStoredBoolean(MOUSE_PITCH_INVERTED_KEY, false)
+}
+
+export function writeMousePitchInverted(value) {
+  writeStoredBoolean(MOUSE_PITCH_INVERTED_KEY, value)
 }
 
 function moveToward(current, target, amount) {

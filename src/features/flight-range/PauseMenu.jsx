@@ -6,7 +6,17 @@ FIRST VIEWPORT: A dimmed frozen frame with a single stack of commands centred on
 FORM: One component owning its own panes, so the route only has to say whether flight is paused.
 */
 
-import { Camera, Gauge, Info, LogOut, Maximize, MonitorCog, Play, Settings } from 'lucide-react'
+import {
+  Camera,
+  Gauge,
+  Info,
+  LogOut,
+  Maximize,
+  MonitorCog,
+  MousePointer2,
+  Play,
+  Settings,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { FLIGHT_QUALITY_OPTIONS } from '../../three/graphics'
@@ -45,6 +55,10 @@ export default function PauseMenu({
   onChooseCameraStyle,
   cameraDistance,
   onChooseCameraDistance,
+  mouseFlightEnabled,
+  onChooseMouseFlightEnabled,
+  mousePitchInverted,
+  onChooseMousePitchInverted,
 }) {
   const [pane, setPane] = useState('root')
   const firstCommand = useRef(null)
@@ -144,7 +158,7 @@ export default function PauseMenu({
               ))}
               <p className="pause-note">
                 Action holds the entry shot after PSM, then arcs behind the aircraft when
-                you press W. Move the mouse to fly; right-drag to free look.
+                you press W.
               </p>
             </div>
 
@@ -162,6 +176,36 @@ export default function PauseMenu({
                   <i aria-hidden="true">{option.detail}</i>
                 </button>
               ))}
+            </div>
+
+            <div className="pause-quality" role="group" aria-label="Flight controls">
+              <span className="pause-quality-head">
+                <MousePointer2 size={15} strokeWidth={1.8} /> Control
+              </span>
+              <button
+                type="button"
+                className={`pause-key is-quality ${mouseFlightEnabled ? 'is-on' : ''}`}
+                aria-pressed={mouseFlightEnabled}
+                onClick={() => onChooseMouseFlightEnabled(!mouseFlightEnabled)}
+              >
+                <span>Use mouse to pitch &amp; roll</span>
+                <i aria-hidden="true">{mouseFlightEnabled ? 'ON' : 'OFF'}</i>
+              </button>
+              <button
+                type="button"
+                className={`pause-key is-quality ${mousePitchInverted ? 'is-on' : ''}`}
+                aria-pressed={mousePitchInverted}
+                disabled={!mouseFlightEnabled}
+                onClick={() => onChooseMousePitchInverted(!mousePitchInverted)}
+              >
+                <span>Invert pitch direction</span>
+                <i aria-hidden="true">{mousePitchInverted ? 'ON' : 'OFF'}</i>
+              </button>
+              <p className="pause-note">
+                {mouseFlightEnabled
+                  ? 'Mouse position acts as the flight stick. Right-drag remains free look.'
+                  : 'Pitch and roll remain on the arrow keys. Right-drag remains free look.'}
+              </p>
             </div>
 
             <button type="button" className="pause-key" onClick={onFullscreen}>

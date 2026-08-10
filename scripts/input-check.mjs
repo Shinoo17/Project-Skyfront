@@ -145,6 +145,11 @@ clearAnalogFlightInput(input, 'test-stick')
     'mouse up must command full positive pitch without yaw',
   )
   assert.deepEqual(
+    readMouseFlightAxes(600, 50, bounds, { invertPitch: true }),
+    { pitch: -1, roll: 0, yaw: 0 },
+    'inverted mouse pitch must reverse pitch without changing roll or yaw',
+  )
+  assert.deepEqual(
     readMouseFlightAxes(1100, 450, bounds),
     { pitch: 0, roll: 1, yaw: 0 },
     'mouse right must command full positive roll without yaw',

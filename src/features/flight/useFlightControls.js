@@ -18,7 +18,9 @@ export {
   readCommandSpeedLimits,
   readDecelerate,
   readHighG,
+  readMouseFlightEnabled,
   readMouseFlightAxes,
+  readMousePitchInverted,
   readPsmArm,
   readThrottleDirection,
   releaseFlightInput,
@@ -26,6 +28,8 @@ export {
   setAnalogFlightInput,
   setCommandSpeedKmh,
   stepFlightInput,
+  writeMouseFlightEnabled,
+  writeMousePitchInverted,
 } from './flightInput'
 
 function isFieldFocused(event) {

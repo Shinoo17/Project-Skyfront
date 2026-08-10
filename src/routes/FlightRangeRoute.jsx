@@ -14,8 +14,12 @@ import FlightRangeScene from '../features/flight-range/FlightRangeScene'
 import PauseMenu from '../features/flight-range/PauseMenu'
 import {
   clearAnalogFlightInput,
+  readMouseFlightEnabled,
   readMouseFlightAxes,
+  readMousePitchInverted,
   setAnalogFlightInput,
+  writeMouseFlightEnabled,
+  writeMousePitchInverted,
 } from '../features/flight/flightInput'
 import useFlightSession from '../features/flight/useFlightSession'
 import {
@@ -39,6 +43,8 @@ export default function FlightRangeRoute() {
   const [cameraMode, setCameraMode] = useState('chase')
   const [cameraStyle, setCameraStyle] = useState(readFlightCameraStyle)
   const [cameraDistance, setCameraDistance] = useState(readFlightCameraDistance)
+  const [mouseFlightEnabled, setMouseFlightEnabled] = useState(readMouseFlightEnabled)
+  const [mousePitchInverted, setMousePitchInverted] = useState(readMousePitchInverted)
   // Read once, on first render: the choice outlives the session, and the renderer is built
   // from it before anything is drawn.
   const [quality, setQuality] = useState(readFlightQuality)
@@ -102,11 +108,23 @@ export default function FlightRangeRoute() {
     clearAnalogFlightInput(controls.current, MOUSE_STICK_SOURCE)
   }, [controls])
 
+  const chooseMouseFlightEnabled = useCallback((value) => {
+    setMouseFlightEnabled(value)
+    writeMouseFlightEnabled(value)
+    if (!value) clearAnalogFlightInput(controls.current, MOUSE_STICK_SOURCE)
+  }, [controls])
+
+  const chooseMousePitchInverted = useCallback((value) => {
+    setMousePitchInverted(value)
+    writeMousePitchInverted(value)
+  }, [])
+
   const moveMouseFlightControl = useCallback((event) => {
     // Touch owns the on-screen deck. A mouse over the world is an absolute virtual stick:
     // where it sits relative to the centre is the command, so stopping the hand keeps the
     // chosen deflection instead of silently centring the aircraft.
-    if (pausedRef.current
+    if (!mouseFlightEnabled
+      || pausedRef.current
       || event.pointerType === 'touch'
       || freeLookPointer.current.id !== null) return
     setAnalogFlightInput(
@@ -116,9 +134,10 @@ export default function FlightRangeRoute() {
         event.clientX,
         event.clientY,
         event.currentTarget.getBoundingClientRect(),
+        { invertPitch: mousePitchInverted },
       ),
     )
-  }, [controls])
+  }, [controls, mouseFlightEnabled, mousePitchInverted])
 
   const beginFreeLook = useCallback((event) => {
     // Right drag is deliberately camera-only. Ordinary pointer movement flies pitch and
@@ -198,6 +217,8 @@ export default function FlightRangeRoute() {
           debug={debug}
           cameraMode={cameraMode}
           onToggleCameraMode={toggleCameraMode}
+          mouseFlightEnabled={mouseFlightEnabled}
+          mousePitchInverted={mousePitchInverted}
         />
       </div>
 
@@ -214,6 +235,10 @@ export default function FlightRangeRoute() {
         onChooseCameraStyle={chooseCameraStyle}
         cameraDistance={cameraDistance}
         onChooseCameraDistance={chooseCameraDistance}
+        mouseFlightEnabled={mouseFlightEnabled}
+        onChooseMouseFlightEnabled={chooseMouseFlightEnabled}
+        mousePitchInverted={mousePitchInverted}
+        onChooseMousePitchInverted={chooseMousePitchInverted}
       />
 
       <LoaderScreen mode="flight" map={map} />

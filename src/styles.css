@@ -1615,6 +1615,17 @@ Same green as the glass: this is cockpit furniture, not a website dialog.
   background: rgba(98, 255, 132, 0.12);
 }
 
+.pause-key:disabled {
+  color: rgba(135, 148, 155, 0.46);
+  border-color: rgba(98, 255, 132, 0.1);
+  background: rgba(98, 255, 132, 0.02);
+  cursor: not-allowed;
+}
+
+.pause-key:disabled i {
+  color: rgba(135, 148, 155, 0.46);
+}
+
 .pause-key.is-primary {
   border-color: rgba(98, 255, 132, 0.46);
   color: var(--hud-ice);
