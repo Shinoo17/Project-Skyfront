@@ -38,6 +38,8 @@ const READOUTS = [
   { key: 'stallBlend', label: 'STALL' },
   { key: 'postStallBlend', label: 'POST-ST' },
   { key: 'departureBlend', label: 'DEPART' },
+  { key: 'psmBlend', label: 'PSM' },
+  { key: 'psmFloatBlend', label: 'FLOAT' },
   { key: 'aeroAuthority', label: 'AERO AUTH' },
   { key: 'vectorAuthority', label: 'TVC AUTH' },
   { key: 'flightPath', label: 'PATH γ' },
@@ -72,6 +74,8 @@ function readValues(telemetry) {
     stallBlend: `${Math.round(value.stallBlend * 100)}%`,
     postStallBlend: `${Math.round(value.postStallBlend * 100)}%`,
     departureBlend: `${Math.round(value.departureBlend * 100)}%`,
+    psmBlend: `${Math.round(value.psmBlend * 100)}%`,
+    psmFloatBlend: `${Math.round(value.psmFloatBlend * 100)}%`,
     aeroAuthority: `${Math.round(value.aeroAuthority * 100)}%`,
     vectorAuthority: `${Math.round(value.vectorAuthority * 100)}%`,
     flightPath: `${value.flightPath.toFixed(1)}°`,
@@ -196,7 +200,7 @@ export default function DevFlightPanel({
       <p className="dev-panel-hint">
         Drag to orbit · scroll to zoom · right-drag to pan. Arrows,
         <kbd>Q</kbd>/<kbd>E</kbd>, <kbd>W</kbd>/<kbd>S</kbd> and <kbd>SHIFT</kbd> fly the
-        aircraft.
+        aircraft. Hold <kbd>W</kbd>+<kbd>S</kbd>, then pull up to arm arcade PSM.
       </p>
 
       <p className="dev-panel-hint">

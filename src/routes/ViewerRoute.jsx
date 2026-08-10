@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { getAircraft } from '../aircraft'
 import useFlightControls, {
+  FLIGHT_BINDINGS,
   readAfterburnerCommand,
   readAxes,
   readThrottleDirection,
@@ -20,6 +21,10 @@ import LoaderScreen from '../ui/LoaderScreen'
 import SceneErrorBoundary from '../ui/SceneErrorBoundary'
 import useFullscreen from '../ui/useFullscreen'
 import { resolveLoadout } from '../weapons'
+
+// The shared range mapping puts Maneuver Assist on Space. The hangar has no PSM and owns
+// Space as playback/direct-flight escape, so leave that one code to `keyActions` below.
+const VIEWER_FLIGHT_BINDINGS = { ...FLIGHT_BINDINGS, Space: undefined }
 
 export default function ViewerRoute({ aircraftId }) {
   const aircraft = getAircraft(aircraftId)
@@ -161,6 +166,7 @@ export default function ViewerRoute({ aircraftId }) {
   }), [handleViewChange])
 
   const flightControls = useFlightControls({
+    bindings: VIEWER_FLIGHT_BINDINGS,
     // Any flight key drops the viewer out of clip playback and into direct control — but
     // not out of the weapons view, where there is no airframe to fly.
     onPress: () => {

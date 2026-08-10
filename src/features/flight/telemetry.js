@@ -33,6 +33,13 @@ export const EMPTY_TELEMETRY = {
   postStallActive: false,
   flightRegime: 'normal',
   departureBlend: 0,
+  // Explicit arcade PSM state. `high-aoa` is the Maneuver Assist consent phase;
+  // hold/flip/reversal keep the attitude player-owned, and only `recovery` adds a smooth
+  // nose-to-path hand-back.
+  psmPhase: 'normal',
+  psmBlend: 0,
+  psmFloatBlend: 0,
+  gravityScale: 1,
   // Control authority split by where it comes from, 0..1. The surfaces answer to dynamic
   // pressure and to separation; the nozzles answer to engine thrust. Losing one is a very
   // different aircraft from losing both.

@@ -31,20 +31,22 @@ tail-first for two seconds. The moment is scheduled to arrive past the beam rath
 the stall, so it leaves the Cobra — which is a vectored fighter genuinely holding the nose
 off the airstream, and is the aircraft's signature — entirely alone.
 
-The FCC has no modes. It used to: a full-aft stick inside an entry-speed window latched a
-post-stall envelope in behind the conventional one, which meant the same stick produced a
-27-degree pull at 250 km/h, a 93-degree one at 350 and a 10-degree one at 1000, and the
-aircraft changed character on a threshold instead of on the physics. What is left in its
-place is two continuous numbers, both recomputed every step and neither with any memory:
+The underlying aerodynamics have no stall mode. Lift, drag, separation, and natural control
+authority remain continuous. Arcade PSM is deliberately layered above them as an explicit
+pilot-intent state machine: Maneuver Assist arms it, pitch opens an aircraft-owned high-AoA
+envelope, and pitch-down requests recovery. It changes available rate authority and force
+modifiers; it never writes orientation or velocity, so the nose and flight path remain
+independent.
+
+Unassisted high-AoA control still reads two continuous numbers every step:
 
   thinAir      how little the airstream can still enforce, from dynamic pressure alone
   commitment   how far past the max-performance detent the stick is
 
-Their product is how far the envelope is open. Deliberately absent from both is the
-current angle of attack — a limit that widens because alpha grew feeds itself and is a
-latch with better manners. So a Cobra is not a state the aircraft enters. It is what a
-committed pull does when there is no longer enough air over the tail to argue with the
-nozzles, and the same stick at the same speed with less conviction is a hard turn.
+For positive AoA, their product remains behind the protected conventional envelope. The full
+post-stall envelope belongs to explicit Maneuver Assist, which prevents an ordinary low-speed
+dogfight pull from turning into a Cobra by accident. Nose-down authority keeps its small
+manual share so the protection does not flatten push-over flight.
 
 Control authority follows dynamic pressure rather than speed, and the rate response is
 scaled by it as well: the airframe's mass does not change with airspeed, only the moment
@@ -63,12 +65,11 @@ enough pull reaches the same attitudes with the trajectory swinging round behind
 that is a loop. `pathRateDeg` is the state that tells them apart, and `detectManeuver`
 is the only thing that reads it.
 
-Held rather than released, that same pull is the tumble: past the beam the weathervane
-drops to a floor, the nose keeps going over the top and round past the tail, and the roll
-axis keeps a nozzle-fed share of its authority so the airframe can be pointed somewhere on
-the way out. The floor, the share, and the ceiling the pitch rate is allowed to reach in
-thin air are the arcade half of this model — an F-22's nozzles vector in pitch only and
-would not roll it at all — and they are marked as such where they are read.
+Held rather than released, that same pull is the tumble: deliberate PSM suppresses the
+airflow's pitch-restoring command while the nose keeps going over the top and round past the
+tail, and the roll axis keeps a nozzle-fed share of its authority so the airframe can be
+pointed somewhere on the way out. Releasing the stick rate-damps the rotation at the chosen
+attitude; only Pitch Down requests recovery.
 
 Axes follow the rest of the project: local +X forward, +Y up, +Z right wing. The body rate
 vector uses pilot sense — x rolls right, y yaws right, z pitches up.
@@ -111,6 +112,112 @@ function smooth01(value) {
 // Frame-rate independent first-order chase.
 function approach(current, target, rate, dt) {
   return current + ((target - current) * (1 - Math.exp(-rate * dt)))
+}
+
+function enterPsmPhase(state, phase) {
+  if (state.psmPhase === phase) return
+  state.psmPhase = phase
+  state.psmElapsed = 0
+}
+
+const CONTROLLED_PSM_PHASES = new Set([
+  'post-stall',
+  'cobra-hold',
+  'post-stall-flip',
+  'post-stall-reversal',
+])
+
+function isControlledPsmPhase(phase) {
+  return CONTROLLED_PSM_PHASES.has(phase)
+}
+
+function selectPsmHoldPhase(state, psm) {
+  const pitchTravel = MathUtils.euclideanModulo(Math.abs(state.psmPitchTravelDeg), 360)
+  if (state.noseOffPathDeg >= psm.reversalMinNoseOffDeg
+    && Math.abs(pitchTravel - 180) <= psm.reversalTravelWindowDeg
+    && psm.supportsPSMReversal) return 'post-stall-reversal'
+  if (pitchTravel >= psm.cobraHoldMinTravelDeg
+    && pitchTravel <= psm.cobraHoldMaxTravelDeg) return 'cobra-hold'
+  return 'post-stall'
+}
+
+/*
+Arcade post-stall intent, kept separate from the aerodynamics below. The state machine only
+decides which assists are available; orientation is still integrated from commanded body
+rates and velocity is still integrated from forces. That preserves the useful Cobra split:
+the nose may rotate while the green velocity vector keeps carrying the aircraft forward.
+*/
+function stepPsmAssist(state, command, tuning, dt) {
+  const psm = tuning.postStallAssist
+  if (!psm?.capable) {
+    state.psmPhase = 'normal'
+    state.psmElapsed = 0
+    state.psmBlend = approach(state.psmBlend, 0, 5, dt)
+    return
+  }
+
+  const inEntryWindow = state.speedKmh >= psm.entryMinKmh
+    && state.speedKmh <= psm.entryMaxKmh
+  state.psmElapsed += dt
+
+  const pitchUp = state.input.pitch >= psm.continuePitchThreshold
+  const pitchDown = state.input.pitch <= psm.recoveryPitchThreshold
+  const pitchReleased = Math.abs(state.input.pitch) <= psm.holdPitchThreshold
+  const recovered = Math.abs(state.aoaDeg) <= psm.recoveryCompleteAoADeg
+    && state.noseOffPathDeg <= psm.recoveryCompleteNoseOffDeg
+  const poweredExit = (command.accelerate || command.afterburnerCommanded)
+    && state.psmActiveElapsed >= psm.poweredExitMinActiveSeconds
+    && Math.abs(state.psmPitchTravelDeg) >= psm.poweredExitMinTravelDeg
+    && Math.abs(state.aoaDeg) <= psm.poweredExitAoADeg
+    && state.noseOffPathDeg <= psm.poweredExitNoseOffDeg
+
+  if (state.psmPhase === 'normal') {
+    if (!command.psmArm) state.psmCanArm = true
+    if (state.psmCanArm && command.psmArm && inEntryWindow) {
+      enterPsmPhase(state, 'high-aoa')
+    }
+  } else if (state.psmPhase === 'high-aoa') {
+    if (!command.psmArm || !inEntryWindow) enterPsmPhase(state, 'normal')
+    else if (state.input.pitch >= psm.triggerPitch) {
+      state.psmCanArm = false
+      state.psmActiveElapsed = 0
+      state.psmPitchTravelDeg = 0
+      enterPsmPhase(state, 'post-stall')
+    }
+  } else if (isControlledPsmPhase(state.psmPhase)) {
+    state.psmActiveElapsed += dt
+
+    // Pitch Down is the only control that requests assisted recovery. There is deliberately
+    // no hold timer: releasing the stick asks the rate loop to stop, not the game to finish
+    // the manoeuvre on the player's behalf.
+    if (pitchDown) {
+      enterPsmPhase(state, 'recovery')
+    } else if (pitchUp && psm.supportsPSMFlip
+      && (state.psmPhase === 'post-stall-flip'
+        || state.psmPitchTravelDeg >= psm.flipEnterTravelDeg)) {
+      enterPsmPhase(state, 'post-stall-flip')
+    } else if (poweredExit) {
+      enterPsmPhase(state, 'normal')
+    } else if (pitchReleased) {
+      enterPsmPhase(state, selectPsmHoldPhase(state, psm))
+    }
+  } else if (state.psmPhase === 'recovery') {
+    if (recovered) {
+      enterPsmPhase(state, 'normal')
+    } else if (!pitchDown) {
+      // Letting go halfway through recovery holds the new attitude. Pulling again can flow
+      // straight back into the flip; neither case leaves a hidden recovery command running.
+      enterPsmPhase(state, pitchUp && psm.supportsPSMFlip
+        ? 'post-stall-flip'
+        : selectPsmHoldPhase(state, psm))
+    }
+  } else {
+    enterPsmPhase(state, 'normal')
+  }
+
+  const target = isControlledPsmPhase(state.psmPhase) || state.psmPhase === 'recovery' ? 1 : 0
+  const response = target > state.psmBlend ? psm.engageResponse : psm.releaseResponse
+  state.psmBlend = approach(state.psmBlend, target, response, dt)
 }
 
 export function createFlightState() {
@@ -156,6 +263,20 @@ export function createFlightState() {
     // Strength of the deterministic, hands-off falling-leaf oscillation, 0..1.
     departureBlend: 0,
     departurePhase: 0,
+    // Explicit arcade PSM assist, armed by the device-neutral Maneuver Assist action. The
+    // phase drives authority, float, and recovery help but never writes orientation or
+    // velocity directly.
+    psmPhase: 'normal',
+    psmElapsed: 0,
+    // Time since this deliberate PSM began, and signed pitch travel integrated from the
+    // actual body rate. Unlike AoA, travel does not wrap at 180 degrees, so a 360-degree
+    // Kulbit remains one continuous player-controlled rotation.
+    psmActiveElapsed: 0,
+    psmPitchTravelDeg: 0,
+    psmBlend: 0,
+    psmCanArm: true,
+    psmFloatBlend: 0,
+    gravityScale: 1,
     /*
     The two control authorities, published separately because they answer to different
     things and a pilot needs to see which one is left.
@@ -211,6 +332,14 @@ export function resetFlightState(
   state.flightRegime = 'normal'
   state.departureBlend = 0
   state.departurePhase = 0
+  state.psmPhase = 'normal'
+  state.psmElapsed = 0
+  state.psmActiveElapsed = 0
+  state.psmPitchTravelDeg = 0
+  state.psmBlend = 0
+  state.psmCanArm = true
+  state.psmFloatBlend = 0
+  state.gravityScale = 1
   state.aeroAuthority = 0
   state.vectorAuthority = 0
   state.flightPathDeg = 0
@@ -264,11 +393,13 @@ function detectManeuver(state, tuning, pitchAttitudeDeg, speed, pedalMaxSpeed) {
   // alone. Rolling the airframe mid-tumble takes the pitch rate below the threshold for as
   // long as the roll lasts — which is the middle of the manoeuvre, and a caption that drops
   // out there and comes back reads as the aircraft having stopped doing it.
-  if (flying && state.noseOffPathDeg > tuning.tumbleMinNoseOffDeg
+  if ((flying || state.psmPhase === 'post-stall-flip')
+    && state.noseOffPathDeg > tuning.tumbleMinNoseOffDeg
     && (pitchRateDeg > tuning.tumbleMinPitchRateDeg || state.maneuver === 'tumble')) {
     return 'tumble'
   }
-  if (state.postStallActive && flying && beta > tuning.jTurnMinSideslipDeg) return 'j-turn'
+  if (state.postStallActive && beta > tuning.jTurnMinSideslipDeg
+    && (flying || state.psmPhase === 'post-stall')) return 'j-turn'
   if (state.postStallActive && flying) return 'cobra'
   if (state.departureBlend > tuning.fallingLeafLabelThreshold) return 'falling-leaf'
   if (state.postStallActive
@@ -315,7 +446,8 @@ function liftShape(alphaRad, tuning) {
 One fixed step. `command` is the resolved pilot intent:
 
   { pitch, roll, yaw: -1..1, throttle: 0..1, flaps: 0..1,
-    airBrake: 0..1, afterburnerCommanded: boolean, burnerLevel: 0..1 }
+    airBrake: 0..1, accelerate: boolean, psmArm: boolean,
+    afterburnerCommanded: boolean, burnerLevel: 0..1 }
 
 Returns nothing; mutates `state` in place.
 */
@@ -342,6 +474,7 @@ export function stepFlight(state, command, envelope, dt) {
 
   const speed = state.velocity.length()
   state.speedKmh = speed / toWorld
+  stepPsmAssist(state, command, tuning, dt)
 
   state.orientation.normalize()
   inverseOrientation.copy(state.orientation).invert()
@@ -400,8 +533,8 @@ export function stepFlight(state, command, envelope, dt) {
   1 where the wing has effectively stopped voting and the nozzles are the only thing with
   an opinion about where the nose points.
 
-  This replaces the post-stall *mode* the model used to run. That mode sampled a speed
-  window on the leading edge of a full-aft stick, latched the result, and blended a second
+  This remains the physical baseline underneath the arcade PSM assist. The older mode
+  sampled a speed window on the leading edge of a full-aft stick, latched the result, and blended a second
   set of limits in behind it — so the same stick produced a 27-degree pull at 250 km/h, a
   93-degree one at 350, and a 10-degree one at 1000. The discontinuity was the point of
   the design and it was also the thing that felt wrong: the aircraft changed character on
@@ -410,9 +543,8 @@ export function stepFlight(state, command, envelope, dt) {
   Thin air is a function of dynamic pressure and of nothing else. Not of stick position,
   not of throttle, not of the current angle of attack — a limit that widens because alpha
   grew is a latch with better manners, and it would snap open the moment it was touched.
-  Everything the mode used to switch on now reads off this one number, so a Cobra is not a
-  state the aircraft enters; it is what a hard pull does when there is no longer enough
-  air over the tail to argue with the nozzles.
+  Natural surface and nozzle scheduling still read this number; explicit Maneuver Assist
+  may add aircraft-configured authority on top when the player intentionally asks for PSM.
   */
   const thinAir = 1 - smooth01(
     (state.speedKmh - tuning.thinAirFullKmh)
@@ -420,7 +552,8 @@ export function stepFlight(state, command, envelope, dt) {
   )
 
 
-  // Surfaces earn their force from the airstream and lose most of it past the stall.
+  // Surfaces earn their force from the airstream but retain an arcade control floor past
+  // the stall; explicit PSM authority is then layered on top intentionally.
   //
   // Control power follows dynamic pressure, so this is a power law rather than the linear
   // ramp it used to be: a surface at a quarter of its reference speed has nothing like a
@@ -446,7 +579,21 @@ export function stepFlight(state, command, envelope, dt) {
   state.aeroAuthority = surfaceAuthority
   state.vectorAuthority = vectorAuthority
 
-  const pitchAuthority = MathUtils.clamp(surfaceAuthority + vectorAuthority, 0, 1)
+  const naturalPitchAuthority = MathUtils.clamp(surfaceAuthority + vectorAuthority, 0, 1)
+  const psm = tuning.postStallAssist
+  const psmPitchAuthority = psm?.capable
+    ? Math.min(
+      psm.psmPitchAuthority,
+      psm.artificialPitchAuthority + (vectorAuthority * psm.thrustVectorAuthority),
+    )
+    : naturalPitchAuthority
+  const pitchAuthority = psm?.capable
+    ? MathUtils.lerp(
+      naturalPitchAuthority,
+      Math.max(naturalPitchAuthority, psmPitchAuthority),
+      state.psmBlend,
+    )
+    : naturalPitchAuthority
   /*
   Roll has the same two contributors pitch and yaw do, and for the same reason. The
   surfaces shed authority against alpha faster than anything else — the ailerons are out at
@@ -474,12 +621,19 @@ export function stepFlight(state, command, envelope, dt) {
   const rollShed = smooth01(
     (alphaDegAbs - tuning.rollAuthorityOnsetDeg) / tuning.rollAuthorityRangeDeg,
   )
-  const rollAuthority = MathUtils.clamp(
+  const naturalRollAuthority = MathUtils.clamp(
     (surfaceAuthority * (1 - (tuning.rollAuthorityAoALoss * rollShed)))
       + (thinAir * tuning.postStallRollBoost * thrustLevel * rollShed),
     0,
     tuning.maxRollAuthority,
   )
+  const rollAuthority = psm?.capable
+    ? MathUtils.lerp(
+      naturalRollAuthority,
+      Math.max(naturalRollAuthority, psm.psmRollAuthority),
+      state.psmBlend,
+    )
+    : naturalRollAuthority
   // Pedal-turn window: nose high and slow, the rudders plus vectoring coupling keep a
   // usable yaw that plain airflow no longer provides. Outside the window it contributes
   // nothing, so level flight can never spin on the spot.
@@ -493,7 +647,7 @@ export function stepFlight(state, command, envelope, dt) {
     (sensedPitchAttitudeDeg - tuning.postStallYawMinPitchDeg)
       / tuning.postStallYawPitchBlendDeg,
   )
-  const yawAuthority = MathUtils.clamp(
+  const naturalYawAuthority = MathUtils.clamp(
     (surfaceAuthority * tuning.yawSurfaceShare)
       + (pedalWindow * tuning.pedalTurnYawBoost * thrustLevel * tuning.pedalTurnYawShare)
       + (thinAir * tuning.postStallYawBoost * thrustLevel
@@ -501,6 +655,13 @@ export function stepFlight(state, command, envelope, dt) {
     0,
     tuning.maxYawAuthority,
   )
+  const yawAuthority = psm?.capable
+    ? MathUtils.lerp(
+      naturalYawAuthority,
+      Math.max(naturalYawAuthority, psm.psmYawAuthority),
+      state.psmBlend,
+    )
+    : naturalYawAuthority
 
   // ---------------------------------------------------------------- commanded rates
   const gravity = tuning.gravity
@@ -511,20 +672,28 @@ export function stepFlight(state, command, envelope, dt) {
     thinAir            how little the airstream can still enforce
     commitment         how far past the max-performance detent the stick is
 
-  Both are read fresh every step. Neither latches, neither samples an entry condition, and
-  neither is a function of the alpha the envelope goes on to allow — a fence that widens
-  because alpha grew would open itself the first time it was touched.
+  Both are read fresh every step and neither is a function of the alpha the envelope goes on
+  to allow. Their product supplies only the direction-specific configured manual share;
+  `psmBlend` supplies post-stall authority after an explicit Maneuver Assist arm, so ordinary
+  positive stick input cannot open the fence accidentally.
 
-  Commitment is what lets a Split-S and a Cobra pass through the same airspeed and come out
-  as different manoeuvres, without either of them being a mode. A three-quarter pull is a
-  hard turn at any speed. A pull held against the stops is a request for everything the
-  airframe has, and in thin air everything the airframe has is the nozzles.
+  Commitment still widens the conventional performance detent and exposes a small amount of
+  manual high-AoA control. The deliberate assist state is the only path to full PSM
+  authority, which keeps an ordinary Split-S or hard turn from becoming a Cobra by accident.
   */
   const commitment = smooth01(
     (Math.abs(state.input.pitch) - tuning.performancePullThreshold)
       / Math.max(1 - tuning.performancePullThreshold, 1e-3),
   )
-  const envelopeOpen = thinAir * commitment
+  const manualEnvelopeShare = psm?.capable
+    ? (state.input.pitch < 0
+      ? (psm.negativeManualEnvelopeShare ?? psm.manualEnvelopeShare)
+      : psm.manualEnvelopeShare)
+    : 1
+  const envelopeOpen = Math.max(
+    thinAir * commitment * manualEnvelopeShare,
+    state.psmBlend,
+  )
 
   // The nose can be swung much faster in thin air than in thick, and for a reason that is
   // not a concession to the manoeuvre: at fighting speed the ceiling is the airframe's
@@ -572,29 +741,58 @@ export function stepFlight(state, command, envelope, dt) {
   AoA soft limiter: authority to move the nose fades over the last few degrees before the
   limit instead of hitting a wall.
 
-  The fence is a function of dynamic pressure and of the stick, never of the current alpha.
-  That ordering matters — a limit that widens because alpha grew feeds back into itself and
-  is a latch by another name. At fighting speed the limit is the conventional one, and it
-  is a real one: the reasons a fast jet is not allowed to 30 degrees of alpha are
-  structural and they do not go away. As the air thins those reasons go away with it, the
-  fence opens toward the airframe's true aerodynamic limit, and nothing announces itself.
+  Outside PSM the fence is a function of dynamic pressure and stick, never current alpha.
+  During explicit PSM the aircraft-owned assist opens it smoothly. In neither case can alpha
+  widen its own limit and create an accidental feedback latch.
   */
   const conventionalLimit = MathUtils.lerp(
     tuning.normalAoALimitDeg,
     tuning.performanceAoALimitDeg,
     commitment,
   )
+  const protectedConventionalLimit = psm?.capable
+    ? Math.min(conventionalLimit, tuning.stallProtectionAoALimitDeg)
+    : conventionalLimit
+  // Aircraft without a flip capability retain their configured controlled-AoA fence.
+  // Flip-capable aircraft bypass this fence below while deliberate PSM owns pitch, allowing
+  // the integrated body rate to pass 180 and 360 degrees without a wrap-induced snap.
+  const psmAoALimit = psm?.capable ? psm.maxAoADeg : tuning.postStallAoALimitDeg
+  const postStallAoALimit = psm?.capable ? psmAoALimit : tuning.postStallAoALimitDeg
   const aoaLimit = MathUtils.lerp(
-    conventionalLimit,
-    tuning.postStallAoALimitDeg,
+    protectedConventionalLimit,
+    postStallAoALimit,
     envelopeOpen,
   )
+  const negativeAoALimit = MathUtils.lerp(
+    conventionalLimit,
+    postStallAoALimit,
+    envelopeOpen,
+  ) * tuning.negativeAoAFactor
   const softness = tuning.aoaLimitSoftnessDeg
-  if (pitchCmd > 0) {
-    pitchCmd *= MathUtils.clamp((aoaLimit + softness - state.aoaDeg) / softness, 0, 1)
-  } else if (pitchCmd < 0) {
-    const negativeLimit = -aoaLimit * tuning.negativeAoAFactor
-    pitchCmd *= MathUtils.clamp((state.aoaDeg - (negativeLimit - softness)) / softness, 0, 1)
+  const psmOwnsPitch = isControlledPsmPhase(state.psmPhase)
+    || state.psmPhase === 'recovery'
+  if (!psmOwnsPitch || !psm?.supportsPSMFlip) {
+    if (pitchCmd > 0) {
+      pitchCmd *= MathUtils.clamp((aoaLimit - state.aoaDeg) / softness, 0, 1)
+    } else if (pitchCmd < 0) {
+      const negativeLimit = -negativeAoALimit
+      pitchCmd *= MathUtils.clamp((state.aoaDeg - (negativeLimit - softness)) / softness, 0, 1)
+    }
+  }
+
+  // Normal-flight stall protection. The soft fence removes further pilot demand before
+  // the stall; this small restoring rate catches momentum that carries the nose beyond it.
+  // It is deliberately absent while PSM owns pitch, so Space remains a clean consent line
+  // rather than an assist fighting another assist.
+  if (!psmOwnsPitch && sensedAlphaRad > 0 && state.input.pitch >= 0) {
+    const protectedLimit = aoaLimit
+    const protectionNeed = smooth01(
+      (alphaDegAbs - protectedLimit) / Math.max(tuning.stallProtectionRangeDeg, 1e-3),
+    )
+    pitchCmd -= Math.sign(sensedAlphaRad)
+      * MathUtils.degToRad(tuning.stallProtectionPitchRateDeg)
+      * protectionNeed
+      * pitchAuthority
   }
 
   // Centred-stick recovery points the nose back toward the airstream. It never overwrites
@@ -612,11 +810,25 @@ export function stepFlight(state, command, envelope, dt) {
   const centredStick = 1 - smooth01(
     Math.abs(state.input.pitch) / tuning.postStallRecoveryStickThreshold,
   )
+  const psmHolding = isControlledPsmPhase(state.psmPhase) ? state.psmBlend : 0
   pitchCmd -= Math.sign(sensedAlphaRad)
     * MathUtils.degToRad(tuning.postStallRecoveryPitchRateDeg)
     * recoveryNeed
     * centredStick
     * pitchAuthority
+    * (1 - psmHolding)
+
+  // Pitch-down explicitly enters recovery. Unlike the centred-stick safety above, this
+  // assist remains available while the player is still commanding the nose down, making
+  // the hand-back predictable without snapping the attitude to the velocity.
+  if (psm?.capable && state.psmPhase === 'recovery') {
+    pitchCmd -= Math.sign(sensedAlphaRad)
+      * MathUtils.degToRad(psm.recoveryPitchRateDeg)
+      * recoveryNeed
+      * smooth01(Math.abs(state.input.pitch) / Math.abs(psm.recoveryPitchThreshold))
+      * pitchAuthority
+      * state.psmBlend
+  }
 
   /*
   Longitudinal weathervane: the airstream's own restoring moment about the pitch axis.
@@ -685,6 +897,7 @@ export function stepFlight(state, command, envelope, dt) {
   const weathervaneNeed = smooth01(
     (alphaDegAbs - tuning.pitchWeathervaneOnsetDeg) / tuning.pitchWeathervaneRangeDeg,
   ) * MathUtils.lerp(1, tuning.pitchWeathervaneTumbleFloor, pullCommitment)
+    * MathUtils.lerp(1, psm?.holdWeathervaneFactor ?? 1, psmHolding)
   const weathervaneRate = MathUtils.clamp(
     Math.sin(MathUtils.clamp(sensedAlphaRad, -Math.PI / 2, Math.PI / 2))
       * tuning.pitchWeathervane
@@ -694,6 +907,21 @@ export function stepFlight(state, command, envelope, dt) {
     MathUtils.degToRad(tuning.pitchWeathervaneMaxRateDeg),
   )
   pitchCmd -= weathervaneRate
+
+  // A full forward-stick command, recovery assist and the airframe's restoring moment all
+  // point the same way here. Left additive they can demand a much faster nose drop than any
+  // one of them advertises. Cap only the restoring direction: the player can still arrest
+  // the sweep with back stick, while a normal Cobra recovery gets one readable, cinematic
+  // rate all the way through the high-alpha hand-back.
+  if (psm?.capable && state.psmPhase === 'recovery') {
+    const alphaSign = Math.sign(sensedAlphaRad)
+    const maxRecoveryRate = Number.isFinite(psm.recoveryMaxPitchRateDeg)
+      ? MathUtils.degToRad(psm.recoveryMaxPitchRateDeg)
+      : Infinity
+    if (alphaSign !== 0 && pitchCmd * alphaSign < 0 && Number.isFinite(maxRecoveryRate)) {
+      pitchCmd = MathUtils.clamp(pitchCmd, -maxRecoveryRate, maxRecoveryRate)
+    }
+  }
 
   // Thin air alone, never `envelopeOpen`: commitment is a reading of the *pitch* stick, and
   // the roll rate the airframe can hold has nothing to do with how hard the pilot is
@@ -713,8 +941,9 @@ export function stepFlight(state, command, envelope, dt) {
   // Spin prevention: deep post-stall, roll and yaw commands are bled off and the rates
   // themselves damped harder, so the jet mushes instead of departing.
   const spinGuard = smooth01((alphaDegAbs - tuning.stallAoADeg) / tuning.spinGuardRangeDeg)
-  rollCmd *= 1 - (spinGuard * tuning.spinGuardRollLoss)
-  yawCmd *= 1 - (spinGuard * tuning.spinGuardYawLoss)
+  const psmSpinSuppression = state.psmBlend * (psm?.spinSuppression ?? 0)
+  rollCmd *= 1 - (spinGuard * tuning.spinGuardRollLoss * (1 + psmSpinSuppression))
+  yawCmd *= 1 - (spinGuard * tuning.spinGuardYawLoss * (1 + psmSpinSuppression))
 
   /*
   Falling-leaf departure. This is deterministic separated-flow coupling, not random noise:
@@ -736,6 +965,7 @@ export function stepFlight(state, command, envelope, dt) {
       / Math.max(tuning.fallingLeafSinkRange, 1e-3),
   )
   state.departureBlend = separation * leafLowEnergy * leafHandsOff * leafSink
+    * (1 - state.psmBlend)
   state.departurePhase = MathUtils.euclideanModulo(
     state.departurePhase + (dt * Math.PI * 2 * tuning.fallingLeafFrequencyHz),
     Math.PI * 2,
@@ -761,14 +991,19 @@ export function stepFlight(state, command, envelope, dt) {
   // neither one asks what the airspeed is.
   const w = state.angularVelocity
   const damp = 1 + (spinGuard * tuning.spinDamping)
+    + (psmSpinSuppression * (psm?.angularDampingBoost ?? 0))
   const floor = tuning.rateResponseFloor
   const span = 1 - floor
+  const psmResponse = 1 + (state.psmBlend * (psm?.controlResponseBoost ?? 0))
+  const pitchPsmResponse = psmResponse * (state.psmPhase === 'recovery'
+    ? (psm?.recoveryResponseFactor ?? 1)
+    : 1)
   const pitchResponse = tuning.pitchResponse
-    * (floor + (span * MathUtils.clamp(pitchAuthority, 0, 1)))
+    * (floor + (span * MathUtils.clamp(pitchAuthority, 0, 1))) * pitchPsmResponse
   const rollResponse = tuning.rollResponse
-    * (floor + (span * MathUtils.clamp(rollAuthority, 0, 1)))
+    * (floor + (span * MathUtils.clamp(rollAuthority, 0, 1))) * psmResponse
   const yawResponse = tuning.yawResponse
-    * (floor + (span * MathUtils.clamp(yawAuthority, 0, 1)))
+    * (floor + (span * MathUtils.clamp(yawAuthority, 0, 1))) * psmResponse
   w.z = approach(w.z, pitchCmd, pitchResponse * damp, dt)
   w.x = approach(w.x, rollCmd, rollResponse * damp, dt)
   w.y = approach(w.y, yawCmd, yawResponse * damp, dt)
@@ -777,6 +1012,9 @@ export function stepFlight(state, command, envelope, dt) {
   rotationEuler.set(w.x * dt, -w.y * dt, w.z * dt, 'XYZ')
   rotationStep.setFromEuler(rotationEuler)
   state.orientation.multiply(rotationStep).normalize()
+  if (isControlledPsmPhase(state.psmPhase) || state.psmPhase === 'recovery') {
+    state.psmPitchTravelDeg += MathUtils.radToDeg(w.z * dt)
+  }
 
   // The nozzles slew toward what pitch is asking of them; nothing snaps.
   const vectorTarget = state.input.pitch * tuning.maxThrustVectorDeg
@@ -809,7 +1047,50 @@ export function stepFlight(state, command, envelope, dt) {
 
   // ---------------------------------------------------------------- forces
 
-  accel.set(0, -gravity, 0)
+  // High-alpha PSM float is a temporary support force represented as partial gravity relief.
+  // It never touches horizontal momentum, lift, orientation, or velocity directly. Its
+  // energy budget is strongest for the first Cobra beat, then decays smoothly; very low
+  // speed and recovery reduce it further, so parking nose-up cannot become an endless hover.
+  const currentAlphaDegAbs = MathUtils.radToDeg(alphaAbs)
+  const floatAlpha = psm?.capable
+    ? smooth01(
+      (currentAlphaDegAbs - tuning.stallAoADeg)
+        / Math.max(psm.floatFullAoADeg - tuning.stallAoADeg, 1),
+    )
+    : 0
+  const floatTime = psm?.capable
+    ? 1 - smooth01(
+      (state.psmActiveElapsed - psm.floatFullSeconds)
+        / Math.max(psm.floatFadeSeconds, 1e-3),
+    )
+    : 0
+  const floatSpeed = psm?.capable
+    ? MathUtils.lerp(
+      psm.lowSpeedFloatFactor,
+      1,
+      smooth01(state.speedKmh / Math.max(psm.floatFullSpeedKmh, 1)),
+    )
+    : 0
+  const floatRecovery = state.psmPhase === 'recovery' && psm?.capable
+    ? 1 - smooth01(state.psmElapsed / Math.max(psm.recoveryFloatFadeSeconds, 1e-3))
+    : 1
+  state.psmFloatBlend = state.psmBlend * floatAlpha * floatTime * floatSpeed * floatRecovery
+  if (psm?.capable) {
+    const dryGravityScale = MathUtils.lerp(
+      psm.gravityScaleAtIdle,
+      psm.gravityScaleAtFullPower,
+      state.engineCoreLevel,
+    )
+    const poweredGravityScale = MathUtils.lerp(
+      dryGravityScale,
+      psm.gravityScaleAtAfterburner,
+      MathUtils.clamp(command.burnerLevel, 0, 1),
+    )
+    state.gravityScale = MathUtils.lerp(1, poweredGravityScale, state.psmFloatBlend)
+  } else {
+    state.gravityScale = 1
+  }
+  accel.set(0, -gravity * state.gravityScale, 0)
 
   // Engine thrust is always present and always acts along the nose. Speed limits now
   // emerge where this force meets drag rather than from a controller cutting propulsion
@@ -891,7 +1172,8 @@ export function stepFlight(state, command, envelope, dt) {
   const sinBeta = Math.sin(Math.abs(betaRad))
   dragMag += qFactor * (
     (tuning.aoaDragGain * sinAlpha * sinAlpha
-      * MathUtils.lerp(1, tuning.postStallDragMultiplier, postStallBlend))
+      * MathUtils.lerp(1, tuning.postStallDragMultiplier, postStallBlend)
+      * MathUtils.lerp(1, psm?.dragMultiplier ?? 1, state.psmBlend))
     + (tuning.sideslipDragGain * sinBeta * sinBeta)
     + (tuning.airBrakeDrag * command.airBrake)
     + (tuning.flapsDrag * command.flaps)

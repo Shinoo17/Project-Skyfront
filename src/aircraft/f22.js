@@ -309,7 +309,16 @@ const f22 = {
     envelope: {
       idleThrottle: 0.42,
       minThrottle: 0.08,
-      throttleRate: 0.34,
+      // Arcade power lever: the player can dump or restore power quickly enough to make an
+      // energy decision inside a dogfight instead of waiting several seconds for the lever.
+      throttleRate: 0.62,
+      // S is one arcade slow-down intent. It lowers the power lever and opens enough brake
+      // to be immediately readable without making a short throttle correction dump all of
+      // the aircraft's energy. A committed pull promotes it to the full high-G brake.
+      deceleration: {
+        airBrakeLevel: 0.65,
+        fullBrakePitch: 0.72,
+      },
       // Reheat is a fuel state, not a switch. The F119 pushes roughly three times its dry
       // fuel flow in afterburner, so the airframe carries a burst of it rather than
       // minutes of it: hold the burner, watch the reserve drain, and get it back only
@@ -339,19 +348,19 @@ const f22 = {
         kmhPerWorldUnitPerSecond: 22,
         // The pilot moves a power lever, the engine follows with inertia, and thrust rises
         // progressively rather than giving half throttle the same acceleration as MIL.
-        engineSpoolUpResponse: 3.2,
-        engineSpoolDownResponse: 4,
+        engineSpoolUpResponse: 5.5,
+        engineSpoolDownResponse: 6.5,
         throttlePowerExponent: 1.35,
         // A running F119 still makes useful thrust at flight idle. Keeping that floor in
         // both thrust and drag preserves the authored trim speeds while preventing a
         // partial-power vertical manoeuvre from behaving like an engine flameout.
-        idleThrustFraction: 0.25,
+        idleThrustFraction: 0.18,
         // Compressed the same way the terrain is: a real Raptor takes tens of seconds to
         // do what the range does in a few. The ratio between dry and reheat is the honest
         // part — excess thrust in afterburner is roughly double what military power has
         // left over once drag is paid for.
-        accelerationKmhPerSecond: 130,
-        afterburnerAccelerationKmhPerSecond: 265,
+        accelerationKmhPerSecond: 190,
+        afterburnerAccelerationKmhPerSecond: 370,
         seaLevel: {
           dryKmh: 1100,
           dryMach: 0.95,
@@ -391,16 +400,17 @@ const f22 = {
         // itself is what the aerodynamics are built on.
         stallOnsetDeg: 16,
         stallAoADeg: 26,
-        // Past the stall the lift is gone by about twenty degrees, not eighty: a wing
-        // still making most of its lift at 40 degrees keeps pulling the flight path
-        // round with the nose, and a Cobra is precisely the manoeuvre where it must not.
-        postStallLiftEndDeg: 46,
-        postStallLiftFloor: 0.12,
+        // Arcade stall keeps a useful residual lift floor so recovery is forgiving. The
+        // wing still sheds enough across this short range for an assisted Cobra to leave
+        // the velocity vector behind instead of turning into a conventional loop.
+        postStallLiftEndDeg: 52,
+        postStallLiftFloor: 0.28,
+        // Conventional response still widens with commitment, but an F-22 with Maneuver
+        // Assist keeps the positive-AoA side behind a separate protected fence. The
+        // negative side retains its existing push-over authority.
         normalAoALimitDeg: 24,
-        // A committed pull gets a little more alpha before the automatic post-stall
-        // envelope opens. This makes a max-rate turn distinct from a Cobra without asking
-        // the player to operate a separate limiter switch.
-        performanceAoALimitDeg: 32,
+        performanceAoALimitDeg: 30,
+        stallProtectionAoALimitDeg: 24,
         performancePullThreshold: 0.72,
         /*
         Far enough past the vertical for the nose to lie down along the flight path, which
@@ -414,13 +424,18 @@ const f22 = {
         bill, which is the intended trade — it is a manoeuvre that costs energy to fly and
         rights itself the moment the stick is released.
         */
-        postStallAoALimitDeg: 150,
-        aoaLimitSoftnessDeg: 9,
+        postStallAoALimitDeg: 120,
+        // A progressive fade reaches zero at the protected limit. If inertia carries alpha
+        // beyond it, a small restorative rate demand helps the pilot rather than waiting
+        // for a full departure.
+        aoaLimitSoftnessDeg: 10,
+        stallProtectionRangeDeg: 5,
+        stallProtectionPitchRateDeg: 46,
         negativeAoAFactor: 0.55,
 
         // The nose has to beat the flight path to deep AoA, not merely lead it: what
         // separates a Cobra from a hard pull is the ratio between the two rates.
-        postStallPitchRateDeg: 380,
+        postStallPitchRateDeg: 210,
         // The nose has to be able to come round the flight path as well as over it, or a
         // Cobra is a pose rather than a way of pointing the aircraft somewhere. 60 was the
         // rate a wing that had stopped flying could still ask for; this is the rate the
@@ -430,7 +445,7 @@ const f22 = {
         maxNegativeG: 3.5,
 
         /*
-        Thin air: the single continuous number that replaced the old post-stall mode.
+        Thin air: the continuous physical baseline underneath the arcade PSM assist.
 
         Above `thinAirNoneKmh` the wing is fully in charge and the aircraft is a
         conventional fighter — conventional alpha fence, conventional pitch rate, nozzles
@@ -450,10 +465,10 @@ const f22 = {
         // stick alone. The onset factor keeps it clear of attitudes that are merely
         // nose-high — a hands-off 30-degree pitch attitude is not a departure and must not
         // be quietly flown out of.
-        postStallRecoveryOnsetFactor: 1.25,
-        postStallRecoveryRangeDeg: 34,
-        postStallRecoveryStickThreshold: 0.35,
-        postStallRecoveryPitchRateDeg: 42,
+        postStallRecoveryOnsetFactor: 1.1,
+        postStallRecoveryRangeDeg: 28,
+        postStallRecoveryStickThreshold: 0.4,
+        postStallRecoveryPitchRateDeg: 70,
         // How many degrees past the stall count as fully post-stall, for the HUD readout,
         // the vapour effect, and the separated-flow drag surcharge.
         postStallDisplayRangeDeg: 30,
@@ -471,13 +486,13 @@ const f22 = {
         // And what separates a tumble from the Cobra it passes through: the nose is not
         // merely off the airstream, it is still going round. Measured off nose-off-path,
         // which does not wrap, and off a pitch rate that has not stopped.
-        tumbleMinNoseOffDeg: 120,
+        tumbleMinNoseOffDeg: 110,
         tumbleMinPitchRateDeg: 55,
         pathRateResponse: 9,
         // What separates the yaw-coupled J-turn from a pure-pitch Cobra, and the yaw rate a
         // pedal turn has to actually be producing before it earns the name. Labels only:
         // `detectManeuver` reads the physics, it never feeds it.
-        jTurnMinSideslipDeg: 14,
+        jTurnMinSideslipDeg: 4,
         pedalTurnMinYawRateDeg: 18,
         tailslideMinPitchDeg: 55,
         tailslideMinNoseOffDeg: 150,
@@ -518,8 +533,8 @@ const f22 = {
         // behaviour) let it roll at 48 deg/s while barely moving, which is what made slow
         // flight feel like a turntable. This sits between: roughly 20 deg/s of roll at
         // 180 km/h, still 115 by 700.
-        authorityExponent: 1.25,
-        postStallSurfaceLoss: 0.6,
+        authorityExponent: 1.15,
+        postStallSurfaceLoss: 0.32,
         // The alpha at which separated flow has taken everything it is going to take from
         // the surfaces, and the window over which roll authority sheds against alpha. Roll
         // goes first and goes further: the ailerons are out at the wingtips, which is where
@@ -527,7 +542,7 @@ const f22 = {
         surfaceLossFullAoADeg: 70,
         rollAuthorityOnsetDeg: 20,
         rollAuthorityRangeDeg: 45,
-        rollAuthorityAoALoss: 0.65,
+        rollAuthorityAoALoss: 0.35,
         // What the engines put back once the wingtips have stopped voting: differential
         // tail in the efflux, and a nozzle contribution the real airframe does not have.
         // Scaled by thin air and by thrust, so it is worth nothing at fighting speed and
@@ -539,7 +554,7 @@ const f22 = {
         // How much of the rate response survives when an axis has no aerodynamic authority
         // left. This is the FCS rate loop — gyro in, nozzle out — so it never goes to zero,
         // but below it the airframe's own inertia is what the pilot is fighting.
-        rateResponseFloor: 0.38,
+        rateResponseFloor: 0.62,
 
         // How much nozzle authority the spooled core and the reheat each vouch for. This is
         // what stops a 5% throttle claiming the vectoring a full-burner pull has: the numbers
@@ -547,7 +562,7 @@ const f22 = {
         coreThrustShare: 0.75,
         reheatThrustShare: 0.5,
 
-        thrustVectorEffectiveness: 0.55,
+        thrustVectorEffectiveness: 0.65,
         maxThrustVectorDeg: 20,
         thrustVectorResponse: 8,
         normalThrustVectorFactor: 0.35,
@@ -581,12 +596,12 @@ const f22 = {
         // checks reach — it exists so the stabiliser can never become a catapult.
         pitchWeathervaneMaxRateDeg: 90,
         weathervaneQScale: 2,
-        spinDamping: 2.2,
+        spinDamping: 2.6,
         // Deep post-stall the roll and yaw commands are bled off over this many degrees past
         // the stall, so the jet mushes instead of departing.
         spinGuardRangeDeg: 30,
-        spinGuardRollLoss: 0.55,
-        spinGuardYawLoss: 0.4,
+        spinGuardRollLoss: 0.22,
+        spinGuardYawLoss: 0.16,
 
         // Bounded, deterministic falling-leaf coupling. The phase is internal physical
         // memory; the blend itself is continuous and disappears as soon as the pilot moves
@@ -595,15 +610,15 @@ const f22 = {
         fallingLeafNoneKmh: 330,
         fallingLeafMinSink: 1.5,
         fallingLeafSinkRange: 5,
-        fallingLeafInputThreshold: 0.18,
+        fallingLeafInputThreshold: 0.06,
         fallingLeafFrequencyHz: 0.7,
-        fallingLeafRollRateDeg: 12,
-        fallingLeafYawRateDeg: 9,
+        fallingLeafRollRateDeg: 6,
+        fallingLeafYawRateDeg: 4,
         fallingLeafYawPhaseRad: 1.15,
         fallingLeafLabelThreshold: 0.32,
 
         aoaDragGain: 26,
-        postStallDragMultiplier: 1.35,
+        postStallDragMultiplier: 1.25,
         // What the separated-flow bill decays to once the airframe has come round past
         // broadside and is meeting the air the other way. Held at 1 instead, a tumble stops
         // dead in about a second; at zero — which is what an unclamped sine gives — it costs
@@ -613,6 +628,90 @@ const f22 = {
         postStallSideForceFactor: 0.35,
         airBrakeDrag: 12,
         flapsDrag: 4,
+
+        /*
+        Explicit arcade PSM assist. This block is aircraft-owned: another manifest may omit
+        it, narrow the speed window, or provide weaker authority without teaching the shared
+        flight model anything about an F-22.
+
+        Maneuver Assist arms the system without moving the throttle. Pulling while armed
+        latches the assist until the pilot chooses an exit. Orientation still comes from body
+        rates and velocity still comes from forces; none of these values animates or snaps the
+        aircraft onto a canned Cobra pose.
+        */
+        postStallAssist: {
+          capable: true,
+          entryMinKmh: 220,
+          entryMaxKmh: 660,
+          triggerPitch: 0.3,
+          continuePitchThreshold: 0.55,
+          holdPitchThreshold: 0.12,
+          recoveryPitchThreshold: -0.16,
+          recoveryCompleteAoADeg: 16,
+          recoveryCompleteNoseOffDeg: 22,
+          poweredExitMinActiveSeconds: 0.35,
+          poweredExitMinTravelDeg: 45,
+          poweredExitAoADeg: 14,
+          poweredExitNoseOffDeg: 18,
+
+          // These phase boundaries classify what the player is already doing; they never
+          // clamp an angle or start a canned rotation. Signed integrated pitch travel keeps
+          // the flip continuous across the 180-degree AoA wrap.
+          cobraHoldMinTravelDeg: 58,
+          cobraHoldMaxTravelDeg: 138,
+          reversalMinNoseOffDeg: 148,
+          reversalTravelWindowDeg: 34,
+          flipEnterTravelDeg: 108,
+          supportsPSMFlip: true,
+          supportsPSMReversal: true,
+
+          // Ordinary full aft stick remains behind the protected AoA fence. Maneuver Assist
+          // is the only path to post-stall authority, so a low-speed dogfight pull cannot
+          // become a Cobra by accident.
+          manualEnvelopeShare: 0,
+          // The consent rule applies to the signature positive-AoA manoeuvres. Preserve the
+          // existing push-over authority so stall protection does not flatten nose-down
+          // flight or make attitude and momentum appear coupled.
+          negativeManualEnvelopeShare: 0.14,
+          maxAoADeg: 180,
+          // At extreme AoA the surfaces fade and pitch control transfers to artificial PSM
+          // authority plus the nozzle contribution. Reheat therefore improves control as
+          // well as exit acceleration, while a dry engine retains enough arcade authority
+          // to hold an attitude safely.
+          psmPitchAuthority: 1,
+          artificialPitchAuthority: 0.9,
+          thrustVectorAuthority: 1,
+          psmRollAuthority: 0.55,
+          psmYawAuthority: 0.5,
+          engageResponse: 8,
+          releaseResponse: 5,
+          controlResponseBoost: 0.75,
+          angularDampingBoost: 1.2,
+          spinSuppression: 0.9,
+
+          // While the player is holding the Cobra pose, the ordinary centred-stick recovery
+          // and reverse-flow weathercocking stand back. Pitch-down switches both back on,
+          // but recovery gets its own softer response and a cap on the combined pilot/FCS
+          // demand so the nose sweeps back through the horizon instead of snapping there.
+          holdWeathervaneFactor: 0,
+          recoveryPitchRateDeg: 38,
+          recoveryMaxPitchRateDeg: 100,
+          recoveryResponseFactor: 0.72,
+
+          // Temporary high-alpha PSM support. It is separate from aerodynamic lift and pays
+          // out only for the opening 2.6 seconds before fading. Low speed and recovery reduce
+          // it further, so a Cobra can hang long enough to choose an exit but cannot hover.
+          floatFullAoADeg: 58,
+          floatFullSeconds: 2.6,
+          floatFadeSeconds: 2.2,
+          floatFullSpeedKmh: 180,
+          lowSpeedFloatFactor: 0.58,
+          recoveryFloatFadeSeconds: 0.9,
+          gravityScaleAtIdle: 0.9,
+          gravityScaleAtFullPower: 0.64,
+          gravityScaleAtAfterburner: 0.48,
+          dragMultiplier: 1.12,
+        },
       },
     },
   },

@@ -1856,6 +1856,32 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   animation: hud-alert 720ms steps(1, end) infinite alternate;
 }
 
+/* Stall is an immediate aircraft-state warning, not part of the advisory queue. Keeping
+   it on the centre datum means terrain, range, and manoeuvre advisories remain readable
+   below the sightline while the stall state can never be replaced by them. */
+.hud-stall-warning {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 18px;
+  border-block: 1px solid currentColor;
+  color: var(--danger);
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  line-height: 1;
+  background: color-mix(in srgb, var(--danger) 14%, var(--void));
+  text-shadow: 0 0 8px color-mix(in srgb, var(--danger) 50%, transparent);
+  transform: translate(-50%, -50%);
+  animation: hud-stall-alert 520ms steps(1, end) infinite alternate;
+}
+
 /* ---- Cockpit bezel --------------------------------------------------------------- */
 
 .deck {
@@ -2008,8 +2034,8 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   min-height: 50px;
 }
 
-/* Air brake remains a held control; the second cell reports how far past the stall the
-   wing is. */
+/* Secondary touch controls stay out of the stick and throttle groups. Maneuver Assist is
+   the only advanced flight action promoted here; camera utilities remain quieter peers. */
 .deck-row.is-modes {
   grid-template-columns: repeat(4, 1fr);
 }
@@ -2369,6 +2395,13 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   to { opacity: 0.58; }
 }
 
+@keyframes hud-stall-alert {
+  to {
+    color: color-mix(in srgb, var(--danger) 55%, var(--fog));
+    background: color-mix(in srgb, var(--danger) 24%, var(--void));
+  }
+}
+
 @media (max-width: 1024px) {
   .canvas-stage {
     right: 326px;
@@ -2478,6 +2511,12 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
     padding: 6px 12px;
     font-size: 11px;
     letter-spacing: 0.11em;
+  }
+
+  .hud-stall-warning {
+    gap: 8px;
+    padding: 8px 14px;
+    font-size: 15px;
   }
 
   .deck-controls {
@@ -2899,6 +2938,18 @@ the canvas never drew.
   padding: 3px 8px;
   font-size: 9px;
   letter-spacing: 0.12em;
+}
+
+.hud.is-glass .hud-stall-warning {
+  gap: 5px;
+  padding: 5px 8px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+}
+
+.hud.is-glass .hud-stall-warning svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* ---- Manoeuvre demonstration board ------------------------------------------------ */

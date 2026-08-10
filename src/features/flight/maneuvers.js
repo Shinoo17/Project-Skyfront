@@ -35,12 +35,10 @@ rather than guessed, and three constraints shaped them:
   loop being drawn. Enter fast instead and lift never lets go — that is the post-stall
   script, the same pull with the energy to carry the flight path round with it.
 
-  The stick has to be held against the stops, and that is a physical requirement rather than
-  a convention. The FCC opens its AoA fence on `thinAir` multiplied by how far past the
-  max-performance detent the stick is, so a three-quarter pull is a hard turn at any speed
-  and only a committed one asks for everything the nozzles have. It is why the Split-S and
-  the Immelmann can hold 0.82 through the same airspeeds the Cobra passes through and stay
-  conventional manoeuvres, with no mode and no entry window separating them.
+  Maneuver Assist is the arcade PSM consent control. Pulling while it is held opens the
+  aircraft-configured high-AoA envelope without also changing the power setting. A normal
+  pull remains behind the protected conventional fence, which keeps the Split-S and
+  Immelmann conventional even when they pass through the same airspeeds as the Cobra.
 
   Reheat goes in on the way out, never into the pull. Holding it drives the core through the
   MIL detent before the burner lights, so the slow entry trim remains intact until the script
@@ -93,20 +91,11 @@ const MANEUVERS = [
     exitsLevel: true,
     entry: { throttle: THROTTLE_SLOW, settleSeconds: 1.5 },
     steps: [
-      // Short. The pull only has to beat the flight path to deep AoA; held any longer it
-      // stops being a pull and starts being the first quarter of a loop — or, now that the
-      // nose comes round half again as fast in thin air, the tumble four entries down.
-      { seconds: 0.6, hold: ['pitch-up'], label: 'PULL' },
-      { seconds: 0.8, hold: [], label: 'HANG' },
-      // The envelope is open because the speed has gone, not because the last pull opened
-      // it, so forward stick has the same nozzle authority the pull did and can spend it on
-      // bringing the nose back into the capture window. It needs far less of it than it
-      // used to: the same authority that flies the tumble also flies the recovery, and the
-      // old 1.75 seconds of forward stick now puts the jet sixty degrees nose-low.
-      { seconds: 0.8, hold: ['pitch-down'], label: 'NOSE DOWN' },
-      // No reheat on the way out either. The dive off the top pays the airspeed back while
-      // the low dry-power setting keeps the recovery from running away past entry energy.
-      { seconds: 1.5, hold: [], label: 'RECOVER' },
+      { seconds: 0.25, hold: ['maneuver-assist'], label: 'PSM READY' },
+      { seconds: 0.7, hold: ['maneuver-assist', 'pitch-up'], label: 'PULL' },
+      { seconds: 0.65, hold: ['throttle-up'], label: 'HANG / POWER' },
+      { seconds: 0.9, hold: ['throttle-up', 'pitch-down'], label: 'NOSE DOWN' },
+      { seconds: 1.4, hold: ['throttle-up'], label: 'RECOVER' },
     ],
   },
 
@@ -121,19 +110,16 @@ const MANEUVERS = [
     exitsLevel: true,
     entry: { throttle: THROTTLE_SLOW, settleSeconds: 2.5 },
     steps: [
-      { seconds: 0.6, hold: ['pitch-up', 'throttle-up'], label: 'ZOOM' },
-      { seconds: 0.8, hold: ['pitch-up', 'yaw-right', 'throttle-up'], label: 'PULL' },
+      { seconds: 0.25, hold: ['maneuver-assist'], label: 'PSM READY' },
+      { seconds: 0.8, hold: ['pitch-up', 'yaw-right', 'maneuver-assist'], label: 'PULL' },
       // The stick comes forward of the pull. The nose is already across the flight path, and
       // holding aft stick on top of the pedal drives the alpha past 120 degrees and departs
       // the jet rather than swinging it.
       { seconds: 1.0, hold: ['yaw-right', 'throttle-up'], label: 'PEDAL IN' },
-      // Shorter than it used to be, and for a physics reason rather than a cosmetic one. The
-      // airframe now makes its own nose-down moment past about ninety degrees of alpha, so
-      // part of the unload that this step used to fly by hand is flown by the airstream. Held
-      // for the old duration on top of that, the recovery overshoots and the jet exits some
-      // thirty degrees nose-low instead of level.
-      { seconds: 0.5, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
-      { seconds: 1.0, hold: [], label: 'RECOVER' },
+      // Recovery is deliberately rate-limited, so keep the stick forward through the smooth
+      // sweep instead of relying on a short pulse to snap the nose back onto the flight path.
+      { seconds: 1.2, hold: ['pitch-down', 'throttle-up'], label: 'UNLOAD' },
+      { seconds: 1.15, hold: [], label: 'RECOVER' },
     ],
   },
 
@@ -154,7 +140,7 @@ const MANEUVERS = [
       // The jet comes out of the pedal turn at about 340 km/h, and at that energy the nose
       // keeps falling on its own — the FCC damps rate, it does not hold an attitude. A
       // little back stick on the way out is what a pilot would be doing anyway.
-      { seconds: 1.8, hold: [], axes: { pitch: 0.62 }, label: 'SETTLE' },
+      { seconds: 1.0, hold: [], axes: { pitch: 0.62 }, label: 'SETTLE' },
     ],
   },
 
@@ -175,15 +161,13 @@ const MANEUVERS = [
     // and the lift never lets the alpha past the stall at all.
     entry: { throttle: 0.235, settleSeconds: 2.5 },
     steps: [
-      { seconds: 1.3, hold: ['pitch-up', 'afterburner'], label: 'PULL' },
-      { seconds: 0.6, hold: ['afterburner'], label: 'HOLD ALPHA' },
-      { seconds: 2.0, hold: ['throttle-up'], axes: { pitch: 0.65 }, label: 'PULL THROUGH' },
-      // The pull through is longer than it was and this step is new, both for the same
-      // reason: the wing is dragging the path round from a much higher nose rate than it
-      // used to, and without a deliberate push at the end the jet leaves the manoeuvre
-      // thirty degrees nose-high with the label still ticking.
-      { seconds: 0.8, hold: ['throttle-up'], axes: { pitch: -0.5 }, label: 'LEVEL OFF' },
-      { seconds: 1.5, hold: ['throttle-up'], label: 'RECOVER' },
+      { seconds: 0.25, hold: ['maneuver-assist'], label: 'PSM READY' },
+      { seconds: 1.0, hold: ['maneuver-assist'], axes: { pitch: 0.82 }, label: 'PULL' },
+      { seconds: 0.3, hold: ['throttle-up'], label: 'HOLD ALPHA' },
+      { seconds: 0.85, hold: ['pitch-down', 'throttle-up'], label: 'RECOVER AOA' },
+      { seconds: 1.0, hold: ['throttle-up'], label: 'REATTACH' },
+      { seconds: 0.35, hold: ['pitch-down', 'throttle-up'], label: 'LEVEL FLIGHT' },
+      { seconds: 0.85, hold: ['throttle-up'], label: 'SETTLE' },
     ],
   },
 
@@ -203,10 +187,11 @@ const MANEUVERS = [
     // manoeuvre being unpredictable.
     entry: { throttle: THROTTLE_LOW, settleSeconds: 2.0 },
     steps: [
+      { seconds: 0.25, hold: ['maneuver-assist'], label: 'PSM READY' },
       // Long enough to carry the nose past the beam and round; the airstream's restoring
       // moment is at a quarter strength for as long as this stick is held, and full again
       // the instant it is not.
-      { seconds: 1.3, hold: ['pitch-up', 'afterburner'], label: 'FLIP' },
+      { seconds: 1.45, hold: ['pitch-up', 'afterburner', 'maneuver-assist'], label: 'FLIP' },
       // Roll while the wing is still stalled — the part the airframe could not do at all
       // before the engines were given a say in it, and the part that turns the tumble from
       // a trick into a way of leaving in a chosen direction.
@@ -284,7 +269,7 @@ const MANEUVERS = [
       // A little shorter than it was: 645 km/h is inside the top of the thin-air window, so
       // even this three-quarter pull now buys a slightly higher nose rate and the half loop
       // closes sooner.
-      { seconds: 3.4, hold: ['afterburner'], axes: { pitch: 0.82 }, label: 'PULL UP' },
+      { seconds: 3.65, hold: ['afterburner'], axes: { pitch: 0.82 }, label: 'PULL UP' },
       { seconds: 1.5, hold: ['roll-right'], label: 'ROLL UPRIGHT' },
       { seconds: 2.4, hold: [], label: 'RECOVER' },
     ],

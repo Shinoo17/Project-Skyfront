@@ -21,7 +21,7 @@ import {
   RotateCcw,
   RotateCw,
   TriangleAlert,
-  Wind,
+  Zap,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -36,8 +36,8 @@ const RESET_CAPTIONS = {
 }
 
 // The detector's regimes, named the way a pilot would call them. Only the ones worth an
-// advisory line. Normal flight is not one, and neither is a stall on its own: the AoA
-// envelope is continuous, so there is no mode change to announce.
+// advisory line. The immediate stall warning is rendered independently at the centre of
+// the glass, so it cannot be displaced by a lower-priority advisory.
 const MANEUVER_CAPTIONS = {
   tumble: 'TUMBLE',
   cobra: 'COBRA',
@@ -55,10 +55,10 @@ const MANEUVER_CAPTIONS = {
 const MAX_PIXEL_RATIO = 2
 
 /*
-The advisory is the one piece of HUD state that belongs in React: it changes a handful of
-times per sortie, it swaps a colour and an icon, and it is announced to screen readers.
-Everything continuous is drawn to the canvas or written straight to the DOM. Ordered most
-urgent first.
+The advisory and the independent stall latch are the only HUD states that belong in React:
+they change a handful of times per sortie and must be announced to screen readers.
+Everything continuous is drawn to the canvas or written straight to the DOM. Advisories
+are ordered most urgent first.
 */
 function readAdvisory(telemetry) {
   if (!telemetry.live) return { key: 'standby', label: 'RANGE STANDBY', tone: 'normal' }
@@ -80,17 +80,29 @@ function readAdvisory(telemetry) {
   if (telemetry.afterburnerState === 'depleted') {
     return { key: 'reheat-out', label: 'REHEAT DEPLETED · COOLING', tone: 'caution' }
   }
+  if (telemetry.psmPhase === 'high-aoa') {
+    return { key: 'psm-ready', label: 'PSM READY · PULL UP', tone: 'caution' }
+  }
+  if (telemetry.psmPhase === 'recovery') {
+    return { key: 'psm-recovery', label: 'PSM RECOVERY', tone: 'caution' }
+  }
+  if (telemetry.psmPhase === 'cobra-hold') {
+    return { key: 'psm-cobra', label: 'COBRA HOLD · ↓ RECOVER · W EXIT', tone: 'caution' }
+  }
+  if (telemetry.psmPhase === 'post-stall-flip') {
+    return { key: 'psm-flip', label: 'FLIP · RELEASE TO HOLD · ↓ RECOVER', tone: 'caution' }
+  }
+  if (telemetry.psmPhase === 'post-stall-reversal') {
+    return { key: 'psm-reversal', label: 'PSM REVERSAL · ADD POWER', tone: 'caution' }
+  }
+  if (telemetry.psmPhase === 'post-stall') {
+    return { key: 'psm-active', label: 'PSM · RELEASE TO HOLD · ↑ FLIP', tone: 'caution' }
+  }
   // A named manoeuvre outranks housekeeping advisories: the detector reads the physics,
   // and calling the regime is the cheapest feedback the range can give.
   const maneuver = MANEUVER_CAPTIONS[telemetry.maneuver]
   if (maneuver) return { key: `mnv-${telemetry.maneuver}`, label: maneuver, tone: 'caution' }
   if (telemetry.flaps) return { key: 'flaps', label: 'FLAPS DOWN', tone: 'caution' }
-  // There is no assist mode left to announce — `postStallActive` now says only that the
-  // wing is past its stalling angle. The regime captions above catch nearly every case
-  // that reaches here; this is the stall warning for the rest.
-  if (telemetry.postStallActive) {
-    return { key: 'stall', label: 'STALL', tone: 'caution' }
-  }
   return { key: 'clear', label: 'FLIGHT PATH CLEAR', tone: 'normal' }
 }
 
@@ -194,6 +206,8 @@ function formatDebug(value) {
     row('THR', `${Math.round(value.throttle * 100)}%  A/B ${value.afterburnerState}`),
     row('TVC', `${value.thrustVector.toFixed(1)}°`),
     row('STALL', `${Math.round(value.postStallBlend * 100)}%${value.airBrake ? ' +brake' : ''}`),
+    row('PSM', `${value.psmPhase} ${Math.round(value.psmBlend * 100)}%`
+      + ` float ${Math.round(value.psmFloatBlend * 100)}% g×${value.gravityScale.toFixed(2)}`),
     row('DEPART', `${Math.round(value.departureBlend * 100)}%`),
     row('MNVR', value.maneuver),
     row('FPS', String(value.fps || 0)),
@@ -222,6 +236,8 @@ export default function FlightHud({
   const dom = useRef({})
   const [advisory, setAdvisory] = useState(() => readAdvisory(EMPTY_TELEMETRY))
   const advisoryKey = useRef(advisory.key)
+  const [stallWarning, setStallWarning] = useState(false)
+  const stallWarningActive = useRef(false)
 
   // The glass is one canvas the size of the WebGL view, so a point projected through the
   // flight camera lands on the same pixel in both. It is sized from the HUD's own box
@@ -251,6 +267,12 @@ export default function FlightHud({
       if (next.key !== advisoryKey.current) {
         advisoryKey.current = next.key
         setAdvisory(next)
+      }
+
+      const nextStallWarning = Boolean(value.live && value.postStallActive)
+      if (nextStallWarning !== stallWarningActive.current) {
+        stallWarningActive.current = nextStallWarning
+        setStallWarning(nextStallWarning)
       }
 
       hud.draw(value)
@@ -340,6 +362,13 @@ export default function FlightHud({
         <span>{advisory.label}</span>
       </p>
 
+      {stallWarning && (
+        <p className="hud-stall-warning" role="alert">
+          <TriangleAlert size={22} strokeWidth={2.4} aria-hidden="true" />
+          <span>STALL</span>
+        </p>
+      )}
+
       {!glassOnly && <div className="deck deck-controls" aria-label="Flight controls">
         <div className="deck-stick">
           <span aria-hidden="true" />
@@ -374,8 +403,13 @@ export default function FlightHud({
           </div>
 
           <div className="deck-row is-modes">
-            <HoldControl control="air-brake" label="Hold for air brake" icon={Wind} controls={controls}>
-              Brake
+            <HoldControl
+              control="maneuver-assist"
+              label="Hold for maneuver assist"
+              icon={Zap}
+              controls={controls}
+            >
+              MNV
             </HoldControl>
             <button
               type="button"
@@ -401,7 +435,9 @@ export default function FlightHud({
               </div>
             </div>
             <div className="deck-throttle-row">
-              <HoldControl control="throttle-down" label="Reduce throttle" icon={Minus} controls={controls}>S</HoldControl>
+              <HoldControl control="throttle-down" label="Slow down with air brake" icon={Minus} controls={controls}>
+                Slow
+              </HoldControl>
               <input
                 type="range"
                 min={envelope.minThrottle}
@@ -411,7 +447,9 @@ export default function FlightHud({
                 ref={(node) => { dom.current.slider = node }}
                 aria-label="Flight throttle"
               />
-              <HoldControl control="throttle-up" label="Increase throttle" icon={Plus} controls={controls}>W</HoldControl>
+              <HoldControl control="throttle-up" label="Increase throttle" icon={Plus} controls={controls}>
+                Power
+              </HoldControl>
             </div>
           </div>
         </div>
@@ -421,17 +459,10 @@ export default function FlightHud({
         <kbd>↑</kbd><kbd>↓</kbd><span>pitch</span>
         <kbd>←</kbd><kbd>→</kbd><span>roll</span>
         <kbd>Q</kbd><kbd>E</kbd><span>yaw</span>
-        <kbd>W</kbd><kbd>S</kbd><span>throttle</span>
-        <kbd>SHIFT</kbd><span>hold for afterburner</span>
-        <kbd>SPACE</kbd><span>air brake</span>
-        <span>AoA assist automatic</span>
-        <kbd>F</kbd><span>flaps</span>
-        <kbd>R</kbd><span>reset</span>
-        <kbd>C</kbd><span>camera</span>
-        <kbd>DRAG</kbd><span>free look</span>
-        <kbd>V</kbd><span>hold rear view</span>
-        <kbd>I</kbd><span>debug</span>
-        <kbd>ESC</kbd><kbd>P</kbd><span>menu</span>
+        <kbd>W</kbd><kbd>S</kbd><span>power · slow / brake</span>
+        <kbd>SHIFT</kbd><span>afterburner</span>
+        <kbd>SPACE</kbd><kbd>↑</kbd><span>maneuver</span>
+        <kbd>C</kbd><kbd>ESC</kbd><span>camera · menu</span>
       </p>}
     </div>
   )

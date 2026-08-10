@@ -166,6 +166,8 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
           flaps: input.flaps,
           throttle: input.throttle,
           airBrake: input.airBrake,
+          accelerate: input.accelerate,
+          psmArm: input.psmArm,
           afterburnerCommanded: burnerRequested,
           burnerLevel: burner.level,
         }, envelope, FLIGHT_FIXED_STEP)
@@ -269,9 +271,11 @@ for (const maneuver of MANEUVERS) {
 }
 
 /*
-Hands-off pitch regression. The FCC damps angular rate but does not level pitch attitude;
-all attitudes must stay where the pilot left them. Run the same cases at low and normal
-energy so neither dynamic pressure nor the flight path can secretly become a pitch command.
+Hands-off pitch regression. The FCC damps angular rate but does not level ordinary pitch
+attitudes. Positive AoA already beyond the protected envelope is the deliberate exception:
+without Maneuver Assist it must ease back toward the safe fence. Run the cases at low and
+normal energy so neither dynamic pressure nor the flight path can secretly become a pitch
+command.
 */
 if (only === 'all') {
   const cases = [
@@ -279,7 +283,7 @@ if (only === 'all') {
     { speedKmh: 400, pitchDeg: -5 },
     { speedKmh: 260, pitchDeg: 5.5 },
     { speedKmh: 400, pitchDeg: -5.5 },
-    { speedKmh: 260, pitchDeg: 30 },
+    { speedKmh: 260, pitchDeg: 30, protectsStall: true },
     { speedKmh: 800, pitchDeg: -30 },
   ]
 
@@ -308,6 +312,8 @@ if (only === 'all') {
         flaps: 0,
         throttle: envelope.idleThrottle,
         airBrake: false,
+        accelerate: false,
+        psmArm: false,
         afterburnerCommanded: false,
         burnerLevel: 0,
       }, envelope, FLIGHT_FIXED_STEP)
@@ -315,10 +321,13 @@ if (only === 'all') {
       finalPitch = Math.asin(Math.max(-1, Math.min(1, forward.y))) * 180 / Math.PI
     }
 
-    const pitchOk = Math.abs(finalPitch - test.pitchDeg) < 0.5
+    const pitchOk = test.protectsStall
+      ? finalPitch < test.pitchDeg - 2
+        && finalPitch <= envelope.maneuvering.stallProtectionAoALimitDeg + 2
+      : Math.abs(finalPitch - test.pitchDeg) < 0.5
     if (!pitchOk) failures += 1
     console.log(
-      `${pitchOk ? 'PASS' : 'FAIL'} pitch holds`
+      `${pitchOk ? 'PASS' : 'FAIL'} pitch ${test.protectsStall ? 'protects' : 'holds  '}`
       + ` ${String(test.speedKmh).padStart(3)}kmh`
       + ` start=${test.pitchDeg.toFixed(1).padStart(5)}°`
       + ` end=${finalPitch.toFixed(1).padStart(5)}°${pitchOk ? '' : ' !'}`,

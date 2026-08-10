@@ -6,13 +6,14 @@ things that only matter once alpha gets large:
 
   A  normal level flight            no stall, no drama, G near 1
   B  low speed, moderate AoA        authority fades with the airstream, but no departure
+  B2 low speed, full pull           FCC protects the stall unless Maneuver Assist is armed
   C  high speed, full aft stick     alpha and G rise, drag bites, and the G fence holds
-  D  cobra                          nose leaves the airstream, energy is spent, it recovers
+  D  arcade assisted Cobra         assist arms, path floats forward, energy is spent, recovery works
   E  idle throttle, nose down       attitude changes; momentum does not follow it
   F  vertical tailslide             velocity crosses zero and genuinely reverses
   G  falling leaf                   hands-off departure oscillates but stays bounded
   H  low-speed flat yaw             nose pivots faster than the trajectory
-  I  sustained post-stall pull      completes a Kulbit, then rotation bleeds away
+  I  extended assisted pull        reaches a bounded Kulbit and recovers
 
 Every case flies the real `stepFlight` at the real fixed step. The scenarios enter already
 trimmed so they test the aerodynamics rather than the keyboard ramp.
@@ -44,6 +45,8 @@ const command = (over = {}) => ({
   flaps: 0,
   throttle: envelope.idleThrottle,
   airBrake: 0,
+  accelerate: false,
+  psmArm: false,
   afterburnerCommanded: false,
   burnerLevel: 0,
   ...over,
@@ -141,6 +144,26 @@ function report(label, extra) {
     + ` stall=${slowRun.peak.postStall.toFixed(2)}`)
 }
 
+// ------------------------------------------ B2: low speed, full pull, protected envelope
+{
+  const state = trimmed(520, 0.5)
+  let leftNormalFlight = false
+  const run = fly(state, 2.5, () => command({ pitch: 1, throttle: 0.5 }), (_t, sample) => {
+    leftNormalFlight ||= sample.psmPhase !== 'normal'
+  })
+
+  assert.equal(leftNormalFlight, false,
+    'B2: full aft stick without Maneuver Assist must remain normal flight')
+  assert.ok(run.peak.aoa < tuning.stallAoADeg,
+    `B2: protected pull must stay below stall AoA (saw ${run.peak.aoa.toFixed(1)}°)`)
+  assert.equal(run.peak.postStall, 0,
+    'B2: protected pull must never register post-stall separation')
+
+  report('B2 protected pull', `aoa=${run.peak.aoa.toFixed(1)}°`
+    + ` limit=${tuning.stallProtectionAoALimitDeg.toFixed(0)}°`
+    + ` stall=${run.peak.postStall.toFixed(2)}`)
+}
+
 // ------------------------------------------------- C: high speed, full aft stick, G fence
 {
   const speedKmh = 1100
@@ -171,59 +194,114 @@ function report(label, extra) {
     + ` drag=${run.peak.drag.toFixed(1)} dV=${(speedKmh - run.minSpeed).toFixed(0)}kmh`)
 }
 
-// ------------------------------------------------------------------------ D: cobra
+// -------------------------------------------------------------- D: arcade assisted Cobra
 {
   const entryKmh = 520
   const state = trimmed(entryKmh, 0.5)
-  // Full aft for 1.4 s, then hands off to recover. The recovery window is long on purpose:
-  // hands-off from a deep stall is a mush, not a snap. Alpha comes down monotonically as the
-  // nose falls and the speed rebuilds, and the wing does not bite again until about seven
-  // seconds in — which is the point, since nothing in the model is allowed to shortcut it.
-  const run = fly(state, 9, (t) => command({ pitch: t < 1.4 ? 1 : 0, throttle: 0.5 }))
-  const divergence = (() => {
-    const nose = FORWARD.clone().applyQuaternion(state.orientation)
-    const path = state.velocity.clone().normalize()
-    return MathUtils.radToDeg(Math.acos(MathUtils.clamp(nose.dot(path), -1, 1)))
-  })()
+  const startY = state.position.y
+  let peakNose = 0
+  let peakDivergence = 0
+  let minPathPitch = Infinity
+  let maxPathPitch = -Infinity
+  let minGravityScale = 1
+  let maxY = startY
+  let sawPrepare = false
+  let sawPostStall = false
+  let sawRecovery = false
+  let recoveryStartedAt = null
+  let recoveryCompletedAt = null
+  let maxRecoveryPitchDownRate = 0
 
-  assert.ok(run.peak.aoa > 55, 'D: a cobra must put the nose well off the airstream')
-  assert.ok(run.peak.postStall > 0.5, 'D: a cobra must register as post-stall')
-  assert.ok(entryKmh - run.minSpeed > 120, 'D: a cobra must cost a lot of energy')
-  assert.ok(Math.abs(state.aoaDeg) < tuning.stallAoADeg, 'D: releasing the stick must recover')
-  assert.ok(divergence < 25, 'D: after recovery the nose must be back near the airstream')
+  const run = fly(state, 5.0, (t) => {
+    if (t < 0.2) return command({ psmArm: true, throttle: 0.5 })
+    if (t < 0.95) return command({ psmArm: true, pitch: 1, throttle: 0.5 })
+    if (t < 1.4) return command({ accelerate: true, throttle: 1 })
+    if (t < 2.1) return command({ pitch: -1, accelerate: true, throttle: 1 })
+    return command({ accelerate: true, throttle: 1 })
+  }, (t, sample) => {
+    peakNose = Math.max(peakNose, noseDeg(sample))
+    peakDivergence = Math.max(peakDivergence, sample.noseOffPathDeg)
+    minGravityScale = Math.min(minGravityScale, sample.gravityScale)
+    maxY = Math.max(maxY, sample.position.y)
+    if (sample.psmPhase === 'high-aoa') sawPrepare = true
+    if ((sample.psmPhase === 'post-stall' || sample.psmPhase === 'cobra-hold') && t < 1.4) {
+      sawPostStall = true
+      minPathPitch = Math.min(minPathPitch, pathDeg(sample))
+      maxPathPitch = Math.max(maxPathPitch, pathDeg(sample))
+    }
+    if (sample.psmPhase === 'recovery') {
+      sawRecovery = true
+      recoveryStartedAt ??= t
+      const restoringPitchRate = -MathUtils.radToDeg(sample.angularVelocity.z)
+        * Math.sign(sample.aoaDeg)
+      maxRecoveryPitchDownRate = Math.max(maxRecoveryPitchDownRate, restoringPitchRate)
+    } else if (sawRecovery && recoveryCompletedAt === null) {
+      recoveryCompletedAt = t
+    }
+  })
 
-  report('D cobra', `peakAoa=${run.peak.aoa.toFixed(0)}° postStall=${run.peak.postStall.toFixed(2)}`
-    + ` dV=${(entryKmh - run.minSpeed).toFixed(0)}kmh exitAoa=${state.aoaDeg.toFixed(1)}°`
-    + ` exitDiverge=${divergence.toFixed(1)}°`)
+  const energyCost = entryKmh - run.minSpeed
+  const recoverySeconds = recoveryCompletedAt - recoveryStartedAt
+  assert.ok(sawPrepare && sawPostStall && sawRecovery,
+    'D: Maneuver Assist must fly every PSM phase')
+  assert.ok(peakNose > 82, 'D: assisted Cobra must point the nose close to vertical')
+  assert.ok(peakDivergence > 70, 'D: the nose must leave the velocity vector')
+  assert.ok(minPathPitch > -12, 'D: PSM float must stop gravity dumping the path at the ground')
+  assert.ok(maxPathPitch < 35, 'D: velocity must not rotate upward with the nose')
+  assert.ok(maxY > startY, 'D: powered Cobra should float or climb slightly')
+  assert.ok(minGravityScale < 0.75, 'D: powered high-AoA flight must engage partial gravity relief')
+  assert.ok(energyCost > 100 && energyCost < 260, 'D: Cobra needs a useful but survivable energy bill')
+  assert.ok(maxRecoveryPitchDownRate <= 102,
+    `D: recovery must not snap past its 100deg/s cap (saw ${maxRecoveryPitchDownRate.toFixed(1)})`)
+  assert.ok(recoverySeconds > 0.65 && recoverySeconds < 1.8,
+    `D: recovery should sweep smoothly without becoming sluggish (took ${recoverySeconds.toFixed(2)}s)`)
+  assert.ok(Math.abs(state.aoaDeg) < 18, 'D: pitch-down recovery must reattach the wing quickly')
+  assert.ok(state.noseOffPathDeg < 24, 'D: recovery must hand back an aligned aircraft')
+  assert.ok(state.speedKmh > run.minSpeed + 10,
+    `D: full power must stop the post-stall energy bleed (min ${run.minSpeed.toFixed(0)}, exit ${state.speedKmh.toFixed(0)}, phase ${state.psmPhase})`)
 
-  /*
-  Chained cobras must not be free. The metric is total specific energy, not airspeed:
-  the recovery is a dive, so the jet trades height back for speed and reads *faster* at the
-  bottom of the second cobra than at the bottom of the first. Airspeed alone would call that
-  a free manoeuvre. Height plus speed together is the thing that has to be monotonically
-  spent, and it is the quantity the pilot is actually paying with.
-  */
-  const specificEnergy = (s) => (
-    ((s.velocity.length() ** 2) / 2) + (tuning.gravity * s.position.y)
-  )
-  const chain = trimmed(entryKmh, 0.5)
-  const energies = [specificEnergy(chain)]
-  for (let n = 0; n < 3; n += 1) {
-    fly(chain, 1.4, () => command({ pitch: 1, throttle: 0.5 }))
-    fly(chain, 2.6, () => command({ pitch: 0, throttle: 0.5 }))
-    energies.push(specificEnergy(chain))
+  report('D arcade Cobra', `nose=${peakNose.toFixed(0)}° diverge=${peakDivergence.toFixed(0)}°`
+    + ` path=${minPathPitch.toFixed(0)}..${maxPathPitch.toFixed(0)}°`
+    + ` dV=${energyCost.toFixed(0)}kmh gScale=${minGravityScale.toFixed(2)}`
+    + ` recovery=${recoverySeconds.toFixed(2)}s/${maxRecoveryPitchDownRate.toFixed(0)}°s`
+    + ` exit=${state.aoaDeg.toFixed(1)}°/${state.speedKmh.toFixed(0)}kmh`)
+
+  // The explicit assist is an aircraft capability rather than a script calibrated to one
+  // altitude. The same chord/pull/recover sequence must remain usable across its entry band.
+  const variants = [
+    { speedKmh: 360, y: 250 },
+    { speedKmh: 620, y: 250 },
+    { speedKmh: 620, y: 815 },
+  ]
+  const variantResults = []
+  for (const variant of variants) {
+    const probe = createFlightState()
+    resetFlightState(probe, new Vector3(0, variant.y, 0), variant.speedKmh, envelope, 0.5)
+    probe.orientation.setFromAxisAngle(PITCH_AXIS, trimAlphaRad(variant.speedKmh))
+    probe.velocity.set(variant.speedKmh * toWorld, 0, 0)
+    let divergencePeak = 0
+    let pathFloor = Infinity
+    let sawAssist = false
+    fly(probe, 5.0, (t) => {
+      if (t < 0.2) return command({ psmArm: true, throttle: 0.5 })
+      if (t < 0.95) return command({ psmArm: true, pitch: 1, throttle: 0.5 })
+      if (t < 1.4) return command({ accelerate: true, throttle: 1 })
+      if (t < 2.1) return command({ pitch: -1, accelerate: true, throttle: 1 })
+      return command({ accelerate: true, throttle: 1 })
+    }, (_t, sample) => {
+      divergencePeak = Math.max(divergencePeak, sample.noseOffPathDeg)
+      if ((sample.psmPhase === 'post-stall' || sample.psmPhase === 'cobra-hold') && _t < 1.4) {
+        sawAssist = true
+        pathFloor = Math.min(pathFloor, pathDeg(sample))
+      }
+    })
+    assert.ok(sawAssist, `D: ${variant.speedKmh}kmh/${variant.y} must enter PSM`)
+    assert.ok(divergencePeak > 65, `D: ${variant.speedKmh}kmh must produce a Cobra attitude`)
+    assert.ok(pathFloor > -15, `D: ${variant.speedKmh}kmh PSM path must remain recoverable`)
+    assert.ok(Math.abs(probe.aoaDeg) < 20, `D: ${variant.speedKmh}kmh Cobra must recover`)
+    variantResults.push(`${variant.speedKmh}@${variant.y}:${divergencePeak.toFixed(0)}°`)
   }
-  const spent = energies.slice(1).map((e, i) => energies[i] - e)
-  assert.ok(
-    spent.every((cost) => cost > 0),
-    'D: every cobra in a chain must cost energy — no free super-turn',
-  )
-  assert.ok(
-    spent[2] > spent[0],
-    'D: cobras flown from a worse energy state must cost more, not less',
-  )
-  report('D cobra chain', `spent=${spent.map((v) => v.toFixed(0)).join(' then ')}`
-    + ` of ${energies[0].toFixed(0)} specific energy`)
+  report('D Cobra envelope', variantResults.join('  '))
 }
 
 // ------------------------------------------------ E: idle throttle, hard nose-down push
@@ -260,8 +338,8 @@ function report(label, extra) {
   )
   assert.ok(late.path < early.path - 8, 'E: gravity and lift must then bend the path down')
   assert.ok(
-    slow.maxLag > mid.maxLag && mid.maxLag > fast.maxLag,
-    'E: the lag must grow as the wing weakens — proof that lift bends the path, not a rule',
+    Math.min(slow.maxLag, mid.maxLag, fast.maxLag) > 3,
+    'E: every speed must preserve visible momentum instead of steering velocity from attitude',
   )
   // The wing has to be loaded negative to pull the path down; if the velocity were being
   // steered directly, no incidence would be needed to do it.
@@ -275,7 +353,7 @@ function report(label, extra) {
 
   report('E idle nose-down', `900kmh t=0.5s nose=${early.nose.toFixed(1)}°`
     + ` path=${early.path.toFixed(1)}° lag=${(early.path - early.nose).toFixed(1)}°`
-    + ` | peak lag 300/500/900 = ${slow.maxLag.toFixed(1)}/${mid.maxLag.toFixed(1)}`
+    + ` | arcade lag 300/500/900 = ${slow.maxLag.toFixed(1)}/${mid.maxLag.toFixed(1)}`
     + `/${fast.maxLag.toFixed(1)}°`)
 }
 
@@ -383,32 +461,39 @@ function report(label, extra) {
     + ` nose/path=${highAlpha.noseTurn.toFixed(0)}°/${highAlpha.pathTurn.toFixed(0)}°`)
 }
 
-// -------------------------------------------- I: no unlimited powered post-stall rotation
+// --------------------------------------- I: extended PSM pull is powerful but remains bounded
 {
   const state = trimmed(520, 0.7)
   const startY = state.position.y
   let rotationDeg = 0
   let previous = state.orientation.clone()
-  fly(state, 20, () => command({
-    pitch: 1,
-    throttle: 0.7,
+  let sawRecovery = false
+  const run = fly(state, 5.5, (t) => command({
+    pitch: t < 0.2 ? 0 : t < 1.65 ? 1 : t < 2.25 ? -1 : 0,
+    psmArm: t < 1.65,
+    throttle: 1,
     afterburnerCommanded: true,
     burnerLevel: 1,
   }), (_t, sample) => {
     rotationDeg += MathUtils.radToDeg(previous.angleTo(sample.orientation))
     previous.copy(sample.orientation)
+    sawRecovery ||= sample.psmPhase === 'recovery'
   })
   const exitPitchRate = Math.abs(MathUtils.radToDeg(state.angularVelocity.z))
   const altitudeLoss = startY - state.position.y
 
-  assert.ok(rotationDeg > 360, 'I: a committed powered pull must be able to complete a Kulbit')
-  assert.ok(rotationDeg < 1800, 'I: the airframe must not rotate forever under held input')
-  assert.ok(exitPitchRate < 40, 'I: reverse-flow weathercocking must eventually arrest the tumble')
-  assert.ok(altitudeLoss > 30, 'I: sustained post-stall rotation must pay an altitude bill')
+  assert.ok(rotationDeg > 180, 'I: holding the PSM pull must extend a Cobra toward a Kulbit')
+  assert.ok(rotationDeg < 720, 'I: one armed PSM must not rotate forever')
+  assert.ok(sawRecovery, 'I: pitch-down must enter assisted recovery')
+  assert.ok(exitPitchRate < 35, 'I: recovery must arrest the extended rotation')
+  assert.ok(Math.abs(state.aoaDeg) < 20, 'I: the extended pull must return to attached flight')
+  assert.ok(520 - run.minSpeed > 100, 'I: an extended post-stall rotation must spend airspeed')
+  assert.ok(altitudeLoss < 80,
+    `I: arcade float must keep the recovery survivable (loss ${altitudeLoss.toFixed(0)})`)
 
-  report('I bounded Kulbit', `rotation=${rotationDeg.toFixed(0)}°`
+  report('I assisted Kulbit', `rotation=${rotationDeg.toFixed(0)}°`
     + ` exitRate=${exitPitchRate.toFixed(0)}°/s loss=${altitudeLoss.toFixed(0)}`)
 }
 
 for (const line of results) console.log(line)
-console.log('PASS stall checks: stall, TVC, post-stall energy, reverse flight, bounded departure')
+console.log('PASS stall checks: arcade Cobra, PSM float/recovery, energy, reverse flight')

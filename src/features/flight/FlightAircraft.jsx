@@ -217,6 +217,8 @@ export default function FlightAircraft({
       flaps: input.flaps,
       throttle: input.throttle,
       airBrake: input.airBrake,
+      accelerate: input.accelerate,
+      psmArm: input.psmArm,
       afterburnerCommanded: burnerRequested,
       burnerLevel: burner.level,
     }
@@ -387,6 +389,10 @@ export default function FlightAircraft({
     readout.postStallActive = aircraftState.postStallActive
     readout.flightRegime = aircraftState.flightRegime
     readout.departureBlend = aircraftState.departureBlend
+    readout.psmPhase = aircraftState.psmPhase
+    readout.psmBlend = aircraftState.psmBlend
+    readout.psmFloatBlend = aircraftState.psmFloatBlend
+    readout.gravityScale = aircraftState.gravityScale
     readout.aeroAuthority = aircraftState.aeroAuthority
     readout.vectorAuthority = aircraftState.vectorAuthority
     readout.lift = aircraftState.liftForce.length()

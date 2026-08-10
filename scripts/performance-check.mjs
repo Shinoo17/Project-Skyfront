@@ -49,6 +49,16 @@ for (let index = 1; index < dryNet.length; index += 1) {
   assert.ok(dryNet[index] > dryNet[index - 1], 'dry acceleration must rise with throttle')
 }
 
+// Arcade response contract: power changes must matter inside one dogfight beat. These are
+// force readings rather than target-speed checks, so they prove both acceleration and the
+// stronger idle deceleration the player uses to set up PSM.
+const fullPowerNet = readPropulsionKmhPerSecond(1, 0, envelope)
+  - readDragKmhPerSecond(600, altitude, envelope)
+const idleNet = readPropulsionKmhPerSecond(0, 0, envelope)
+  - readDragKmhPerSecond(900, altitude, envelope)
+assert.ok(fullPowerNet > 120, `full power must accelerate quickly (saw ${fullPowerNet})`)
+assert.ok(idleNet < -25, `flight idle must shed speed quickly (saw ${idleNet})`)
+
 const fullDryThrust = readPropulsionKmhPerSecond(1, 0, envelope)
 const aboveTrimNet = fullDryThrust - readDragKmhPerSecond(2350, altitude, envelope)
 assert.ok(fullDryThrust > 0, 'the engine must keep producing thrust above dry trim speed')
@@ -91,5 +101,6 @@ assert.equal(burner.cooling, 0, 'cooldown must not start while residual reheat r
 
 console.log(
   `PASS propulsion: ${throttles.length} trims, monotonic dry thrust, `
+  + `${fullPowerNet.toFixed(0)}kmh/s accel, ${idleNet.toFixed(0)}kmh/s idle decel, `
   + `${ignitionSeconds.toFixed(2)}s idle-to-ignition, billed spool-down`,
 )
