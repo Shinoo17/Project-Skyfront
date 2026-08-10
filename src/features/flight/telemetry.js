@@ -78,6 +78,10 @@ export const EMPTY_TELEMETRY = {
   afterburnerState: 'off',
   engineCoreLevel: 0,
   camera: null,
+  // The virtual stick the captured pointer is holding, −1..1 per axis, or null when the
+  // mouse is not flying the aircraft. The HUD draws a gate from it: the cursor is captured
+  // and invisible, so this is the pilot's only reading of how much stick they have on.
+  mouseStick: null,
   ceiling: 0,
   edge: 0,
   fps: 0,

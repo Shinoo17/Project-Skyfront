@@ -1485,6 +1485,45 @@ input:focus-visible {
   z-index: 0;
 }
 
+/* The pointer is captured while the mouse is flying, so the cursor is already gone; this
+   covers the frame between the click and the capture taking. Only the world takes it — the
+   bezel is a sibling layer, so every control keeps its pointer. */
+.flight-canvas-stage.is-flying {
+  cursor: none;
+}
+
+/* The invitation to hand the pointer over. Low on the glass, clear of the sightline and of
+   the pitch ladder, and gone the instant the capture takes. */
+.flight-capture-prompt {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 17%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 20px;
+  border: 1px solid rgba(88, 255, 128, 0.32);
+  border-radius: 10px;
+  background: rgba(4, 12, 8, 0.58);
+  backdrop-filter: blur(6px);
+  color: rgba(180, 255, 200, 0.94);
+  font: 600 13px/1.35 var(--display, "DIN Alternate", "Arial Narrow", sans-serif);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  text-align: center;
+  pointer-events: none;
+}
+
+.flight-capture-prompt small {
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  color: rgba(150, 232, 176, 0.72);
+}
+
 .flight-canvas-stage canvas {
   display: block;
 }
@@ -1667,6 +1706,77 @@ and the one in force reads as latched instead of merely chosen.
   font-size: 10px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
+}
+
+/* The same instrument the throttle uses, so a setting and a control read as one family. */
+.pause-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 12px 3px;
+  border: 1px solid var(--hud-green-soft);
+  border-radius: 2px;
+  background: rgba(98, 255, 132, 0.04);
+}
+
+.pause-slider > span {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--hud-ice);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+.pause-slider > span i {
+  color: var(--hud-green-dim);
+  font-size: 11px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+}
+
+.pause-slider input {
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.pause-slider input:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.pause-slider input::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--hud-green-soft);
+}
+
+.pause-slider input::-webkit-slider-thumb {
+  width: 10px;
+  height: 20px;
+  margin-top: -8px;
+  appearance: none;
+  border: 1px solid var(--hud-ice);
+  border-radius: 2px;
+  background: var(--carbon);
+}
+
+.pause-slider input::-moz-range-track {
+  height: 3px;
+  background: var(--hud-green-soft);
+}
+
+.pause-slider input::-moz-range-thumb {
+  width: 10px;
+  height: 20px;
+  border: 1px solid var(--hud-ice);
+  border-radius: 2px;
+  background: var(--carbon);
 }
 
 .pause-key.is-quality {

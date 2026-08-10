@@ -244,6 +244,7 @@ export default function FlightHud({
   variant = 'cockpit',
   mouseFlightEnabled = true,
   mousePitchInverted = false,
+  pointerLocked = false,
 }) {
   const glassOnly = variant === 'glass'
   // The widest band the selector ever spans. Its live `max` is narrowed to the dry ceiling
@@ -500,17 +501,20 @@ export default function FlightHud({
       {!glassOnly && <p className="deck-keymap">
         <kbd>MOUSE</kbd>
         <span>
-          {mouseFlightEnabled
-            ? `pitch / roll${mousePitchInverted ? ' · inverted pitch' : ''} · right-drag view`
-            : 'flight control off · right-drag view'}
+          {!mouseFlightEnabled
+            ? 'flight control off'
+            : pointerLocked
+              ? `move to roll / pitch${mousePitchInverted ? ' · inverted' : ''} · right-hold view`
+              : 'click the sky to take the stick'}
         </span>
+        {mouseFlightEnabled && <><kbd>X</kbd><span>centre stick</span></>}
         <kbd>↑</kbd><kbd>↓</kbd><span>pitch</span>
         <kbd>←</kbd><kbd>→</kbd><span>roll</span>
         <kbd>Q</kbd><kbd>E</kbd><span>yaw</span>
         <kbd>W</kbd><kbd>S</kbd><span>faster / slower · S brakes</span>
         <kbd>SHIFT</kbd><span>afterburner</span>
         <kbd>SPACE</kbd><kbd>↑</kbd><span>maneuver</span>
-        <kbd>C</kbd><kbd>ESC</kbd><span>camera · menu</span>
+        <kbd>C</kbd><kbd>ESC</kbd><span>camera · release &amp; menu</span>
       </p>}
     </div>
   )

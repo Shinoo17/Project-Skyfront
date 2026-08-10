@@ -3,10 +3,15 @@ import assert from 'node:assert/strict'
 import f22 from '../src/aircraft/f22.js'
 import {
   FLIGHT_BINDINGS,
+  MOUSE_SENSITIVITY_RANGE,
+  centreMouseStick,
+  clampMouseSensitivity,
   clearAnalogFlightInput,
+  clearMouseStick,
   createFlightInputState,
+  moveMouseStick,
   readCommandSpeedLimits,
-  readMouseFlightAxes,
+  readMouseStickAxes,
   setAnalogFlightInput,
   setCommandSpeedKmh,
   stepFlightInput,
@@ -129,45 +134,100 @@ assert.equal(input.intent.roll, 0.42, 'analogue roll must retain its requested m
 assert.equal(input.intent.pitch, -0.25, 'analogue pitch must retain its requested magnitude')
 clearAnalogFlightInput(input, 'test-stick')
 
-// The canvas mouse is another analogue stick, not a private rotation path. Its centre is
-// quiet, the axes have the same signs as the keyboard, and the authored curve preserves
-// fine control before reaching full authority near the edge.
+/*
+The mouse is a relative stick, and everything worth checking about it follows from that one
+claim: only travel moves it, it holds where it is left, and it never depends on where the
+pointer happens to be. That independence is the fix for the Action camera — a stick has no
+position on the glass for a rolled lens to rotate.
+*/
 {
-  const bounds = { left: 100, top: 50, width: 1000, height: 800 }
-  assert.deepEqual(
-    readMouseFlightAxes(600, 450, bounds),
-    { pitch: 0, roll: 0, yaw: 0 },
-    'mouse at canvas centre must be a neutral stick',
-  )
-  assert.deepEqual(
-    readMouseFlightAxes(600, 50, bounds),
-    { pitch: 1, roll: 0, yaw: 0 },
-    'mouse up must command full positive pitch without yaw',
-  )
-  assert.deepEqual(
-    readMouseFlightAxes(600, 50, bounds, { invertPitch: true }),
-    { pitch: -1, roll: 0, yaw: 0 },
-    'inverted mouse pitch must reverse pitch without changing roll or yaw',
-  )
-  assert.deepEqual(
-    readMouseFlightAxes(1100, 450, bounds),
-    { pitch: 0, roll: 1, yaw: 0 },
-    'mouse right must command full positive roll without yaw',
-  )
-  assert.equal(
-    readMouseFlightAxes(625, 450, bounds).roll,
-    0,
-    'mouse stick must have a quiet dead zone around the centre',
-  )
-  const fine = readMouseFlightAxes(750, 350, bounds)
-  assert.ok(fine.pitch > 0 && fine.pitch < 0.5, 'mouse pitch curve must retain fine control')
-  assert.ok(fine.roll > 0 && fine.roll < 0.5, 'mouse roll curve must retain fine control')
-  setAnalogFlightInput(input, 'mouse-stick', fine)
+  const stick = input.mouseStick
+  assert.equal(readMouseStickAxes(stick), null,
+    'a mouse that is not flying must clear its source, not publish a neutral stick')
+
+  // Right is roll right; away from the pilot — negative movementY — is pitch up.
+  moveMouseStick(input, 230, 0)
+  assert.ok(readMouseStickAxes(stick).roll > 0.3, 'moving right must roll right')
+  assert.equal(readMouseStickAxes(stick).pitch, 0, 'a lateral move must not touch pitch')
+
+  centreMouseStick(input)
+  moveMouseStick(input, 0, -230)
+  assert.ok(readMouseStickAxes(stick).pitch > 0.3, 'moving the mouse away must pull')
+  centreMouseStick(input)
+  moveMouseStick(input, 0, -230, { invertPitch: true })
+  assert.ok(readMouseStickAxes(stick).pitch < -0.3, 'the inversion setting must reverse pitch')
+
+  // The stick holds. This is the whole difference from an absolute pointer, and it is what
+  // lets a bank be set once and flown rather than held by keeping the hand still.
+  centreMouseStick(input)
+  moveMouseStick(input, 200, 0)
+  const held = readMouseStickAxes(stick).roll
+  moveMouseStick(input, 0, 0)
+  assert.equal(readMouseStickAxes(stick).roll, held,
+    'a stationary mouse must hold the stick, not recentre it')
+
+  // Travel accumulates, and saturates rather than running off the end of a screen that no
+  // longer bounds it.
+  moveMouseStick(input, 20000, 0)
+  assert.equal(readMouseStickAxes(stick).roll, 1, 'sustained travel must reach full authority')
+  moveMouseStick(input, -20000, 0)
+  assert.equal(readMouseStickAxes(stick).roll, -1,
+    'the stick must come straight back out of saturation, with no stored slack')
+
+  centreMouseStick(input)
+  assert.deepEqual(readMouseStickAxes(stick), { pitch: 0, roll: 0, yaw: 0 },
+    'centring must neutralise both axes while the mouse keeps flying')
+
+  // A dead zone at the centre, so a mouse on an uneven desk does not hold a bank.
+  moveMouseStick(input, 8, 0)
+  assert.equal(readMouseStickAxes(stick).roll, 0, 'the stick must be quiet around neutral')
+
+  /*
+  Sensitivity scales travel and only travel. Twice the setting must be exactly half the desk
+  for the same deflection — anything else and the number in the menu stops describing what it
+  does — and the band has to be closed at both ends, because a stored value from an older
+  build or a hand-edited entry must never come back as an unflyable aircraft.
+  */
+  centreMouseStick(input)
+  moveMouseStick(input, 120, 0, { sensitivity: 1 })
+  const atUnity = readMouseStickAxes(stick).roll
+  centreMouseStick(input)
+  moveMouseStick(input, 60, 0, { sensitivity: 2 })
+  assert.ok(Math.abs(readMouseStickAxes(stick).roll - atUnity) < 1e-12,
+    'doubling sensitivity must halve the travel a deflection costs, exactly')
+
+  assert.equal(clampMouseSensitivity(0), MOUSE_SENSITIVITY_RANGE.min,
+    'sensitivity must not be settable to zero — the mouse would stop flying the aircraft')
+  assert.equal(clampMouseSensitivity(99), MOUSE_SENSITIVITY_RANGE.max,
+    'sensitivity must stay inside the band a pilot can actually hold')
+  assert.equal(clampMouseSensitivity('not a number'), MOUSE_SENSITIVITY_RANGE.default,
+    'an unreadable stored setting must fall back to the default, never to NaN')
+  centreMouseStick(input)
+
+  clearMouseStick(input)
+  assert.equal(readMouseStickAxes(stick), null, 'releasing the pointer must stop the source')
+  assert.equal(stick.x, 0,
+    'a released stick must be centred, or re-entering the surface starts mid-deflection')
+
+  // Direct sources bypass the key-softening filter: the stick must be most of the way to its
+  // command inside a few frames, or the airframe visibly trails the hand.
+  setAnalogFlightInput(input, 'mouse-stick', { pitch: 0.8 }, { direct: true })
+  for (let frame = 0; frame < 6; frame += 1) step()
+  assert.ok(input.intent.pitch > 0.8 * 0.85,
+    'a direct analogue source must reach its command without the keyboard smoothing lag')
   for (let frame = 0; frame < 12; frame += 1) step()
-  assert.equal(input.intent.pitch, fine.pitch, 'mouse pitch must reach the shared flight intent')
-  assert.equal(input.intent.roll, fine.roll, 'mouse roll must reach the shared flight intent')
+  assert.equal(input.intent.pitch, 0.8, 'the mouse stick must reach the shared flight intent')
   clearAnalogFlightInput(input, 'mouse-stick')
-  for (let frame = 0; frame < 12; frame += 1) step()
+  for (let frame = 0; frame < 20; frame += 1) step()
+  assert.equal(input.intent.pitch, 0, 'a cleared stick source must hand the axis back')
+
+  // The bot is analogue too and is deliberately not direct, so its authored response stands.
+  setAnalogFlightInput(input, 'test-bot', { pitch: 0.8 })
+  for (let frame = 0; frame < 6; frame += 1) step()
+  assert.ok(input.intent.pitch < 0.8 * 0.85,
+    'an ordinary analogue source must keep the softened response it was tuned against')
+  clearAnalogFlightInput(input, 'test-bot')
+  for (let frame = 0; frame < 20; frame += 1) step()
 }
 
 /*

@@ -10,6 +10,10 @@ control.
 hold the exact same actions as the keyboard. Analogue sources are kept separately and mixed
 by strongest deflection so adding a gamepad cannot make keyboard controls fight it.
 
+The mouse is one of those adapters. It holds a relative stick that only mouse *travel* moves —
+see `moveMouseStick` below — and publishes through the same analogue path everything else
+uses, so nothing downstream of `stepFlightInput` knows a mouse exists.
+
 W and S are a speed control, not a power lever. They move `commandSpeedKmh` — the airspeed
 the pilot is asking for, in the same km/h the HUD already reads — and the throttle the
 model consumes is derived from it. The command holds where it is left, because a number
@@ -60,16 +64,27 @@ export const FLIGHT_BINDINGS = {
 
 const AXES = ['pitch', 'roll', 'yaw']
 
-// The canvas is a virtual flight stick. The first few percent around its centre are quiet,
-// then the curve opens progressively: small wrist movements trim the flight path while a
-// deliberate move toward an edge can still command the full airframe. The reach is a share
-// of the whole viewport rather than of one half, so 39% puts full deflection comfortably
-// inside either edge without making the centre nervous.
-const MOUSE_STICK_DEAD_ZONE = 0.08
-const MOUSE_STICK_REACH = 0.39
-const MOUSE_STICK_EXPO = 1.35
 const MOUSE_FLIGHT_ENABLED_KEY = 'f22-flight-mouse-stick-enabled'
 const MOUSE_PITCH_INVERTED_KEY = 'f22-flight-mouse-pitch-inverted'
+const MOUSE_SENSITIVITY_KEY = 'f22-flight-mouse-sensitivity'
+
+/*
+How much stick the pilot gets per centimetre of desk, as a plain multiplier on the travel
+below. It is a continuous setting rather than three named steps because the right number is
+a property of the pilot's hardware and grip — mouse DPI alone spans an order of magnitude —
+and no preset any of us picks is going to land on it for them.
+
+The band is wide enough to cover that spread from both ends and closed at both: below the
+floor a full roll stops fitting on any desk, and above the ceiling the dead zone is the only
+thing between neutral and full deflection, which is not a control any more.
+*/
+export const MOUSE_SENSITIVITY_RANGE = { min: 0.25, max: 3, step: 0.05, default: 1 }
+
+export function clampMouseSensitivity(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return MOUSE_SENSITIVITY_RANGE.default
+  return Math.max(MOUSE_SENSITIVITY_RANGE.min, Math.min(MOUSE_SENSITIVITY_RANGE.max, number))
+}
 
 const RESPONSE = {
   pitch: { engage: 4.6, release: 7.5 },
@@ -79,11 +94,52 @@ const RESPONSE = {
   airBrake: { engage: 5, release: 8 },
 }
 
+// A stick fed by mouse travel is already a continuous signal. The response above exists to
+// soften the 0→1 step a key makes, and stacking it on top of a signal that never steps is
+// pure latency — about a fifth of a second between the hand moving and the nose answering,
+// which is most of what "not following the mouse" actually was. Sources that declare
+// themselves direct get a filter tight enough to take the numerical edge off a frame-to-frame
+// jump and no tighter. The keyboard, and the manoeuvre bot, keep the feel they were tuned on.
+const DIRECT_RESPONSE = {
+  pitch: { engage: 16, release: 18 },
+  roll: { engage: 18, release: 20 },
+  yaw: { engage: 14, release: 16 },
+}
+
+/*
+The mouse is a relative stick, not a position on the glass.
+
+Only travel counts: move the hand right and the stick goes right, and where the pointer
+happens to sit on the desktop never enters into it. That is what lets the surface capture the
+pointer — with nothing to read off an absolute position, there is no edge of the screen to run
+out of, and a roll can be held for as long as the wrist keeps moving.
+
+It also settles the question the old absolute stick got wrong. Screen up meant body pitch-up
+only while the camera was unrolled and looking down the nose, and the Action camera is
+deliberately neither: it follows less than half the bank and freezes its shot in the world
+frame during a post-stall manoeuvre. A stick has no such problem, because a stick is not a
+place on the screen — up is pull, right is roll right, and no camera can rotate that.
+
+The stick holds where it is left, exactly as the airframe's real one would. That is why the
+HUD draws it: with nothing on the desk to feel, the gate on the glass is the only way the
+pilot knows how much they are holding, and centring it by eye is how they fly level again.
+*/
+// Pixels of travel for full deflection at 1× sensitivity. Around a third of a 1080p screen's
+// width, which puts a full-authority roll inside one comfortable sweep without making small
+// corrections impossible to place. The setting scales this and nothing else.
+const MOUSE_STICK_TRAVEL = 460
+// A gentle expo. The old curve was steeper and combined with the smoothing above it made the
+// first third of the stick feel like nothing at all.
+const MOUSE_STICK_EXPO = 1.25
+// Small enough to be invisible in flight, large enough that a mouse resting on a slightly
+// uneven desk does not hold a bank.
+const MOUSE_STICK_DEAD_ZONE = 0.035
+
 function clampAxis(value) {
   return Math.max(-1, Math.min(1, Number(value) || 0))
 }
 
-function shapeMouseAxis(value) {
+function shapeStickAxis(value) {
   const clamped = clampAxis(value)
   const magnitude = Math.abs(clamped)
   if (magnitude <= MOUSE_STICK_DEAD_ZONE) return 0
@@ -91,19 +147,58 @@ function shapeMouseAxis(value) {
   return Math.sign(clamped) * (live ** MOUSE_STICK_EXPO)
 }
 
-// Translate an absolute pointer position into the same analogue stick axes a gamepad or bot
-// publishes. Up is positive pitch and right is positive roll. Keeping this calculation in
-// the device-neutral layer makes it testable and, more importantly, keeps the route from
-// inventing a second control path around `stepFlightInput`.
-export function readMouseFlightAxes(clientX, clientY, bounds = {}, { invertPitch = false } = {}) {
-  const width = Math.max(Number(bounds.width) || 0, 1)
-  const height = Math.max(Number(bounds.height) || 0, 1)
-  const centreX = (Number(bounds.left) || 0) + (width * 0.5)
-  const centreY = (Number(bounds.top) || 0) + (height * 0.5)
-  const pitch = shapeMouseAxis((centreY - clientY) / (height * MOUSE_STICK_REACH))
+/*
+Move the virtual stick by one mouse movement, in the raw `movementX`/`movementY` a captured
+pointer reports. Right is positive roll; pushing the mouse away from the pilot — negative
+`movementY` — is positive pitch, the sense a stick has, and the inversion setting swaps it.
+
+The two axes clamp independently rather than to a circle: full roll while already at full
+pitch is a control the airframe genuinely has, and gating it into a disc would take away the
+corner of the envelope a barrel roll lives in.
+*/
+export function moveMouseStick(state, movementX, movementY, {
+  invertPitch = false,
+  sensitivity = 1,
+} = {}) {
+  const stick = state.mouseStick
+  const scale = clampMouseSensitivity(sensitivity) / MOUSE_STICK_TRAVEL
+  const pitchStep = (Number(movementY) || 0) * scale
+  stick.live = true
+  stick.x = clampAxis(stick.x + ((Number(movementX) || 0) * scale))
+  stick.y = clampAxis(stick.y + (invertPitch ? pitchStep : -pitchStep))
+  return stick
+}
+
+// Back to neutral with the stick still in the pilot's hand — the aircraft stops being asked
+// for anything, which is a different thing from the pointer letting go of the surface.
+export function centreMouseStick(state) {
+  state.mouseStick.x = 0
+  state.mouseStick.y = 0
+}
+
+// The surface has taken the pointer. Live from this instant rather than from the first
+// movement, so the gate is on the glass before the pilot has moved anything — it is the only
+// confirmation they get that the click did what it said.
+export function captureMouseStick(state) {
+  centreMouseStick(state)
+  state.mouseStick.live = true
+}
+
+// The pointer has left the aircraft entirely. Centred as well as dropped, so re-entering the
+// surface never starts with a deflection the pilot did not ask for and cannot see.
+export function clearMouseStick(state) {
+  state.mouseStick.live = false
+  centreMouseStick(state)
+}
+
+// Shape the held stick into the same analogue axes a gamepad or the bot publishes. Null when
+// the mouse is not flying, which the caller reads as "clear this source" rather than as a
+// neutral stick — the two are different, and only the first leaves the keyboard alone.
+export function readMouseStickAxes(stick) {
+  if (!stick?.live) return null
   return {
-    pitch: invertPitch ? -pitch : pitch,
-    roll: shapeMouseAxis((clientX - centreX) / (width * MOUSE_STICK_REACH)),
+    pitch: shapeStickAxis(stick.y),
+    roll: shapeStickAxis(stick.x),
     yaw: 0,
   }
 }
@@ -143,6 +238,26 @@ export function writeMousePitchInverted(value) {
   writeStoredBoolean(MOUSE_PITCH_INVERTED_KEY, value)
 }
 
+export function readMouseSensitivity() {
+  try {
+    const stored = window.localStorage.getItem(MOUSE_SENSITIVITY_KEY)
+    // A stored value from an older or hand-edited entry is clamped rather than trusted; the
+    // one number that must never come back is one that makes the aircraft unflyable.
+    if (stored !== null && Number.isFinite(Number(stored))) return clampMouseSensitivity(stored)
+  } catch {
+    // Privacy modes may refuse storage; a usable in-session default still matters more.
+  }
+  return MOUSE_SENSITIVITY_RANGE.default
+}
+
+export function writeMouseSensitivity(value) {
+  try {
+    window.localStorage.setItem(MOUSE_SENSITIVITY_KEY, String(clampMouseSensitivity(value)))
+  } catch {
+    // The current session still uses the choice even when the browser cannot remember it.
+  }
+}
+
 function moveToward(current, target, amount) {
   if (current < target) return Math.min(current + amount, target)
   if (current > target) return Math.max(current - amount, target)
@@ -159,13 +274,20 @@ function digitalAxis(pressed, positive, negative) {
   return Number(pressed.has(positive)) - Number(pressed.has(negative))
 }
 
+// Scratch, not a fresh object: this runs three times a frame for every aircraft on the
+// range. Read it before the next call — nothing here holds onto it.
+const STRONGEST = { value: 0, direct: false }
 function strongestAxis(state, axis, digital) {
-  let resolved = digital
+  STRONGEST.value = digital
+  STRONGEST.direct = false
   for (const source of state.analog.values()) {
     const candidate = clampAxis(source[axis])
-    if (Math.abs(candidate) > Math.abs(resolved)) resolved = candidate
+    if (Math.abs(candidate) > Math.abs(STRONGEST.value)) {
+      STRONGEST.value = candidate
+      STRONGEST.direct = source.direct === true
+    }
   }
-  return resolved
+  return STRONGEST
 }
 
 export function readAxes(pressed) {
@@ -256,6 +378,14 @@ export function createFlightInputState(commandSpeedKmh = 0) {
       yaw: 0,
       pitch: 0,
     },
+    // The virtual stick the captured pointer holds, −1..1 on each axis. `live` is whether the
+    // mouse is flying the aircraft at all; the surface sets it when it captures the pointer
+    // and drops it the moment the capture ends.
+    mouseStick: {
+      live: false,
+      x: 0,
+      y: 0,
+    },
     // The speed the pilot has asked for, and the power that currently serves it. Only the
     // first is a control; `throttle` is published for the flight model and the HUD.
     commandSpeedKmh,
@@ -286,8 +416,11 @@ export function setCommandSpeedKmh(state, speedKmh, envelope) {
   return state.commandSpeedKmh
 }
 
-export function setAnalogFlightInput(state, source, axes = {}) {
-  const next = {}
+// `direct` says this source already publishes a continuous, closed-loop signal and wants the
+// tight filter rather than the key-softening one. Mouse aim sets it; a bot flying scripted
+// axes deliberately does not, so its manoeuvres keep the response they were authored against.
+export function setAnalogFlightInput(state, source, axes = {}, { direct = false } = {}) {
+  const next = { direct }
   for (const axis of AXES) next[axis] = clampAxis(axes[axis])
   state.analog.set(source, next)
 }
@@ -300,6 +433,7 @@ export function releaseFlightInput(state) {
   state.pressed.clear()
   state.analog.clear()
   state.cameraLook.active = false
+  clearMouseStick(state)
 }
 
 export function resetFlightInput(state, commandSpeedKmh = state.commandSpeedKmh) {
@@ -326,17 +460,17 @@ in one frame to matter, and the flight model settles the difference either way.
 */
 export function stepFlightInput(state, step, envelope, altitude) {
   const raw = readAxes(state.pressed)
-  const targets = {
-    pitch: strongestAxis(state, 'pitch', raw.pitch),
-    roll: strongestAxis(state, 'roll', raw.roll),
-    yaw: strongestAxis(state, 'yaw', raw.yaw),
-  }
+  const targets = { pitch: 0, roll: 0, yaw: 0 }
 
   for (const axis of AXES) {
+    // Resolved and consumed one axis at a time: `strongestAxis` hands back shared scratch,
+    // and which response an axis gets depends on which source actually won it.
+    const resolved = strongestAxis(state, axis, raw[axis])
+    targets[axis] = resolved.value
     state.intent[axis] = smoothAxis(
       state.intent[axis],
-      targets[axis],
-      RESPONSE[axis],
+      resolved.value,
+      resolved.direct ? DIRECT_RESPONSE[axis] : RESPONSE[axis],
       step,
     )
   }

@@ -300,6 +300,57 @@ export function createFlightHud(canvas) {
     line(cx, cy - r, cx, cy + r, 1.5, HUD_GREEN_DIM)
   }
 
+  /*
+  The stick gate: how much stick the captured mouse is holding.
+
+  A relative stick has no spring and nothing on the desk to feel, so without this the pilot
+  has no way to know they are holding half a turn — or to find neutral again. The gate is the
+  travel limit and the cross inside it is neutral; the marker is where the stick is. It is
+  drawn small and off to the side of nothing, because it is a glance, not a display.
+
+  Unlike the ladder and the two crosses it is not projected. A stick has no place in the
+  world, and pinning it to one would be a lie about what it is.
+  */
+  function drawStickGate(state, layout) {
+    const stick = state.mouseStick
+    if (!stick) return
+
+    const reach = Math.max(layout.half * 0.13, 44)
+    const cx = layout.cx
+    const cy = layout.cy + layout.tapeHeight / 2 + reach + 26
+    // Off the bottom of a short frame the gate would sit under the bezel; there is nothing
+    // useful to show in that case, and a symbol behind a control well is worse than none.
+    if (cy + reach > height - 8) return
+
+    const x = cx + (MathUtils.clamp(stick.x, -1, 1) * reach)
+    const y = cy - (MathUtils.clamp(stick.y, -1, 1) * reach)
+
+    // The gate, drawn as four corners rather than a closed box: the corners state the limit
+    // without putting a line through the terrain the whole time.
+    const corner = reach * 0.34
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        line(cx + sx * reach, cy + sy * reach, cx + sx * (reach - corner), cy + sy * reach,
+          1.2, HUD_GREEN_DIM)
+        line(cx + sx * reach, cy + sy * reach, cx + sx * reach, cy + sy * (reach - corner),
+          1.2, HUD_GREEN_DIM)
+      }
+    }
+    // Neutral, so "centred" is a place on the glass and not a memory of how far the hand has
+    // travelled. X puts the stick back on it.
+    line(cx - 5, cy, cx + 5, cy, 1.2, HUD_GREEN_DIM)
+    line(cx, cy - 5, cx, cy + 5, 1.2, HUD_GREEN_DIM)
+
+    // The stick itself, tied back to neutral so the deflection reads as a distance rather
+    // than as a dot the eye has to measure.
+    line(cx, cy, x, y, 1.3, HUD_GREEN_DIM)
+    luminous(() => {
+      ctx.beginPath()
+      ctx.arc(x, y, 5.5, 0, Math.PI * 2)
+      ctx.stroke()
+    }, 1.7, HUD_GREEN)
+  }
+
   function drawFlightPathMarker(state, layout) {
     const along = state.velocity && state.velocity.lengthSq() > 1e-4
       ? scratch.copy(state.velocity).normalize()
@@ -634,6 +685,9 @@ export function createFlightHud(canvas) {
       drawBoresight(state, layout)
       drawFlightPathMarker(state, layout)
     }
+    // The gate is a control reading, not a projection, so it needs no camera — but it is
+    // published only while the pointer is flying, which is the same condition as `live`.
+    drawStickGate(state, layout)
 
     drawTape(layout, {
       x: layout.cx - half * layout.tapeOffset,

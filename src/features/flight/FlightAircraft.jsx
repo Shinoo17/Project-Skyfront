@@ -33,8 +33,12 @@ import {
 } from './performance'
 import { applySurfaceTargets } from './surfaces'
 import {
+  centreMouseStick,
   clampCommandSpeedKmh,
+  clearAnalogFlightInput,
+  readMouseStickAxes,
   resetFlightInput,
+  setAnalogFlightInput,
   stepFlightInput,
 } from './useFlightControls'
 
@@ -59,6 +63,10 @@ const DOWN = new Vector3(0, -1, 0)
 // sample over rising ground cannot end the sortie on its own.
 const GROUND_SAMPLE_INTERVAL = 0.1
 const CRASH_CLEARANCE = 9
+
+// The pointer publishes through the ordinary analogue contract, under its own name, so the
+// keyboard mix, the bot, and `strongestAxis` are untouched by its existence.
+const MOUSE_STICK_SOURCE = 'mouse-stick'
 
 export default function FlightAircraft({
   aircraft,
@@ -152,6 +160,10 @@ export default function FlightAircraft({
 
   const resetFlight = (cause, keepThrottle = true) => {
     const state = flight.current
+    // A held stick survives nothing: respawning under the full back pressure that just flew
+    // the aircraft into a hill would only fly it into the next one. The pointer keeps the
+    // capture — only the deflection goes.
+    centreMouseStick(controls.current)
     resetAfterburnerState(reheat.current)
     resetCondensationState(condensation.current)
     state.spawn.copy(spawn)
@@ -209,6 +221,19 @@ export default function FlightAircraft({
     // Frame delta is capped so a stalled tab cannot feed the physics a huge step; the
     // model itself always integrates at FLIGHT_FIXED_STEP regardless of refresh rate.
     const step = Math.min(delta, 0.1)
+
+    // The pointer's stick joins the mix here rather than being written by the surface that
+    // moves it, so the shaping curve stays beside every other axis in the input layer and
+    // one frame can never see half of a stick move. A right-drag steers the camera instead of
+    // the stick, but it does not neutralise the aircraft: the stick is where the pilot left
+    // it, and a turn being flown goes on being flown while they look around it.
+    const stickAxes = readMouseStickAxes(controls.current.mouseStick)
+    if (stickAxes) {
+      setAnalogFlightInput(controls.current, MOUSE_STICK_SOURCE, stickAxes, { direct: true })
+    } else {
+      clearAnalogFlightInput(controls.current, MOUSE_STICK_SOURCE)
+    }
+
     const input = stepFlightInput(
       controls.current,
       step,
@@ -359,6 +384,10 @@ export default function FlightAircraft({
     // Stable references, assigned rather than copied: the HUD projects the ladder through
     // this camera and off this position, so it must see the same objects the scene renders.
     readout.camera = camera
+    // The stick gate the HUD draws. Published only while the pointer is actually flying,
+    // because the cursor is hidden behind it: a gate left on the glass after the mouse
+    // stopped commanding the aircraft would be a lie about what is being held.
+    readout.mouseStick = stickAxes ? controls.current.mouseStick : null
     readout.position = aircraftState.position
     readout.forward = attitude.forward
     readout.velocity = aircraftState.velocity

@@ -8,9 +8,14 @@ import {
 
 export {
   FLIGHT_BINDINGS,
+  MOUSE_SENSITIVITY_RANGE,
+  captureMouseStick,
+  centreMouseStick,
   clampCommandSpeedKmh,
   clearAnalogFlightInput,
+  clearMouseStick,
   createFlightInputState,
+  moveMouseStick,
   readAccelerate,
   readAfterburnerCommand,
   readAirBrake,
@@ -19,8 +24,9 @@ export {
   readDecelerate,
   readHighG,
   readMouseFlightEnabled,
-  readMouseFlightAxes,
   readMousePitchInverted,
+  readMouseSensitivity,
+  readMouseStickAxes,
   readPsmArm,
   readThrottleDirection,
   releaseFlightInput,
@@ -30,6 +36,7 @@ export {
   stepFlightInput,
   writeMouseFlightEnabled,
   writeMousePitchInverted,
+  writeMouseSensitivity,
 } from './flightInput'
 
 function isFieldFocused(event) {

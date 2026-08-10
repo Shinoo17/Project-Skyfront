@@ -20,6 +20,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 
 import { FLIGHT_QUALITY_OPTIONS } from '../../three/graphics'
+import { MOUSE_SENSITIVITY_RANGE } from '../flight/useFlightControls'
 import {
   FLIGHT_CAMERA_DISTANCE_OPTIONS,
   FLIGHT_CAMERA_STYLE_OPTIONS,
@@ -59,6 +60,8 @@ export default function PauseMenu({
   onChooseMouseFlightEnabled,
   mousePitchInverted,
   onChooseMousePitchInverted,
+  mouseSensitivity = 1,
+  onChooseMouseSensitivity,
 }) {
   const [pane, setPane] = useState('root')
   const firstCommand = useRef(null)
@@ -188,7 +191,7 @@ export default function PauseMenu({
                 aria-pressed={mouseFlightEnabled}
                 onClick={() => onChooseMouseFlightEnabled(!mouseFlightEnabled)}
               >
-                <span>Use mouse to pitch &amp; roll</span>
+                <span>Mouse flies the stick</span>
                 <i aria-hidden="true">{mouseFlightEnabled ? 'ON' : 'OFF'}</i>
               </button>
               <button
@@ -201,10 +204,30 @@ export default function PauseMenu({
                 <span>Invert pitch direction</span>
                 <i aria-hidden="true">{mousePitchInverted ? 'ON' : 'OFF'}</i>
               </button>
+
+              {/* A slider rather than named steps: the right number depends on the pilot's
+                  mouse DPI and how they hold it, and no three presets we pick will land on
+                  it. The multiplier is shown because it is the number they are choosing. */}
+              <label className="pause-slider">
+                <span>
+                  Mouse sensitivity
+                  <i aria-hidden="true">{mouseSensitivity.toFixed(2)}×</i>
+                </span>
+                <input
+                  type="range"
+                  min={MOUSE_SENSITIVITY_RANGE.min}
+                  max={MOUSE_SENSITIVITY_RANGE.max}
+                  step={MOUSE_SENSITIVITY_RANGE.step}
+                  value={mouseSensitivity}
+                  disabled={!mouseFlightEnabled}
+                  aria-label="Mouse sensitivity multiplier"
+                  onChange={(event) => onChooseMouseSensitivity(Number(event.currentTarget.value))}
+                />
+              </label>
               <p className="pause-note">
                 {mouseFlightEnabled
-                  ? 'Mouse position acts as the flight stick. Right-drag remains free look.'
-                  : 'Pitch and roll remain on the arrow keys. Right-drag remains free look.'}
+                  ? 'Click the sky and the pointer is captured: moving it left and right rolls, forward and back pitches, and only travel counts. X centres the stick, right-hold looks around, Esc gives the pointer back and opens this menu.'
+                  : 'Pitch and roll remain on the arrow keys. The pointer is never captured.'}
               </p>
             </div>
 
