@@ -313,10 +313,14 @@ export function createFlightHud(canvas) {
   /*
   The stick gate: how much stick the pointer is actually giving the aircraft.
 
-  The pointer itself already says where the stick is — that is the whole point of a
-  positional stick — so this is the other half of the story: the limit it saturates at, and
-  the dead zone around neutral that reads as zero. Both are circles, because the gate is a
-  disc; drawing a box here would promise corners the control does not have.
+  Once the sky takes the pointer the cursor is gone, and this becomes the only place the
+  stick can be read at all: the deflection, the limit it saturates at, and the dead zone
+  around neutral that reads as zero. Both rings are circles, because the gate is a disc;
+  drawing a box here would promise corners the control does not have.
+
+  This is why it stays on the glass rather than being a debug affordance. A pilot who has
+  lost track of where the stick is has one place to look, and "put it back in the middle" is
+  a thing they can then act on.
 
   Unlike the ladder and the two crosses it is not projected. A stick has no place in the
   world, and pinning it to one would be a lie about what it is.

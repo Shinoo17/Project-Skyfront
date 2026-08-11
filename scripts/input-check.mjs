@@ -10,6 +10,7 @@ import {
   clearMouseStick,
   createFlightInputState,
   mouseStickRadiusPx,
+  moveMouseStick,
   setMouseStick,
   MOUSE_STICK_GATE,
   readCommandSpeedLimits,
@@ -284,6 +285,57 @@ rather than a box, and the middle of the screen is the only neutral there is.
   assert.equal(readMouseStickAxes(stick), null, 'releasing the pointer must stop the source')
   assert.equal(stick.x, 0,
     'a released stick must be centred, or re-entering the surface starts mid-deflection')
+
+  /*
+  The locked pointer. Under Pointer Lock there is no cursor position to read, so the stick is
+  walked by raw motion instead — but it is still the same positional stick, and these are the
+  properties that say so rather than it having quietly become a relative one.
+  */
+  {
+    const move = (dx, dy, options = {}) => moveMouseStick(input, dx, dy, {
+      extent: EXTENT,
+      ...options,
+    })
+
+    clearMouseStick(input)
+    move(0, -RADIUS)
+    assert.equal(readMouseStickAxes(stick).pitch, 1,
+      'walking the pointer to the edge of the gate must be full deflection')
+
+    // The windup test, and the reason the held position is clamped rather than integrated
+    // freely: a hand that has shoved far past the gate must not owe that distance back.
+    move(0, -RADIUS * 20)
+    assert.equal(readMouseStickAxes(stick).pitch, 1, 'past the gate must saturate, not bank')
+    move(0, RADIUS)
+    assert.ok(readMouseStickAxes(stick).pitch < 0.01,
+      'one gate radius back from saturation must reach neutral, with no slack to unwind')
+
+    // Same place, same stick, whatever route the hand took to get there.
+    clearMouseStick(input)
+    move(RADIUS * 0.4, 0)
+    const direct = readMouseStickAxes(stick).roll
+    clearMouseStick(input)
+    move(RADIUS * 0.9, 0)
+    move(-RADIUS * 0.5, 0)
+    assert.ok(Math.abs(readMouseStickAxes(stick).roll - direct) < 1e-12,
+      'a locked pointer must still be a position: the same place must give the same stick')
+
+    // Clamped by length, so the gate stays a disc for a locked pointer too.
+    clearMouseStick(input)
+    move(RADIUS * 9, -RADIUS * 3)
+    const far = readMouseStickAxes(stick)
+    assert.ok(Math.abs((far.roll / far.pitch) - 3) < 1e-9,
+      `a saturated locked pointer must keep its direction, got ${far.roll / far.pitch}`)
+
+    // Free look and a crash reset both centre the stick, and the held position has to go with
+    // it — otherwise the first movement afterwards snaps back to a deflection nobody held.
+    centreMouseStick(input)
+    move(1, 0)
+    assert.ok(Math.abs(readMouseStickAxes(stick).roll) < 1e-9,
+      'centring must clear the held position, not just the published axes')
+
+    clearMouseStick(input)
+  }
 
   // Direct sources bypass the key-softening filter: the stick must be most of the way to its
   // command inside a few frames, or the airframe visibly trails the hand.

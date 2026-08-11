@@ -227,7 +227,7 @@ export default function PauseMenu({
               </label>
               <p className="pause-note">
                 {mouseFlightEnabled
-                  ? 'The pointer is the stick: where it sits on the sky is the deflection, left and right rolls, up and down pitches, and the middle of the screen is neutral. Right-hold looks around, Esc opens this menu.'
+                  ? 'Click the sky to take the stick: the mouse then moves inside the canvas only, left and right rolls, up and down pitches, and the middle is neutral. Right-hold looks around. Esc gives the cursor back and opens this menu.'
                   : 'Pitch and roll remain on the arrow keys. The pointer only ever moves the camera.'}
               </p>
             </div>

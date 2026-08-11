@@ -15,6 +15,8 @@ export {
   clearAnalogFlightInput,
   clearMouseStick,
   createFlightInputState,
+  engageMouseStick,
+  moveMouseStick,
   setMouseStick,
   readAccelerate,
   readAfterburnerCommand,

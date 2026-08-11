@@ -11,8 +11,9 @@ hold the exact same actions as the keyboard. Analogue sources are kept separatel
 by strongest deflection so adding a gamepad cannot make keyboard controls fight it.
 
 The mouse is one of those adapters. It holds a stick whose position is the pointer's position
-on the glass — see `setMouseStick` below — and publishes through the same analogue path
-everything else uses, so nothing downstream of `stepFlightInput` knows a mouse exists.
+inside a gate on the glass — see `setMouseStick` and `moveMouseStick` below — and publishes
+through the same analogue path everything else uses, so nothing downstream of
+`stepFlightInput` knows a mouse exists, or whether the browser has locked it.
 
 W and S are a speed control, not a power lever. They move `commandSpeedKmh` — the airspeed
 the pilot is asking for, in the same km/h the HUD already reads — and the throttle the
@@ -132,9 +133,15 @@ second is a glance behind that inverts by construction — a stick that flipped 
 be a control that changed meaning while the aircraft did not. The gate on the HUD stays
 truthful in both cases even while the picture behind it is not.
 
+The surface takes the pointer while the mouse is flying, so the hand cannot walk the stick
+off the canvas and into the rest of the desktop mid-turn. That removes the cursor, not the
+position: `moveMouseStick` keeps the position here and walks it with the raw motion the lock
+reports, clamped to the gate so there is never travel owed back. Neutral is then the middle
+of the *gate* rather than a pixel on the glass, and the HUD's gate is what shows it.
+
 One more consequence of a position, which a travel-fed stick did not have: it is live
-wherever the pointer is resting, so a pointer parked off to one side is a deflection nobody
-is holding. The dead zone below makes the middle of the screen a place rather than a point,
+wherever the pointer was left, so a stick parked off to one side is a deflection nobody
+is holding. The dead zone below makes the middle of the gate a place rather than a point,
 and a held arrow key still outranks it — `strongestAxis` needs a strictly larger deflection
 to take an axis, and a key is always full — so the keyboard can always take the aircraft back.
 */
@@ -182,10 +189,20 @@ export function mouseStickRadiusPx(extent, sensitivity = 1) {
   return (short * MOUSE_STICK_RADIUS) / clampMouseSensitivity(sensitivity)
 }
 
+// Pixels from the middle of the gate into gate radii, and into the sign convention the
+// aircraft uses: right is positive roll, and up the screen — a negative pixel offset — is
+// positive pitch, which the inversion setting swaps.
+function shapeMouseStick(stick, radius, invertPitch) {
+  const pitch = stick.py / radius
+  stick.live = true
+  stick.x = stick.px / radius
+  stick.y = invertPitch ? pitch : -pitch
+  return stick
+}
+
 /*
 Put the stick where the pointer is. `offsetX`/`offsetY` are pixels from the middle of the
-surface, with `extent` its shorter side; right is positive roll, and up the screen — negative
-`offsetY` — is positive pitch, which the inversion setting swaps.
+surface, with `extent` its shorter side.
 
 Stored unclamped on purpose. Clamping each axis here would bend the direction of a pointer
 sitting off to one side, turning a pull that is mostly aft and slightly right into one that
@@ -198,21 +215,60 @@ export function setMouseStick(state, offsetX, offsetY, {
   sensitivity = 1,
 } = {}) {
   const stick = state.mouseStick
+  stick.px = Number(offsetX) || 0
+  stick.py = Number(offsetY) || 0
+  return shapeMouseStick(stick, mouseStickRadiusPx(extent, sensitivity), invertPitch)
+}
+
+/*
+The same stick, driven by motion instead of position, for a pointer the browser has locked.
+
+A locked pointer has no position — the OS cursor is gone and `clientX`/`clientY` freeze — so
+the position is kept here and walked by the raw motion the lock reports. What the pilot holds
+is still a place inside the gate, which is the whole point: neutral remains somewhere the hand
+can be brought back to rather than a travel to retrace by eye.
+
+The held position is clamped to the gate on every step, by length rather than per axis. Both
+halves of that matter. Unclamped, a hand shoved a metre to the left would have to travel the
+same metre back before the nose answered — the windup a real stick's spring exists to prevent.
+Clamped per axis instead, the gate would quietly become a box and a corner would take further
+to reach than a straight pull.
+*/
+export function moveMouseStick(state, deltaX, deltaY, {
+  extent = 0,
+  invertPitch = false,
+  sensitivity = 1,
+} = {}) {
+  const stick = state.mouseStick
+  // Recomputed per step rather than cached, so a resized window or a moved sensitivity
+  // slider simply re-clamps what is held instead of stranding it outside a smaller gate.
   const radius = mouseStickRadiusPx(extent, sensitivity)
-  const pitch = (Number(offsetY) || 0) / radius
-  stick.live = true
-  stick.x = (Number(offsetX) || 0) / radius
-  stick.y = invertPitch ? pitch : -pitch
-  return stick
+  const px = stick.px + (Number(deltaX) || 0)
+  const py = stick.py + (Number(deltaY) || 0)
+  const magnitude = Math.hypot(px, py)
+  const scale = magnitude > radius ? radius / magnitude : 1
+  stick.px = px * scale
+  stick.py = py * scale
+  return shapeMouseStick(stick, radius, invertPitch)
 }
 
 // Back to neutral with the pointer still on the surface — the aircraft stops being asked for
 // anything, which is a different thing from the pointer leaving. Free look uses this: the
-// camera is being aimed, so the stick is not being flown, and the next pointer move after the
-// look ends puts it back wherever the pointer now is.
+// camera is being aimed, so the stick is not being flown. The held position goes with it, or
+// a locked pointer would resume from a deflection the hand had let go of.
 export function centreMouseStick(state) {
+  state.mouseStick.px = 0
+  state.mouseStick.py = 0
   state.mouseStick.x = 0
   state.mouseStick.y = 0
+}
+
+// The surface has taken the pointer. Live and centred, in that order, so the gate on the HUD
+// is up and reading neutral from the first frame rather than appearing on the first twitch of
+// the hand — the pilot has just given up their cursor and needs to see what replaced it.
+export function engageMouseStick(state) {
+  centreMouseStick(state)
+  state.mouseStick.live = true
 }
 
 // The pointer has left the surface. Centred as well as dropped, so the aircraft is not left
@@ -426,12 +482,16 @@ export function createFlightInputState(commandSpeedKmh = 0) {
       yaw: 0,
       pitch: 0,
     },
-    // Where the pointer sits inside the gate, in gate radii on each axis. Stored unclamped —
-    // `readMouseStickAxes` clamps the length rather than the axes, so the direction survives.
-    // `live` is whether the mouse is flying the aircraft at all; the surface sets it while the
-    // pointer is over the sky and drops it when the pointer leaves.
+    // Where the pointer sits inside the gate. `px`/`py` are pixels from the middle — the raw
+    // position, which a locked pointer has to be walked into and a free one simply reports —
+    // and `x`/`y` are the same thing in gate radii, which is what everything downstream reads.
+    // Stored unclamped in radii: `readMouseStickAxes` clamps the length rather than the axes,
+    // so the direction survives. `live` is whether the mouse is flying the aircraft at all;
+    // the surface sets it while it holds the pointer and drops it when it loses it.
     mouseStick: {
       live: false,
+      px: 0,
+      py: 0,
       x: 0,
       y: 0,
     },

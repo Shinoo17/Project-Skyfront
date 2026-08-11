@@ -1485,11 +1485,66 @@ input:focus-visible {
   z-index: 0;
 }
 
-/* The pointer is the stick, so it stays on screen and reads as one: its position inside the
-   gate is the deflection, and an arrow is the wrong shape for a thing that is aimed. Only
-   the world takes it — the bezel is a sibling layer, so every control keeps its pointer. */
+/* Set only while the mouse actually holds the stick. Under Pointer Lock the browser hides the
+   cursor for us and this changes nothing visible; it is here for the fallback case, a browser
+   that cannot take the pointer and therefore still flies from the cursor's own position over
+   the glass, where an arrow is the wrong shape for a thing that is aimed. Only the world takes
+   it — the bezel is a sibling layer, so every control keeps its pointer. */
 .flight-canvas-stage.is-flying {
   cursor: crosshair;
+}
+
+/*
+Shown while the sky does not have the pointer. It is the only thing standing between a pilot
+and a stick that appears not to work, so it sits where the eye already is — just under the
+middle of the glass, below the boresight — rather than in a corner with the instruments.
+
+Quiet on purpose: same green as the rest of the glass, no panel, no border, and it goes away
+the instant the pointer is taken. It never receives the click that dismisses it — the stage
+underneath does.
+*/
+.flight-engage-prompt {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  z-index: 3;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  color: var(--hud-ice, #62ff84);
+  text-shadow: 0 0 12px rgba(98, 255, 132, 0.45);
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  animation: flight-engage-pulse 2.4s ease-in-out infinite;
+}
+
+.flight-engage-prompt small {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  opacity: 0.66;
+  text-transform: none;
+}
+
+@keyframes flight-engage-pulse {
+  0%, 100% { opacity: 0.62; }
+  50% { opacity: 1; }
+}
+
+/* A prompt that breathes is a prompt that has to stop breathing on request. */
+@media (prefers-reduced-motion: reduce) {
+  .flight-engage-prompt {
+    animation: none;
+    opacity: 0.9;
+  }
 }
 
 .flight-canvas-stage canvas {

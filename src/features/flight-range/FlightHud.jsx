@@ -244,6 +244,9 @@ export default function FlightHud({
   variant = 'cockpit',
   mouseFlightEnabled = true,
   mousePitchInverted = false,
+  // Whether the mouse currently has the stick, which is not the same question as whether it
+  // is allowed to: on a browser with Pointer Lock the pilot has to click the sky first.
+  mouseStickLive = true,
 }) {
   const glassOnly = variant === 'glass'
   // The widest band the selector ever spans. Its live `max` is narrowed to the dry ceiling
@@ -500,9 +503,10 @@ export default function FlightHud({
       {!glassOnly && <p className="deck-keymap">
         <kbd>MOUSE</kbd>
         <span>
-          {mouseFlightEnabled
-            ? `aim to roll / pitch${mousePitchInverted ? ' · inverted' : ''} · centre is neutral · right-hold view`
-            : 'flight control off'}
+          {mouseFlightEnabled && mouseStickLive
+            && `aim to roll / pitch${mousePitchInverted ? ' · inverted' : ''} · centre is neutral · right-hold view`}
+          {mouseFlightEnabled && !mouseStickLive && 'click the sky to take the stick'}
+          {!mouseFlightEnabled && 'flight control off'}
         </span>
         <kbd>↑</kbd><kbd>↓</kbd><span>pitch</span>
         <kbd>←</kbd><kbd>→</kbd><span>roll</span>
