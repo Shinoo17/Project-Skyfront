@@ -224,9 +224,9 @@ export default function FlightAircraft({
 
     // The pointer's stick joins the mix here rather than being written by the surface that
     // moves it, so the shaping curve stays beside every other axis in the input layer and
-    // one frame can never see half of a stick move. A right-drag steers the camera instead of
-    // the stick, but it does not neutralise the aircraft: the stick is where the pilot left
-    // it, and a turn being flown goes on being flown while they look around it.
+    // one frame can never see half of a stick move. A right-drag steers the camera instead,
+    // and centres the stick while it does: the pointer is aiming the lens, so it has stopped
+    // saying anything about where the pilot wants the stick.
     const stickAxes = readMouseStickAxes(controls.current.mouseStick)
     if (stickAxes) {
       setAnalogFlightInput(controls.current, MOUSE_STICK_SOURCE, stickAxes, { direct: true })

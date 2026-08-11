@@ -13,10 +13,9 @@ import FlightHud from '../features/flight-range/FlightHud'
 import FlightRangeScene from '../features/flight-range/FlightRangeScene'
 import PauseMenu from '../features/flight-range/PauseMenu'
 import {
-  captureMouseStick,
   centreMouseStick,
   clearMouseStick,
-  moveMouseStick,
+  setMouseStick,
   readMouseFlightEnabled,
   readMousePitchInverted,
   readMouseSensitivity,
@@ -47,9 +46,6 @@ export default function FlightRangeRoute() {
   const [mouseFlightEnabled, setMouseFlightEnabled] = useState(readMouseFlightEnabled)
   const [mousePitchInverted, setMousePitchInverted] = useState(readMousePitchInverted)
   const [mouseSensitivity, setMouseSensitivity] = useState(readMouseSensitivity)
-  // Whether the world currently holds the pointer. Real React state, not a ref: the prompt
-  // that asks for the click and the HUD's own caption both change with it.
-  const [pointerLocked, setPointerLocked] = useState(false)
   // Read once, on first render: the choice outlives the session, and the renderer is built
   // from it before anything is drawn.
   const [quality, setQuality] = useState(readFlightQuality)
@@ -60,8 +56,12 @@ export default function FlightRangeRoute() {
   const pausedRef = useRef(paused)
   pausedRef.current = paused
   const stage = useRef(null)
-  const freeLooking = useRef(false)
   const dragLook = useRef({ id: null, x: 0, y: 0 })
+  // The live values the stage's pointer handler needs. It is bound once as a JSX prop, and
+  // reading the settings off a ref keeps it from being rebuilt every time a slider moves.
+  const mouseSettings = useRef({ invert: mousePitchInverted, sensitivity: mouseSensitivity })
+  mouseSettings.current.invert = mousePitchInverted
+  mouseSettings.current.sensitivity = mouseSensitivity
   // The flight input state, reachable from `extraKeys` — which has to be built before the
   // session that owns it exists, and must stay stable so the keyboard is not re-bound.
   const controlsRef = useRef(null)
@@ -85,19 +85,9 @@ export default function FlightRangeRoute() {
       event.preventDefault()
       toggleCameraMode()
     }
-    // A relative stick has no spring, so it needs one key that says "hands off". Without it
-    // the only way back to level is to retrace the travel by eye, and a pilot who has lost
-    // track of how much they are holding has no way to find neutral again.
-    //
-    // X rather than the obvious R: R is already the range reset, and `extraKeys` is spread
-    // over the session's own actions, so binding it here would have taken the reset away
-    // without saying so.
-    const centre = (event, { fieldFocused }) => {
-      if (pausedRef.current || fieldFocused || event.repeat) return
-      event.preventDefault()
-      centreMouseStick(controlsRef.current)
-    }
-    return { Escape: open, KeyP: open, KeyC: camera, KeyX: centre }
+    // No centre key. The stick is the pointer's position now, so neutral is the middle of
+    // the screen and a key that set it would be overwritten by the very next pointer move.
+    return { Escape: open, KeyP: open, KeyC: camera }
   }, [toggleCameraMode])
 
   const {
@@ -113,13 +103,13 @@ export default function FlightRangeRoute() {
   } = useFlightSession({ extraKeys, paused })
   controlsRef.current = controls.current
 
-  // Resume is a click, which is the gesture a capture request needs — so the pilot who was
-  // flying with the mouse goes straight back to flying with it. Without this, every Escape
-  // costs two clicks: one to leave the menu and one to pick the aircraft back up.
+  // Nothing to hand back: the pointer was never taken. Resuming clears whatever deflection
+  // the stick was holding when the menu opened, so the aircraft is not flown by a pointer
+  // that has spent the pause sitting over a button.
   const resume = useCallback(() => {
+    centreMouseStick(controls.current)
     setPaused(false)
-    if (mouseFlightEnabledRef.current) stage.current?.requestPointerLock?.()
-  }, [])
+  }, [controls])
   const exit = useCallback(() => navigate(VIEWER_PATH), [navigate])
   const toggleDebug = useCallback(() => setDebug((value) => !value), [setDebug])
   const chooseQuality = useCallback((value) => {
@@ -138,10 +128,7 @@ export default function FlightRangeRoute() {
   const chooseMouseFlightEnabled = useCallback((value) => {
     setMouseFlightEnabled(value)
     writeMouseFlightEnabled(value)
-    if (!value) {
-      clearMouseStick(controls.current)
-      if (document.pointerLockElement === stage.current) document.exitPointerLock?.()
-    }
+    if (!value) clearMouseStick(controls.current)
   }, [controls])
 
   const chooseMousePitchInverted = useCallback((value) => {
@@ -155,173 +142,100 @@ export default function FlightRangeRoute() {
   }, [])
 
   /*
-  The stage's own pointer, which only matters while the surface has *not* captured it.
+  The stage's pointer, and the two things it does.
 
-  Left click hands the pointer over: nothing else on the page takes a click, so there is no
-  gesture to compete with and the capture is a plain consequence of touching the sky. Right
-  drag is free look, kept as a drag here because a pilot who has turned mouse flight off never
-  reaches the captured path at all and would otherwise lose the camera with it.
+  The stick is a position, so the pointer is never captured: `clientX`/`clientY` against the
+  middle of the surface is the whole control, and the pilot can see the arrow that is holding
+  it. Right drag is free look, and while it is held the stick is centred rather than left
+  where it was — the pointer is being used to aim the camera, so it is not saying anything
+  about the stick, and a look that ended with the pointer somewhere else entirely would
+  otherwise hand the aircraft a deflection nobody chose.
 
-  Once captured, both belong to the window listeners below and this handler stands aside.
   Touch is left alone throughout: the on-screen deck is its control surface.
   */
   const onStagePointerDown = useCallback((event) => {
     if (pausedRef.current || event.pointerType === 'touch') return
-    if (document.pointerLockElement === stage.current) return
-
-    if (event.button === 2) {
-      event.preventDefault()
-      dragLook.current = { id: event.pointerId, x: event.clientX, y: event.clientY }
-      // Deliberately not zeroed. The camera owns the return, and re-seeds these from the
-      // angle actually on screen; zeroing them would snap a re-grab back to the chase pose.
-      controls.current.cameraLook.active = true
-      event.currentTarget.setPointerCapture(event.pointerId)
-      return
-    }
-    if (event.button === 0 && mouseFlightEnabled) stage.current?.requestPointerLock?.()
-  }, [controls, mouseFlightEnabled])
+    if (event.button !== 2) return
+    event.preventDefault()
+    dragLook.current = { id: event.pointerId, x: event.clientX, y: event.clientY }
+    // Deliberately not zeroed. The camera owns the return, and re-seeds these from the
+    // angle actually on screen; zeroing them would snap a re-grab back to the chase pose.
+    controls.current.cameraLook.active = true
+    centreMouseStick(controls.current)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }, [controls])
 
   const onStagePointerMove = useCallback((event) => {
+    if (pausedRef.current || event.pointerType === 'touch') return
+
     const drag = dragLook.current
-    if (drag.id !== event.pointerId) return
-    // Inverted on both axes: the drag carries the aircraft with the hand rather than
-    // swinging the camera against it. The camera clamps the pitch it can actually use.
-    const look = controls.current.cameraLook
-    look.yaw -= (event.clientX - drag.x) * 0.006
-    look.pitch = Math.max(-Math.PI, Math.min(Math.PI,
-      look.pitch + ((event.clientY - drag.y) * 0.005),
-    ))
-    drag.x = event.clientX
-    drag.y = event.clientY
+    if (drag.id === event.pointerId) {
+      // Inverted on both axes: the drag carries the aircraft with the hand rather than
+      // swinging the camera against it. The camera clamps the pitch it can actually use.
+      const look = controls.current.cameraLook
+      look.yaw -= (event.clientX - drag.x) * 0.006
+      look.pitch = Math.max(-Math.PI, Math.min(Math.PI,
+        look.pitch + ((event.clientY - drag.y) * 0.005),
+      ))
+      drag.x = event.clientX
+      drag.y = event.clientY
+      return
+    }
+    if (!mouseFlightEnabledRef.current || drag.id !== null) return
+
+    // Position, not travel: where the pointer sits inside the gate is where the stick sits.
+    const rect = event.currentTarget.getBoundingClientRect()
+    const { invert, sensitivity } = mouseSettings.current
+    setMouseStick(
+      controls.current,
+      event.clientX - rect.left - (rect.width / 2),
+      event.clientY - rect.top - (rect.height / 2),
+      { extent: Math.min(rect.width, rect.height), invertPitch: invert, sensitivity },
+    )
   }, [controls])
 
   const onStagePointerUp = useCallback((event) => {
     if (dragLook.current.id !== event.pointerId) return
     dragLook.current.id = null
     controls.current.cameraLook.active = false
+    // Neutral until the next pointer move says otherwise. The look may have finished a long
+    // way from where it started, and the frame between the button coming up and the pointer
+    // moving again must not be flown by the old position.
+    centreMouseStick(controls.current)
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
   }, [controls])
 
-  /*
-  The captured pointer, and the two things it does.
-
-  Capture is what makes a relative stick work at all: with the pointer held by the surface
-  there is no edge of the screen to reach, so a roll can be held for as long as the wrist
-  keeps moving, and the arrow the pilot is not looking at cannot wander onto another window.
-
-  Escape is the way out, and it is the browser's — every engine reserves it, and none of them
-  deliver the keydown to the page. So losing the capture *is* the pause signal rather than
-  something the pause handler has to notice separately; a sortie can never end up running with
-  the pointer loose and nothing flying it.
-  */
-  useEffect(() => {
-    const surface = stage.current
-    if (!surface) return undefined
-
-    const onLockChange = () => {
-      const locked = document.pointerLockElement === surface
-      setPointerLocked(locked)
-      if (locked) {
-        captureMouseStick(controls.current)
-        dragLook.current.id = null
-        return
-      }
-      clearMouseStick(controls.current)
-      controls.current.cameraLook.active = false
-      freeLooking.current = false
-      // Both look paths let go, not just the captured one. Losing the lock mid-right-drag
-      // would otherwise leave the drag's pointer id armed, and every later pointer move
-      // would steer the camera with no button held.
-      dragLook.current.id = null
-      if (!pausedRef.current) setPaused(true)
-    }
-
-    // A refused capture is not a lost one. Chrome declines for about a second after the
-    // pilot presses Escape, and treating that as a lock drop would bounce a too-eager
-    // second click straight back into the menu it just came out of. Leave the prompt up.
-    const onLockError = () => {
-      setPointerLocked(document.pointerLockElement === surface)
-    }
-
-    document.addEventListener('pointerlockchange', onLockChange)
-    document.addEventListener('pointerlockerror', onLockError)
-    return () => {
-      document.removeEventListener('pointerlockchange', onLockChange)
-      document.removeEventListener('pointerlockerror', onLockError)
-    }
+  // The pointer has left the sky — for the bezel, another window, or the edge of the screen.
+  // Nothing out there is a stick position, so the aircraft stops being asked for anything
+  // rather than holding the deflection the pointer had as it crossed the edge.
+  const onStagePointerLeave = useCallback((event) => {
+    if (event.pointerType === 'touch') return
+    clearMouseStick(controls.current)
   }, [controls])
 
+  // Opening the menu drops the stick: the pointer is about to be used on buttons, and every
+  // move across them would otherwise be flown. It comes back live on the first move over the
+  // sky after the menu closes.
   useEffect(() => {
-    if (!pointerLocked) return undefined
-
-    const onMove = (event) => {
-      if (pausedRef.current) return
-      if (freeLooking.current) {
-        // Inverted on both axes: the drag carries the aircraft with the hand rather than
-        // swinging the camera against it. The camera clamps the pitch it can actually use.
-        const look = controls.current.cameraLook
-        look.yaw -= event.movementX * 0.006
-        look.pitch = Math.max(-Math.PI, Math.min(Math.PI,
-          look.pitch + (event.movementY * 0.005),
-        ))
-        return
-      }
-      // Travel, not position. `movementX/Y` is all a captured pointer reports, and it is all
-      // this control ever wanted: the stick moves by the same amount the hand did.
-      moveMouseStick(controls.current, event.movementX, event.movementY, {
-        invertPitch: mousePitchInverted,
-        sensitivity: mouseSensitivity,
-      })
-    }
-
-    const onDown = (event) => {
-      // Right button is camera only, exactly as the drag used to be. The stick keeps whatever
-      // it is holding, so a turn already being flown carries on through the look.
-      if (event.button !== 2 || pausedRef.current) return
-      event.preventDefault()
-      freeLooking.current = true
-      // Deliberately not zeroed. The camera owns the return, and re-seeds these from the
-      // angle actually on screen; zeroing them would snap a re-grab back to the chase pose.
-      controls.current.cameraLook.active = true
-    }
-
-    const onUp = (event) => {
-      if (event.button !== 2 || !freeLooking.current) return
-      freeLooking.current = false
-      controls.current.cameraLook.active = false
-    }
-
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mousedown', onDown)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mousedown', onDown)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [controls, mousePitchInverted, mouseSensitivity, pointerLocked])
-
-  // The menu needs a pointer to be operated with, so opening it always gives the pointer
-  // back. Resuming does not take it again on its own: that has to be a click, both because
-  // browsers require a gesture and because the pilot may have paused to reach the bezel.
-  useEffect(() => {
-    if (paused && document.pointerLockElement === stage.current) document.exitPointerLock?.()
-  }, [paused])
+    if (paused) clearMouseStick(controls.current)
+  }, [controls, paused])
 
   return (
     <section className="test-flight-surface" aria-label={`Test flight over ${map.name} ${map.region}`}>
       <div
-        // The captured pointer is invisible by definition, and the HUD draws the stick gate
-        // in its place. `cursor: none` covers the moment before the capture takes, so the
-        // arrow does not flash across the sky on the way in.
-        className={`flight-canvas-stage ${pointerLocked ? 'is-flying' : ''}`}
+        // The pointer is the stick, so it stays visible and becomes a crosshair over the sky:
+        // its position on the glass is the deflection, and hiding it would throw away the
+        // readout the whole control is built on. The HUD's gate is the shaped half of the
+        // same story — how much of that position the aircraft is actually being given.
+        className={`flight-canvas-stage ${mouseFlightEnabled && !paused ? 'is-flying' : ''}`}
         ref={stage}
         onPointerDown={onStagePointerDown}
         onPointerMove={onStagePointerMove}
         onPointerUp={onStagePointerUp}
         onPointerCancel={onStagePointerUp}
+        onPointerLeave={onStagePointerLeave}
         onLostPointerCapture={onStagePointerUp}
         onContextMenu={(event) => event.preventDefault()}
       >
@@ -354,19 +268,8 @@ export default function FlightRangeRoute() {
           onToggleCameraMode={toggleCameraMode}
           mouseFlightEnabled={mouseFlightEnabled}
           mousePitchInverted={mousePitchInverted}
-          pointerLocked={pointerLocked}
         />
       </div>
-
-      {/* The one thing the pilot has to be told, shown only while it is true. A captured
-          pointer is not a state a browser can enter on its own, and a sortie that silently
-          ignored the mouse until someone happened to click would read as a broken control. */}
-      {mouseFlightEnabled && !pointerLocked && !paused && (
-        <p className="flight-capture-prompt" role="status">
-          <span>Click the sky to fly with the mouse</span>
-          <small>Esc releases the pointer and opens the menu</small>
-        </p>
-      )}
 
       <PauseMenu
         open={paused}

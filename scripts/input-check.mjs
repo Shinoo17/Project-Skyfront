@@ -9,7 +9,9 @@ import {
   clearAnalogFlightInput,
   clearMouseStick,
   createFlightInputState,
-  moveMouseStick,
+  mouseStickRadiusPx,
+  setMouseStick,
+  MOUSE_STICK_GATE,
   readCommandSpeedLimits,
   readMouseStickAxes,
   setAnalogFlightInput,
@@ -135,66 +137,140 @@ assert.equal(input.intent.pitch, -0.25, 'analogue pitch must retain its requeste
 clearAnalogFlightInput(input, 'test-stick')
 
 /*
-The mouse is a relative stick, and everything worth checking about it follows from that one
-claim: only travel moves it, it holds where it is left, and it never depends on where the
-pointer happens to be. That independence is the fix for the Action camera — a stick has no
-position on the glass for a rolled lens to rotate.
+The mouse is a positional stick, and everything worth checking about it follows from that one
+claim: where the pointer sits inside the gate is where the stick sits, the gate is a disc
+rather than a box, and the middle of the screen is the only neutral there is.
 */
 {
   const stick = input.mouseStick
+  const EXTENT = 1000
+  // The gate at 1×: 340px from the middle of a 1000px-short-side window is full deflection.
+  const RADIUS = mouseStickRadiusPx(EXTENT, 1)
+  assert.equal(RADIUS, 340, 'the gate must be 34% of the short side at 1x')
+  const aim = (x, y, options = {}) => setMouseStick(input, x, y, { extent: EXTENT, ...options })
+
   assert.equal(readMouseStickAxes(stick), null,
     'a mouse that is not flying must clear its source, not publish a neutral stick')
 
-  // Right is roll right; away from the pilot — negative movementY — is pitch up.
-  moveMouseStick(input, 230, 0)
-  assert.ok(readMouseStickAxes(stick).roll > 0.3, 'moving right must roll right')
-  assert.equal(readMouseStickAxes(stick).pitch, 0, 'a lateral move must not touch pitch')
+  // Right is roll right; up the screen — negative offsetY — is pitch up.
+  aim(230, 0)
+  assert.ok(readMouseStickAxes(stick).roll > 0.3, 'pointing right must roll right')
+  assert.equal(readMouseStickAxes(stick).pitch, 0, 'a lateral aim must not touch pitch')
 
-  centreMouseStick(input)
-  moveMouseStick(input, 0, -230)
-  assert.ok(readMouseStickAxes(stick).pitch > 0.3, 'moving the mouse away must pull')
-  centreMouseStick(input)
-  moveMouseStick(input, 0, -230, { invertPitch: true })
+  aim(0, -230)
+  assert.ok(readMouseStickAxes(stick).pitch > 0.3, 'pointing up the screen must pull')
+  aim(0, -230, { invertPitch: true })
   assert.ok(readMouseStickAxes(stick).pitch < -0.3, 'the inversion setting must reverse pitch')
 
-  // The stick holds. This is the whole difference from an absolute pointer, and it is what
-  // lets a bank be set once and flown rather than held by keeping the hand still.
-  centreMouseStick(input)
-  moveMouseStick(input, 200, 0)
-  const held = readMouseStickAxes(stick).roll
-  moveMouseStick(input, 0, 0)
-  assert.equal(readMouseStickAxes(stick).roll, held,
-    'a stationary mouse must hold the stick, not recentre it')
+  /*
+  Position, not travel. The same pointer position must give the same stick however it was
+  arrived at — this is the property the old relative stick did not have, and the whole reason
+  a reversal used to cost two sweeps of the desk instead of one movement of the hand.
+  */
+  aim(0, -RADIUS)
+  const full = readMouseStickAxes(stick).pitch
+  aim(0, RADIUS)
+  aim(0, 0)
+  aim(0, -RADIUS)
+  assert.equal(readMouseStickAxes(stick).pitch, full,
+    'the same pointer position must give the same stick, whatever route it took')
+  assert.equal(full, 1, 'the edge of the gate must be full deflection')
 
-  // Travel accumulates, and saturates rather than running off the end of a screen that no
-  // longer bounds it.
-  moveMouseStick(input, 20000, 0)
-  assert.equal(readMouseStickAxes(stick).roll, 1, 'sustained travel must reach full authority')
-  moveMouseStick(input, -20000, 0)
-  assert.equal(readMouseStickAxes(stick).roll, -1,
-    'the stick must come straight back out of saturation, with no stored slack')
+  // A reversal is one movement across the gate and it saturates at the far edge, however far
+  // past it the pointer goes.
+  aim(0, RADIUS)
+  assert.equal(readMouseStickAxes(stick).pitch, -1, 'the far edge must be full opposite stick')
+  aim(0, RADIUS * 40)
+  assert.equal(readMouseStickAxes(stick).pitch, -1,
+    'past the gate must saturate, not accumulate — there is no slack to unwind')
+
+  /*
+  The gate is a disc, and this is the assertion that says so. A diagonal must reach full
+  deflection at the same distance from the middle as a straight pull; shaped per axis it
+  would need 1.41 times as far, and a rolling pull-up would answer unevenly.
+  */
+  const diagonal = RADIUS / Math.SQRT2
+  aim(diagonal, -diagonal)
+  const corner = readMouseStickAxes(stick)
+  assert.ok(
+    Math.abs(Math.hypot(corner.pitch, corner.roll) - 1) < 1e-12,
+    `a diagonal must reach full deflection at the gate radius, got ${Math.hypot(corner.pitch, corner.roll)}`,
+  )
+  assert.ok(
+    Math.abs(corner.pitch - corner.roll) < 1e-12,
+    'a 45° aim must split evenly between the two axes',
+  )
+
+  // Direction survives saturation: a pointer well outside the gate and off to one side must
+  // still be flown where it is pointing, not folded into the nearest corner of a box.
+  aim(RADIUS * 3, -RADIUS)
+  const far = readMouseStickAxes(stick)
+  assert.ok(
+    Math.abs((far.roll / far.pitch) - 3) < 1e-9,
+    `saturation must clamp the length and keep the direction, got ${far.roll / far.pitch}`,
+  )
 
   centreMouseStick(input)
   assert.deepEqual(readMouseStickAxes(stick), { pitch: 0, roll: 0, yaw: 0 },
     'centring must neutralise both axes while the mouse keeps flying')
 
-  // A dead zone at the centre, so a mouse on an uneven desk does not hold a bank.
-  moveMouseStick(input, 8, 0)
-  assert.equal(readMouseStickAxes(stick).roll, 0, 'the stick must be quiet around neutral')
+  /*
+  The dead zone is a disc too, and that is a different claim from a wide dead zone. A point
+  just outside the old square's edge on one axis but inside the circle must read zero: with
+  per-axis shaping it would not, and the aircraft would answer to a pointer the pilot had
+  put back in the middle.
+  */
+  const inside = RADIUS * MOUSE_STICK_GATE.deadZone * 0.7
+  aim(inside, -inside)
+  assert.deepEqual(readMouseStickAxes(stick), { pitch: 0, roll: 0, yaw: 0 },
+    'a diagonal inside the dead-zone disc must read zero on both axes')
+  aim(RADIUS * MOUSE_STICK_GATE.deadZone * 1.4, 0)
+  assert.ok(readMouseStickAxes(stick).roll > 0,
+    'just outside the dead zone must be live, not a second dead band')
+
+  // Soft in the middle, decisive at the edge. Half the gate must be well under half the
+  // authority, which is what keeps small corrections placeable.
+  aim(RADIUS * 0.5, 0)
+  const halfway = readMouseStickAxes(stick).roll
+  assert.ok(halfway > 0 && halfway < 0.25,
+    `the middle of the gate must stay soft, got ${halfway} at half deflection`)
 
   /*
-  Sensitivity scales travel and only travel. Twice the setting must be exactly half the desk
-  for the same deflection — anything else and the number in the menu stops describing what it
-  does — and the band has to be closed at both ends, because a stored value from an older
-  build or a hand-edited entry must never come back as an unflyable aircraft.
+  Sensitivity scales the gate and only the gate. Twice the setting must be exactly half the
+  screen for the same deflection — anything else and the number in the menu stops describing
+  what it does — and the band has to be closed at both ends, because a stored value from an
+  older build or a hand-edited entry must never come back as an unflyable aircraft.
   */
-  centreMouseStick(input)
-  moveMouseStick(input, 120, 0, { sensitivity: 1 })
+  aim(120, 0, { sensitivity: 1 })
   const atUnity = readMouseStickAxes(stick).roll
-  centreMouseStick(input)
-  moveMouseStick(input, 60, 0, { sensitivity: 2 })
+  aim(60, 0, { sensitivity: 2 })
   assert.ok(Math.abs(readMouseStickAxes(stick).roll - atUnity) < 1e-12,
-    'doubling sensitivity must halve the travel a deflection costs, exactly')
+    'doubling sensitivity must halve the screen a deflection costs, exactly')
+
+  /*
+  A positional stick is live wherever the pointer happens to be resting, which a relative one
+  never was — it only moved when the hand did. So the keyboard has to be able to take an axis
+  back from a pointer nobody is holding, at any deflection including a saturated one, or the
+  arrow keys stop working for anyone whose mouse is sitting off to one side of the screen.
+
+  It holds because a held key is ±1 and `strongestAxis` needs a strictly larger deflection to
+  override the digital value. Worth asserting rather than inferring: the tie at full stick is
+  the whole margin, and a stick that published 1.0000001 would silently take the axis.
+  */
+  for (const frac of [0.5, 1, 4]) {
+    aim(RADIUS * frac, 0)
+    input.pressed.add('roll-left')
+    for (let frame = 0; frame < 40; frame += 1) {
+      setAnalogFlightInput(input, 'mouse-probe', readMouseStickAxes(stick), { direct: true })
+      step()
+    }
+    assert.equal(input.intent.roll, -1,
+      `a held arrow key must win the axis from a pointer resting at ${frac}x the gate`)
+    input.pressed.clear()
+    clearAnalogFlightInput(input, 'mouse-probe')
+    for (let frame = 0; frame < 40; frame += 1) step()
+  }
+  clearMouseStick(input)
 
   assert.equal(clampMouseSensitivity(0), MOUSE_SENSITIVITY_RANGE.min,
     'sensitivity must not be settable to zero — the mouse would stop flying the aircraft')

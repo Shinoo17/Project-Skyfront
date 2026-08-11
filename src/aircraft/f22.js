@@ -439,7 +439,11 @@ const f22 = {
         aoaLimitSoftnessDeg: 10,
         stallProtectionRangeDeg: 5,
         stallProtectionPitchRateDeg: 46,
-        negativeAoAFactor: 0.55,
+        // How much of the positive alpha fence the push-over side gets. Raised from the old
+        // 0.55 because the negative fence was the binding constraint on a slow bunt while the
+        // positive one was not: full forward stick at 300 km/h reached the fade well before
+        // full aft stick reached its own.
+        negativeAoAFactor: 0.68,
 
         // The nose has to beat the flight path to deep AoA, not merely lead it: what
         // separates a Cobra from a hard pull is the ratio between the two rates. 180 keeps
@@ -452,7 +456,24 @@ const f22 = {
         // engines can, and it is what makes the tumble exit in a chosen direction.
         postStallRollRateDeg: 150,
         maxG: 9,
-        maxNegativeG: 3.5,
+        /*
+        The push-over G ceiling, and the one number that decided how hard the nose could be
+        put down at combat speed.
+
+        `negGLimitRate` is this figure over airspeed, so it was the binding clamp on pitch-down
+        everywhere above about 700 km/h while the pull side was still limited by the airframe's
+        structural rate: 42 deg/s down against 58 up at 900 km/h, and 26 against 58 at 1500 —
+        the faster the aircraft went, the more one-way the stick felt. A real airframe is that
+        asymmetric because a pilot is, and this one is not simulating a pilot.
+
+        Six and a half puts the clamp above the structural rate ceiling at every ordinary
+        speed, so full forward stick asks for the same 58 deg/s full aft stick does and the
+        two directions cost the same effort. The asymmetry the arcade wants is kept where it
+        belongs and where it is a *bonus* rather than a penalty: only the pull side gets the
+        High-G rate and G ceilings, and only the pull side is relaxed by `envelopeOpen` for
+        post-stall work. Pulling is still the stronger control; pushing is no longer a weak one.
+        */
+        maxNegativeG: 6.5,
 
         /*
         Thin air: the continuous physical baseline underneath the arcade PSM assist.

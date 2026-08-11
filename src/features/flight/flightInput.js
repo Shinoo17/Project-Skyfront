@@ -10,9 +10,9 @@ control.
 hold the exact same actions as the keyboard. Analogue sources are kept separately and mixed
 by strongest deflection so adding a gamepad cannot make keyboard controls fight it.
 
-The mouse is one of those adapters. It holds a relative stick that only mouse *travel* moves —
-see `moveMouseStick` below — and publishes through the same analogue path everything else
-uses, so nothing downstream of `stepFlightInput` knows a mouse exists.
+The mouse is one of those adapters. It holds a stick whose position is the pointer's position
+on the glass — see `setMouseStick` below — and publishes through the same analogue path
+everything else uses, so nothing downstream of `stepFlightInput` knows a mouse exists.
 
 W and S are a speed control, not a power lever. They move `commandSpeedKmh` — the airspeed
 the pilot is asking for, in the same km/h the HUD already reads — and the throttle the
@@ -69,16 +69,19 @@ const MOUSE_PITCH_INVERTED_KEY = 'f22-flight-mouse-pitch-inverted'
 const MOUSE_SENSITIVITY_KEY = 'f22-flight-mouse-sensitivity'
 
 /*
-How much stick the pilot gets per centimetre of desk, as a plain multiplier on the travel
-below. It is a continuous setting rather than three named steps because the right number is
-a property of the pilot's hardware and grip — mouse DPI alone spans an order of magnitude —
-and no preset any of us picks is going to land on it for them.
+How much of the screen the pilot has to cross for full stick, as a divisor on the gate radius
+below. It is a continuous setting rather than three named steps because the right number is a
+property of the pilot's screen and how close they sit to it, and no preset any of us picks is
+going to land on it for them.
 
-The band is wide enough to cover that spread from both ends and closed at both: below the
-floor a full roll stops fitting on any desk, and above the ceiling the dead zone is the only
-thing between neutral and full deflection, which is not a control any more.
+The band is narrower than the one the old travel-based stick needed, because it no longer has
+to absorb an order of magnitude of mouse DPI: a position on the glass is a position on the
+glass whatever the sensor under the hand is doing. At the floor the gate is roughly two
+thirds of the short edge of the window and at the ceiling roughly a sixth, and both ends stay
+comfortably inside the window — a gate that ran off the edge would be a full deflection the
+pilot could not reach.
 */
-export const MOUSE_SENSITIVITY_RANGE = { min: 0.25, max: 3, step: 0.05, default: 1 }
+export const MOUSE_SENSITIVITY_RANGE = { min: 0.5, max: 2, step: 0.05, default: 1 }
 
 export function clampMouseSensitivity(value) {
   const number = Number(value)
@@ -107,98 +110,143 @@ const DIRECT_RESPONSE = {
 }
 
 /*
-The mouse is a relative stick, not a position on the glass.
+The mouse is a position on the glass, not an accumulation of travel.
 
-Only travel counts: move the hand right and the stick goes right, and where the pointer
-happens to sit on the desktop never enters into it. That is what lets the surface capture the
-pointer — with nothing to read off an absolute position, there is no edge of the screen to run
-out of, and a roll can be held for as long as the wrist keeps moving.
+Where the pointer sits inside the gate *is* where the stick sits. Middle of the screen is
+neutral, top edge of the gate is full aft, and the pilot's hand is therefore a readout of the
+control they are holding — the one thing a mouse can offer that a real stick's spring offers
+and a relative stick cannot. Level flight is "put the pointer back in the middle", which is a
+thing the hand already knows how to do, rather than a travel to retrace by eye.
 
-It also settles the question the old absolute stick got wrong. Screen up meant body pitch-up
-only while the camera was unrolled and looking down the nose, and the Action camera is
-deliberately neither: it follows less than half the bank and freezes its shot in the world
-frame during a post-stall manoeuvre. A stick has no such problem, because a stick is not a
-place on the screen — up is pull, right is roll right, and no camera can rotate that.
+This replaces a relative stick that only counted travel, and the reason that one existed no
+longer holds. It was chosen because screen-up meant body pitch-up only while the camera was
+unrolled, and the chase camera deliberately was not. The camera now carries the airframe's
+roll in full — see the horizon note in `chaseCamera.js` — so screen-up is body pitch-up at
+every attitude, and the screen is a control surface again.
 
-The stick holds where it is left, exactly as the airframe's real one would. That is why the
-HUD draws it: with nothing on the desk to feel, the gate on the glass is the only way the
-pilot knows how much they are holding, and centring it by eye is how they fly level again.
+Two places still lapse, and both are the camera deliberately not looking down the nose. A
+held Action shot freezes in the world frame through a Cobra or a Kulbit, and rear view looks
+aft, where screen-up reads as pitch-down and roll reads reversed. Neither is worth correcting
+for: the first is a composed shot the pilot commits to rather than steers through, and the
+second is a glance behind that inverts by construction — a stick that flipped with it would
+be a control that changed meaning while the aircraft did not. The gate on the HUD stays
+truthful in both cases even while the picture behind it is not.
+
+One more consequence of a position, which a travel-fed stick did not have: it is live
+wherever the pointer is resting, so a pointer parked off to one side is a deflection nobody
+is holding. The dead zone below makes the middle of the screen a place rather than a point,
+and a held arrow key still outranks it — `strongestAxis` needs a strictly larger deflection
+to take an axis, and a key is always full — so the keyboard can always take the aircraft back.
 */
-// Pixels of travel for full deflection at 1× sensitivity. Around a third of a 1080p screen's
-// width, which puts a full-authority roll inside one comfortable sweep without making small
-// corrections impossible to place. The setting scales this and nothing else.
-const MOUSE_STICK_TRAVEL = 460
-// A gentle expo. The old curve was steeper and combined with the smoothing above it made the
-// first third of the stick feel like nothing at all.
-const MOUSE_STICK_EXPO = 1.25
-// Small enough to be invisible in flight, large enough that a mouse resting on a slightly
-// uneven desk does not hold a bank.
-const MOUSE_STICK_DEAD_ZONE = 0.035
+/*
+The radius of the gate, as a fraction of the shorter side of the window, at 1× sensitivity.
+The setting divides this and nothing else.
+
+One radius rather than one per axis, because the gate is a disc. Shaping the axes separately
+would make it a square: a diagonal would need 1.41 times the distance from the middle that a
+straight pull needs, and the dead zone would become a box the pointer could leave on one axis
+while still sitting inside it on the other. Both read as the aircraft answering unevenly, and
+a rolling pull-up is a diagonal.
+*/
+const MOUSE_STICK_RADIUS = 0.34
+
+// Fine around neutral, decisive at the edges. Squared is gentle enough that the middle third
+// of the gate is small corrections rather than a lurch, which is most of what makes a pointer
+// flyable at all.
+const MOUSE_STICK_CURVE = 2
+/*
+The dead zone, as a fraction of the gate radius, and much wider than a relative stick could
+afford. A relative stick has no neutral to find — it is wherever the travel left it — so a
+wide dead zone there is just lost resolution. A positional one has exactly one neutral, the
+middle of the screen, and the dead zone is what makes it a *place* the pointer can be put
+back into rather than a point it has to be balanced on.
+*/
+const MOUSE_STICK_DEAD_ZONE = 0.12
+
+export const MOUSE_STICK_GATE = {
+  radius: MOUSE_STICK_RADIUS,
+  deadZone: MOUSE_STICK_DEAD_ZONE,
+}
 
 function clampAxis(value) {
   return Math.max(-1, Math.min(1, Number(value) || 0))
 }
 
-function shapeStickAxis(value) {
-  const clamped = clampAxis(value)
-  const magnitude = Math.abs(clamped)
-  if (magnitude <= MOUSE_STICK_DEAD_ZONE) return 0
-  const live = (magnitude - MOUSE_STICK_DEAD_ZONE) / (1 - MOUSE_STICK_DEAD_ZONE)
-  return Math.sign(clamped) * (live ** MOUSE_STICK_EXPO)
+/*
+How far across the window the gate reaches, in pixels, for a window whose shorter side is
+`extent`. Sensitivity divides the radius: turning it up shrinks the gate, so less of the
+screen is a full deflection.
+*/
+export function mouseStickRadiusPx(extent, sensitivity = 1) {
+  const short = Math.max(Number(extent) || 0, 1)
+  return (short * MOUSE_STICK_RADIUS) / clampMouseSensitivity(sensitivity)
 }
 
 /*
-Move the virtual stick by one mouse movement, in the raw `movementX`/`movementY` a captured
-pointer reports. Right is positive roll; pushing the mouse away from the pilot — negative
-`movementY` — is positive pitch, the sense a stick has, and the inversion setting swaps it.
+Put the stick where the pointer is. `offsetX`/`offsetY` are pixels from the middle of the
+surface, with `extent` its shorter side; right is positive roll, and up the screen — negative
+`offsetY` — is positive pitch, which the inversion setting swaps.
 
-The two axes clamp independently rather than to a circle: full roll while already at full
-pitch is a control the airframe genuinely has, and gating it into a disc would take away the
-corner of the envelope a barrel roll lives in.
+Stored unclamped on purpose. Clamping each axis here would bend the direction of a pointer
+sitting off to one side, turning a pull that is mostly aft and slightly right into one that
+is evenly both. `readMouseStickAxes` clamps the length instead, which keeps the direction the
+pilot pointed and is what makes the gate a disc rather than a box.
 */
-export function moveMouseStick(state, movementX, movementY, {
+export function setMouseStick(state, offsetX, offsetY, {
+  extent = 0,
   invertPitch = false,
   sensitivity = 1,
 } = {}) {
   const stick = state.mouseStick
-  const scale = clampMouseSensitivity(sensitivity) / MOUSE_STICK_TRAVEL
-  const pitchStep = (Number(movementY) || 0) * scale
+  const radius = mouseStickRadiusPx(extent, sensitivity)
+  const pitch = (Number(offsetY) || 0) / radius
   stick.live = true
-  stick.x = clampAxis(stick.x + ((Number(movementX) || 0) * scale))
-  stick.y = clampAxis(stick.y + (invertPitch ? pitchStep : -pitchStep))
+  stick.x = (Number(offsetX) || 0) / radius
+  stick.y = invertPitch ? pitch : -pitch
   return stick
 }
 
-// Back to neutral with the stick still in the pilot's hand — the aircraft stops being asked
-// for anything, which is a different thing from the pointer letting go of the surface.
+// Back to neutral with the pointer still on the surface — the aircraft stops being asked for
+// anything, which is a different thing from the pointer leaving. Free look uses this: the
+// camera is being aimed, so the stick is not being flown, and the next pointer move after the
+// look ends puts it back wherever the pointer now is.
 export function centreMouseStick(state) {
   state.mouseStick.x = 0
   state.mouseStick.y = 0
 }
 
-// The surface has taken the pointer. Live from this instant rather than from the first
-// movement, so the gate is on the glass before the pilot has moved anything — it is the only
-// confirmation they get that the click did what it said.
-export function captureMouseStick(state) {
-  centreMouseStick(state)
-  state.mouseStick.live = true
-}
-
-// The pointer has left the aircraft entirely. Centred as well as dropped, so re-entering the
-// surface never starts with a deflection the pilot did not ask for and cannot see.
+// The pointer has left the surface. Centred as well as dropped, so the aircraft is not left
+// holding the deflection the pointer had when it crossed the edge.
 export function clearMouseStick(state) {
   state.mouseStick.live = false
   centreMouseStick(state)
 }
 
-// Shape the held stick into the same analogue axes a gamepad or the bot publishes. Null when
-// the mouse is not flying, which the caller reads as "clear this source" rather than as a
-// neutral stick — the two are different, and only the first leaves the keyboard alone.
+/*
+Shape the stick into the same analogue axes a gamepad or the bot publishes. Null when the
+mouse is not flying, which the caller reads as "clear this source" rather than as a neutral
+stick — the two are different, and only the first leaves the keyboard alone.
+
+The shaping is radial: the length is clamped to the gate, the dead zone is taken off it, the
+curve is applied to what is left, and the direction is carried through untouched. That is the
+whole reason the disc is a disc — a diagonal reaches full deflection at exactly the same
+distance from the middle as a straight pull, and the corner of the envelope a barrel roll
+lives in is reached by pointing at it rather than by finding a corner of a box.
+*/
 export function readMouseStickAxes(stick) {
   if (!stick?.live) return null
+  const neutral = { pitch: 0, roll: 0, yaw: 0 }
+  const magnitude = Math.hypot(stick.x, stick.y)
+  if (magnitude < 1e-6) return neutral
+
+  const travel = Math.min(magnitude, 1)
+  if (travel <= MOUSE_STICK_DEAD_ZONE) return neutral
+
+  const live = (travel - MOUSE_STICK_DEAD_ZONE) / (1 - MOUSE_STICK_DEAD_ZONE)
+  const scale = (live ** MOUSE_STICK_CURVE) / magnitude
   return {
-    pitch: shapeStickAxis(stick.y),
-    roll: shapeStickAxis(stick.x),
+    pitch: clampAxis(stick.y * scale),
+    roll: clampAxis(stick.x * scale),
     yaw: 0,
   }
 }
@@ -378,9 +426,10 @@ export function createFlightInputState(commandSpeedKmh = 0) {
       yaw: 0,
       pitch: 0,
     },
-    // The virtual stick the captured pointer holds, −1..1 on each axis. `live` is whether the
-    // mouse is flying the aircraft at all; the surface sets it when it captures the pointer
-    // and drops it the moment the capture ends.
+    // Where the pointer sits inside the gate, in gate radii on each axis. Stored unclamped —
+    // `readMouseStickAxes` clamps the length rather than the axes, so the direction survives.
+    // `live` is whether the mouse is flying the aircraft at all; the surface sets it while the
+    // pointer is over the sky and drops it when the pointer leaves.
     mouseStick: {
       live: false,
       x: 0,

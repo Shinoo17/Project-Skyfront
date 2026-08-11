@@ -205,9 +205,10 @@ export default function PauseMenu({
                 <i aria-hidden="true">{mousePitchInverted ? 'ON' : 'OFF'}</i>
               </button>
 
-              {/* A slider rather than named steps: the right number depends on the pilot's
-                  mouse DPI and how they hold it, and no three presets we pick will land on
-                  it. The multiplier is shown because it is the number they are choosing. */}
+              {/* A slider rather than named steps: it sets how much of the screen a full
+                  deflection takes, and the right number depends on the pilot's display and
+                  how close they sit. The multiplier is shown because it is what they choose;
+                  turning it up shrinks the gate, so less pointer travel is full stick. */}
               <label className="pause-slider">
                 <span>
                   Mouse sensitivity
@@ -226,8 +227,8 @@ export default function PauseMenu({
               </label>
               <p className="pause-note">
                 {mouseFlightEnabled
-                  ? 'Click the sky and the pointer is captured: moving it left and right rolls, forward and back pitches, and only travel counts. X centres the stick, right-hold looks around, Esc gives the pointer back and opens this menu.'
-                  : 'Pitch and roll remain on the arrow keys. The pointer is never captured.'}
+                  ? 'The pointer is the stick: where it sits on the sky is the deflection, left and right rolls, up and down pitches, and the middle of the screen is neutral. Right-hold looks around, Esc opens this menu.'
+                  : 'Pitch and roll remain on the arrow keys. The pointer only ever moves the camera.'}
               </p>
             </div>
 

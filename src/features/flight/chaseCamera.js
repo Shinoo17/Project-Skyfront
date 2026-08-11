@@ -74,14 +74,18 @@ const CAMERA_STYLES = {
   combat: {
     offset: CHASE_CAMERA_OFFSET,
     lookAhead: CHASE_CAMERA_LOOK_AHEAD,
-    bankFollow: 0.58,
     velocityBlend: 0.22,
     positionResponse: 4.2,
     targetResponse: 5.4,
-    upResponse: 0.7,
     baseFov: BASE_FOV,
     speedFov: 5,
     brakingFov: 4,
+    // What a hard turn and reheat read as on the lens and the boom. Both are multiplied by
+    // a blend that is zero in ordinary flight, so neither shifts the authored base framing.
+    maneuverFov: 4,
+    maneuverBoom: 0.1,
+    burnerFov: 3,
+    burnerBoom: 0.06,
     shake: 0.5,
   },
   action: {
@@ -90,16 +94,21 @@ const CAMERA_STYLES = {
     // the exit from a manoeuvre.
     offset: new Vector3(-15.5, 4.8, 0),
     lookAhead: 13,
-    bankFollow: 0.46,
-    velocityBlend: 0.34,
-    positionResponse: 2.9,
-    targetResponse: 3.4,
+    // Less of the sightline is given to momentum than it was. The velocity share is what
+    // makes the camera hang behind the nose during a pitch change, and past about a quarter
+    // it stops reading as weight and starts reading as the aim not keeping up.
+    velocityBlend: 0.26,
+    positionResponse: 3.4,
+    targetResponse: 4.4,
     returnResponse: 1.9,
     returnDuration: 2.8,
-    upResponse: 0.58,
     baseFov: 69,
     speedFov: 3,
     brakingFov: 3,
+    maneuverFov: 3.5,
+    maneuverBoom: 0.12,
+    burnerFov: 2.5,
+    burnerBoom: 0.07,
     shake: 0.28,
   },
 }
@@ -143,21 +152,37 @@ export function writeFlightCameraDistance(value) {
   }
 }
 
-// A chase camera that copies the full aircraft bank makes the pitch ladder sweep across
-// the whole HUD during a turn. Following only part of the bank keeps the sightline calm
-// while the ladder and terrain remain registered through the same camera.
-//
-// The other part of the reference — world up projected across the nose — is only defined
-// while the jet is roughly upright and the nose is off the vertical. Straight up it is a
-// zero vector, and it reverses through 180 degrees crossing the top of a loop; inverted it
-// points opposite the airframe's own up. Blending toward it there is what used to roll the
-// camera over itself. So the level reference is faded out over both, and what is left is
-// the airframe's own up: full bank follow through the top of a loop and through inverted
-// flight, which is continuous, and back to the calm sightline as soon as it means anything
-// again. CAMERA_VERTICAL_FADE is on |nose up component|, CAMERA_INVERTED_FADE on the
-// airframe up's world Y. Each camera style supplies its own bank-follow amount.
-const CAMERA_VERTICAL_FADE = [0.6, 0.95]
-const CAMERA_INVERTED_FADE = [-0.1, 0.4]
+/*
+The camera rolls with the aircraft, all the way round, and there is no horizon lock.
+
+That is a reversal of what this file used to do, and the reason is motion sickness rather
+than composition. A camera that keeps the horizon level while the airframe rolls under it
+puts two different rotation rates on the screen at once: the world turning at very nearly the
+aircraft's rate, and the aircraft appearing to turn at whatever share of it the camera was
+told to take. Neither cue matches what the hand asked for, and the mismatch is precisely the
+thing that makes a barrel roll unpleasant to watch. Taking the whole bank leaves one rotation
+on the screen. The aircraft sits still in the frame and the world goes round it, which is what
+the pilot is actually doing, and it reads as flying rather than as being swung.
+
+It is also the only mapping under which the screen is a control surface. Screen-up is body
+pitch-up at every attitude, so the pointer stick can be a position on the glass — see the
+stick in `flightInput.js`, which depends on this and would be lying without it.
+
+So there is nothing to configure and no branch. The camera's up is the airframe's up across
+the follow axis, for the cockpit and for both chase styles alike, and everything the old
+angle-domain horizon needed — a world-up reference that is undefined at the vertical, a
+signed bank that wraps at 180, two fades and a filter to cover both — is gone with it. Body
+up has neither failure: it is defined at every attitude the aircraft can reach, and inverted
+is not a special case of anything.
+
+Two places still hold a level frame on purpose, and both are authored shots rather than
+horizon lock: `chase.actionUp` freezes the camera's own up for the duration of a post-stall
+manoeuvre, and the release path eases back toward world up as the aircraft rejoins the
+airflow. Those are compositions the pilot was promised would hold still. They stay.
+*/
+// The boom breathes with load and reheat rather than stepping, and slower than the lens: a
+// camera that changes distance faster than it changes angle reads as the aircraft lurching.
+const CAMERA_BOOM_RESPONSE = 2.5
 
 // One step of a critically damped spring, closed form so a long frame cannot make it blow
 // up the way an explicit integrator would. The result carries both the new value and its
@@ -183,6 +208,10 @@ export function createChaseCameraState() {
     followForward: new Vector3(),
     followUp: new Vector3(),
     followRight: new Vector3(),
+    // The airframe's up across the follow axis, which is the camera's up.
+    bodyUp: new Vector3(),
+    // How far the boom is extended over its authored length, 1 in ordinary flight.
+    boom: 1,
     velocityDirection: new Vector3(),
     previousPosition: new Vector3(),
     decel: 0,
@@ -210,6 +239,7 @@ export function createChaseCameraState() {
     actionOffset: new Vector3(),
     actionTargetOffset: new Vector3(),
     actionUp: new Vector3(),
+    actionReturnUp: new Vector3(),
     actionReturnOffset: new Vector3(),
     actionReturnDirection: new Vector3(),
     actionReturnTargetDirection: new Vector3(),
@@ -245,6 +275,8 @@ export function resetChaseCamera(chase, camera, aircraftState) {
   chase.actionBlocked = false
   chase.actionReturning = false
   chase.actionReturnElapsed = 0
+  chase.boom = 1
+  chase.followUp.copy(LOCAL_UP)
   chase.position
     .copy(CHASE_CAMERA_OFFSET)
     .applyQuaternion(aircraftState.orientation)
@@ -401,6 +433,11 @@ export function updateChaseCamera(chase, camera, {
     chase.actionBlocked = psmManeuver
     chase.actionReturning = true
     chase.actionReturnOffset.copy(chase.actionOffset)
+    // The horizon the held shot was composed on. It has to come back with the boom, on the
+    // same clock: now that the ordinary camera rides the full airframe roll, a shot held
+    // through an inverted Cobra can be a half-turn away from where the chase rig wants to
+    // be, and handing the up axis straight back would spend the whole return in one frame.
+    chase.actionReturnUp.copy(camera.up)
     chase.actionReturnElapsed = 0
   }
   if (style !== 'action') {
@@ -418,13 +455,22 @@ export function updateChaseCamera(chase, camera, {
     chase.velocityDirection.copy(aircraftState.velocity).normalize()
     chase.followForward.lerp(chase.velocityDirection, profile.velocityBlend).normalize()
   }
-  const bankFollow = mode === 'nose' ? 1 : profile.bankFollow
-  const levelWeight = (1 - bankFollow)
-    * (1 - MathUtils.smoothstep(Math.abs(attitude.forward.y), ...CAMERA_VERTICAL_FADE))
-    * MathUtils.smoothstep(attitude.up.y, ...CAMERA_INVERTED_FADE)
-  chase.followUp
-    .copy(attitude.up)
-    .lerp(attitude.levelUp, levelWeight)
+  /*
+  The camera's up is the airframe's up, for the cockpit and for both chase styles alike. The
+  cockpit's head is bolted to the aircraft and the chase rig now rides the same roll, so
+  there is one path rather than a branch.
+
+  Projected across the follow axis because that axis is the nose blended with the velocity
+  vector, not the nose itself, so the airframe's up is not exactly perpendicular to it. The
+  guard is unreachable in practice — the two only align if the aircraft is flying along its
+  own up axis, and even a Cobra at ninety degrees alpha leaves the projection at most of its
+  length — but a degenerate up would take the whole basis with it, so it stays.
+  */
+  chase.bodyUp.copy(attitude.up)
+  chase.bodyUp.addScaledVector(chase.followForward, -chase.bodyUp.dot(chase.followForward))
+  if (chase.bodyUp.lengthSq() < 1e-8) chase.bodyUp.copy(attitude.up)
+  chase.followUp.copy(chase.bodyUp).normalize()
+
   chase.followUp.addScaledVector(
     chase.followForward,
     -chase.followUp.dot(chase.followForward),
@@ -434,15 +480,38 @@ export function updateChaseCamera(chase, camera, {
   chase.followRight.crossVectors(chase.followForward, chase.followUp).normalize()
   chase.up.copy(chase.followUp)
 
+  /*
+  How hard the wing is working, as the one number the lens and the boom both read. Load and
+  reheat push the camera back and open the lens a little; that is the G-force feedback, and it
+  is deliberately all of it. Screen shake is the cheap version of this effect and it competes
+  with the manoeuvre for the player's attention — the buffet below is already cut to 15% at
+  full blend for exactly that reason. The aircraft is the subject of the shot.
+
+  It reads `highGBlend` and deliberately not the post-stall one. PSM manoeuvres are authored
+  shots: Action holds the Cobra and the Kulbit in a fixed world-space frame on purpose, and a
+  lens that opened underneath a held shot would be recomposing a frame the player was told
+  would not move — the same intrusion as swinging the camera, arriving through the one channel
+  a quaternion comparison cannot see. High-G is a turn, not a shot, and has no such contract.
+
+  Both terms ride a slow chase of their own, so entering and leaving a turn breathes rather
+  than steps, and a blend that is zero leaves the authored framing untouched.
+  */
+  const loadBlend = MathUtils.clamp(aircraftState.highGBlend ?? 0, 0, 1)
+  chase.boom = MathUtils.lerp(
+    chase.boom,
+    1 + (profile.maneuverBoom * loadBlend) + (profile.burnerBoom * burnerLevel),
+    1 - Math.exp(-CAMERA_BOOM_RESPONSE * step),
+  )
+
   if (rearView) {
     // Rear view is a cut to a camera ahead of the aircraft, not a trip around it. The
     // airframe stays in frame while the abrupt positional cut removes the nauseating arc.
-    chase.localOffset.copy(profile.offset).multiplyScalar(distanceScale)
+    chase.localOffset.copy(profile.offset).multiplyScalar(distanceScale * chase.boom)
     chase.localOffset.x = Math.abs(chase.localOffset.x)
   } else if (mode === 'nose') {
     chase.localOffset.copy(NOSE_CAMERA_OFFSET)
   } else {
-    chase.localOffset.copy(profile.offset).multiplyScalar(distanceScale)
+    chase.localOffset.copy(profile.offset).multiplyScalar(distanceScale * chase.boom)
   }
   if (mode === 'nose') {
     chase.position
@@ -619,6 +688,20 @@ export function updateChaseCamera(chase, camera, {
     } else {
       camera.position.copy(chase.position)
     }
+
+    /*
+    The horizon rejoins on the same clock as the boom, turned on the unit sphere rather than
+    lerped: the held up and the live one can be exactly antipodal after a shot composed
+    through inverted flight, and a straight lerp between antipodal vectors collapses through
+    zero length instead of going round. `setFromUnitVectors` picks a perpendicular axis in
+    that case — arbitrary, but continuous, which is the whole requirement.
+    */
+    chase.actionReturnRotation.setFromUnitVectors(chase.actionReturnUp, chase.up)
+    chase.up
+      .copy(chase.actionReturnUp)
+      .applyQuaternion(chase.actionReturnStep.identity().slerp(
+        chase.actionReturnRotation, progress,
+      ))
   } else if (actionFollowing) {
     // Ordinary Action follow uses the same radial decomposition at a lower response. Nose
     // and velocity changes therefore describe a restrained boom arc instead of dragging the
@@ -646,12 +729,13 @@ export function updateChaseCamera(chase, camera, {
   } else {
     camera.position.lerp(chase.position, blend)
   }
-  if (modeChanged || rearChanged || rigidNose || chase.actionHeld) camera.up.copy(chase.up)
-  // Easing an up that is exactly opposed to its target is a fixed point — the midpoint is
-  // the zero vector and normalising it hands back the inverted up for ever. Cut to the
-  // target on the way through rather than hanging upside down.
-  else if (camera.up.dot(chase.up) < -0.9999) camera.up.copy(chase.up)
-  else camera.up.lerp(chase.up, blend * profile.upResponse).normalize()
+  // Taken whole rather than eased onto. The horizon is already a filtered quantity — one
+  // first-order chase on the roll angle, applied where the roll actually lives — and a second
+  // filter on the vector would only add the lag that made the camera slow to answer a pitch
+  // change. It would also be the wrong filter for the job: easing an up that is exactly
+  // opposed to its target is a fixed point, because the midpoint is the zero vector and
+  // normalising that hands back the inverted up for ever. An angle has no such state.
+  camera.up.copy(chase.up)
   // lookAt builds the camera basis by crossing the sightline with up, so an up that has
   // lagged into line with the sightline degenerates the whole basis. Take the component
   // across the sightline before handing it over and that can never happen.
@@ -689,20 +773,23 @@ export function updateChaseCamera(chase, camera, {
     : profile.baseFov
       + (profile.speedFov * MathUtils.clamp((speed - 45) / 28, 0, 1))
       - (profile.brakingFov * MathUtils.clamp(chase.decel / 22, 0, 1))
+      + (profile.maneuverFov * loadBlend)
+      + (profile.burnerFov * burnerLevel)
   chase.fov = MathUtils.lerp(chase.fov, targetFov, 1 - Math.exp(-3.5 * step))
   if (Math.abs(camera.fov - chase.fov) > 0.01 && camera instanceof PerspectiveCamera) {
     camera.fov = chase.fov
     camera.updateProjectionMatrix()
   }
 
-  const maneuverBlend = MathUtils.clamp(Math.max(
-    aircraftState.highGBlend ?? 0,
-    aircraftState.psmBlend ?? 0,
-  ), 0, 1)
   // Hard manoeuvres already create strong visual motion. Suppressing 85% of the random
   // buffet at full blend preserves aerodynamic feedback without making the authored shot
-  // vibrate around the aircraft.
-  const maneuverShake = MathUtils.lerp(1, 0.15, maneuverBlend)
+  // vibrate around the aircraft. This one *does* read post-stall as well: a held Cobra shot
+  // is exactly the frame that must not be shaken, which is the opposite of the lens argument
+  // above — the buffet is a thing being taken away from the shot, not added to it.
+  const maneuverShake = MathUtils.lerp(1, 0.15, MathUtils.clamp(Math.max(
+    loadBlend,
+    aircraftState.psmBlend ?? 0,
+  ), 0, 1))
   const buffet = profile.shake * maneuverShake * (0.2
     * MathUtils.smoothstep(Math.abs(aircraftState.aoaDeg), 24, 55)
     * MathUtils.clamp(speed / 30, 0, 1)

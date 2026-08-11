@@ -15,6 +15,8 @@ without adding a black occlusion outline.
 
 import { MathUtils, Vector3 } from 'three'
 
+import { MOUSE_STICK_GATE } from '../flight/flightInput'
+
 const HUD_GREEN = 'rgba(98, 255, 132, 0.98)'
 const HUD_GREEN_DIM = 'rgba(98, 255, 132, 0.66)'
 const HUD_GREEN_CAUTION = 'rgba(98, 255, 132, 0.84)'
@@ -139,6 +141,14 @@ export function createFlightHud(canvas) {
       ctx.beginPath()
       ctx.moveTo(x1, y1)
       ctx.lineTo(x2, y2)
+      ctx.stroke()
+    }, lineWidth, color)
+  }
+
+  function circle(cx, cy, radius, lineWidth = 1.4, color = HUD_GREEN) {
+    luminous(() => {
+      ctx.beginPath()
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2)
       ctx.stroke()
     }, lineWidth, color)
   }
@@ -301,12 +311,12 @@ export function createFlightHud(canvas) {
   }
 
   /*
-  The stick gate: how much stick the captured mouse is holding.
+  The stick gate: how much stick the pointer is actually giving the aircraft.
 
-  A relative stick has no spring and nothing on the desk to feel, so without this the pilot
-  has no way to know they are holding half a turn — or to find neutral again. The gate is the
-  travel limit and the cross inside it is neutral; the marker is where the stick is. It is
-  drawn small and off to the side of nothing, because it is a glance, not a display.
+  The pointer itself already says where the stick is — that is the whole point of a
+  positional stick — so this is the other half of the story: the limit it saturates at, and
+  the dead zone around neutral that reads as zero. Both are circles, because the gate is a
+  disc; drawing a box here would promise corners the control does not have.
 
   Unlike the ladder and the two crosses it is not projected. A stick has no place in the
   world, and pinning it to one would be a lie about what it is.
@@ -322,22 +332,18 @@ export function createFlightHud(canvas) {
     // useful to show in that case, and a symbol behind a control well is worse than none.
     if (cy + reach > height - 8) return
 
-    const x = cx + (MathUtils.clamp(stick.x, -1, 1) * reach)
-    const y = cy - (MathUtils.clamp(stick.y, -1, 1) * reach)
+    // Clamped to the disc rather than per axis, exactly as the input layer does it, so the
+    // marker sits in the direction the pilot is pointing even out past the limit.
+    const magnitude = Math.max(Math.hypot(stick.x, stick.y), 1e-6)
+    const scale = Math.min(magnitude, 1) / magnitude
+    const x = cx + (stick.x * scale * reach)
+    const y = cy - (stick.y * scale * reach)
 
-    // The gate, drawn as four corners rather than a closed box: the corners state the limit
-    // without putting a line through the terrain the whole time.
-    const corner = reach * 0.34
-    for (const sx of [-1, 1]) {
-      for (const sy of [-1, 1]) {
-        line(cx + sx * reach, cy + sy * reach, cx + sx * (reach - corner), cy + sy * reach,
-          1.2, HUD_GREEN_DIM)
-        line(cx + sx * reach, cy + sy * reach, cx + sx * reach, cy + sy * (reach - corner),
-          1.2, HUD_GREEN_DIM)
-      }
-    }
-    // Neutral, so "centred" is a place on the glass and not a memory of how far the hand has
-    // travelled. X puts the stick back on it.
+    circle(cx, cy, reach, 1.2, HUD_GREEN_DIM)
+    // Neutral is a place on the glass, and with a positional stick it is a place the pointer
+    // can be put back into rather than a point it has to be balanced on. Drawn at its real
+    // size so "why is nothing happening" is answerable by looking.
+    circle(cx, cy, reach * MOUSE_STICK_GATE.deadZone, 1.2, HUD_GREEN_DIM)
     line(cx - 5, cy, cx + 5, cy, 1.2, HUD_GREEN_DIM)
     line(cx, cy - 5, cx, cy + 5, 1.2, HUD_GREEN_DIM)
 

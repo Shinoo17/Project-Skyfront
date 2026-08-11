@@ -113,6 +113,32 @@ function settle(rig, frames = 240) {
   for (let frame = 0; frame < frames; frame += 1) rig.step()
 }
 
+/*
+The basis actually rendered, pulled off the camera's world matrix rather than off
+`camera.up`. The two are not the same thing: `camera.up` is the hint `lookAt` is given, and
+three re-orthogonalises it against the sightline before building the matrix. A degenerate
+hint — up parallel to the view — is exactly what a camera frame can fail at, and it shows up
+here as a basis that stops being orthonormal, not as anything wrong with the hint.
+*/
+const BASIS = { right: new Vector3(), up: new Vector3(), back: new Vector3() }
+function cameraBasis(camera) {
+  camera.updateMatrixWorld()
+  camera.matrixWorld.extractBasis(BASIS.right, BASIS.up, BASIS.back)
+  return BASIS
+}
+
+function basisError(camera) {
+  const { right, up, back } = cameraBasis(camera)
+  return Math.max(
+    Math.abs(right.length() - 1),
+    Math.abs(up.length() - 1),
+    Math.abs(back.length() - 1),
+    Math.abs(right.dot(up)),
+    Math.abs(up.dot(back)),
+    Math.abs(back.dot(right)),
+  )
+}
+
 // ---------------------------------------------------------------- identity is a no-op
 // A held button that has not moved must be indistinguishable from no button at all — a
 // press is a bare click as often as it is the start of a look. Two rigs through the same
@@ -489,6 +515,55 @@ for (let pitchDeg = -80; pitchDeg <= 80; pitchDeg += 10) {
     `Action must settle on its authored 69 degree base lens, got ${actionBase.camera.fov}`,
   )
 
+  /*
+  Every FOV assertion above runs with no load and no reheat, which is exactly the condition
+  under which the manoeuvre terms are worth nothing. Hold everything at once — a maximum
+  High-G pull, full reheat, and enough speed to saturate the speed term — and pin the total.
+
+  The bound is what "slight" means in numbers. A lens that walks 15 degrees on a key the
+  player presses and releases through a whole dogfight is a pulse, not feedback, and the
+  brief rules it out; nothing here may drift past a swing the eye reads as weight.
+  */
+  for (const [style, ceiling] of [['combat', 82], ['action', 78]]) {
+    const quiet = createRig({ style, speed: 1500 / 22 })
+    const loaded = createRig({ style, speed: 1500 / 22 })
+    settle(quiet)
+    loaded.aircraft.highGBlend = 1
+    for (let frame = 0; frame < 480; frame += 1) {
+      loaded.step()
+      updateChaseCamera(loaded.chase, loaded.camera, {
+        aircraftState: loaded.aircraft,
+        attitude: loaded.attitude,
+        speed: loaded.aircraft.velocity.length(),
+        burnerLevel: 1,
+        step: FRAME,
+        style,
+        cameraLook: loaded.look,
+      })
+    }
+    assert.ok(
+      loaded.camera.fov > quiet.camera.fov + 1,
+      `${style} must open its lens under load and reheat, ${loaded.camera.fov} vs ${quiet.camera.fov}`,
+    )
+    assert.ok(
+      loaded.camera.fov < ceiling,
+      `${style} worst-case FOV must stay under ${ceiling}°, got ${loaded.camera.fov}°`,
+    )
+    // And the swing, which is what the player actually sees, because both ends of it are on
+    // keys they hold and release constantly. This is the assertion that fails first if the
+    // manoeuvre and reheat terms are ever tuned up together.
+    const swing = loaded.camera.fov - quiet.camera.fov
+    assert.ok(
+      swing < 9,
+      `${style} lens must breathe rather than pulse, swings ${swing}° end to end`,
+    )
+    assert.ok(
+      loaded.camera.position.distanceTo(loaded.aircraft.position)
+        > quiet.camera.position.distanceTo(quiet.aircraft.position),
+      `${style} must ease the boom out under load rather than only opening the lens`,
+    )
+  }
+
   // No storage here at all, which is the same shape as a browser in private mode: both
   // readers have to fall back rather than throw on the way to the range.
   assert.equal(readFlightCameraStyle(), 'combat', 'camera style must fall back without storage')
@@ -511,8 +586,8 @@ for (let pitchDeg = -80; pitchDeg <= 80; pitchDeg += 10) {
 
 // --------------------------------------------------------- Combat Chase is a flight frame
 // Nose and velocity are deliberately separated here. The camera's follow axis must land
-// between them, proving it does not merely copy the aircraft quaternion, while the bank
-// axis follows enough roll to show attitude without rolling the horizon one-for-one.
+// between them, proving it does not merely copy the aircraft quaternion — the roll axis is
+// rigid now, but the sightline is still a flight frame rather than a copy of the attitude.
 {
   const rig = createRig({ style: 'combat' })
   settle(rig)
@@ -532,17 +607,112 @@ for (let pitchDeg = -80; pitchDeg <= 80; pitchDeg += 10) {
     `Combat Chase must blend nose and velocity, got nose ${noseGap}° path ${pathGap}°`,
   )
 
+  // The roll axis, in contrast, is rigid: a held 60° bank puts the camera 60° off level,
+  // because the camera's up *is* the airframe's up. There is no filter and no share to
+  // settle into — the whole point is that the horizon goes round and the aircraft does not.
   rig.aircraft.orientation.setFromAxisAngle(
     new Vector3(1, 0, 0),
     MathUtils.degToRad(60),
   )
   rig.aircraft.velocity.set(200, 0, 0)
   refreshAttitude(rig.attitude, rig.aircraft)
-  rig.step({ preserveVelocity: true })
+  for (let frame = 0; frame < 120; frame += 1) rig.step({ preserveVelocity: true })
   const bankFollow = MathUtils.radToDeg(rig.chase.followUp.angleTo(LOCAL_UP))
   assert.ok(
-    bankFollow > 25 && bankFollow < 50,
-    `Combat Chase must follow roughly 50-70% of a 60° roll, got ${bankFollow}°`,
+    bankFollow > 58 && bankFollow < 62,
+    `Combat Chase must carry the whole 60° bank, got ${bankFollow}°`,
+  )
+  const bodyGap = MathUtils.radToDeg(rig.chase.followUp.angleTo(rig.attitude.up))
+  assert.ok(
+    bodyGap < 0.5,
+    `Combat Chase up must be the airframe's up, off by ${bodyGap}°`,
+  )
+}
+
+// -------------------------------------------------------------- the aircraft rolls, not
+/*
+A barrel roll must put one rotation on the screen, not two. The camera carries the whole
+bank, so through three continuous 360-degree rolls the camera's up goes all the way over
+with the airframe — that is the requirement now, and `up.y < −0.9` at the top of each roll
+is what proves the frame is rigid rather than partially levelled.
+
+Levelness is therefore no longer the invariant. Continuity is, and it is checked harder
+than the old cap ever was: at 120°/s and a sixtieth of a second the honest per-frame step is
+2°, so anything above 3 is a discontinuity, and the basis must stay orthonormal and finite
+the whole way round. The cockpit runs the same loop as the two chase styles because it is
+no longer a special case — it is the same code path.
+*/
+for (const subject of [{ style: 'combat' }, { style: 'action' }, { mode: 'nose' }]) {
+  const name = subject.mode ?? subject.style
+  const rig = createRig(subject)
+  settle(rig)
+  const bodyRate = { axis: new Vector3(1, 0, 0), rate: MathUtils.degToRad(120) }
+  let worstJump = 0
+  let worstSkew = 0
+  let lowest = 1
+  let previousUp = new Vector3().copy(rig.camera.up)
+  // Three full turns, so an accumulating drift has room to show rather than being caught
+  // once by luck at a lucky attitude.
+  for (let frame = 0; frame < 540; frame += 1) {
+    rig.step({ bodyRate, preserveVelocity: true })
+    assert.ok(
+      Number.isFinite(rig.camera.up.x + rig.camera.up.y + rig.camera.up.z),
+      `${name} camera up must stay finite, frame ${frame}`,
+    )
+    lowest = Math.min(lowest, rig.camera.up.y)
+    worstJump = Math.max(worstJump, MathUtils.radToDeg(rig.camera.up.angleTo(previousUp)))
+    worstSkew = Math.max(worstSkew, basisError(rig.camera))
+    previousUp = new Vector3().copy(rig.camera.up)
+  }
+  assert.ok(
+    lowest < -0.9,
+    `${name} must roll all the way over with the airframe, lowest up.y ${lowest}`,
+  )
+  assert.ok(
+    worstJump < 3,
+    `${name} camera up must never step, worst frame ${worstJump}°`,
+  )
+  assert.ok(
+    worstSkew < 1e-5,
+    `${name} rendered camera basis must stay orthonormal, worst ${worstSkew}`,
+  )
+}
+
+// ------------------------------------------------------------------- straight up and down
+/*
+The attitude the deleted horizon lock needed two fades to survive. World up across the
+sightline vanishes at the pole, which is why the old code had a reference to fade out and a
+parallel transport to fall back on; the airframe's own up has no such degeneracy, and this
+is the test that says so. Fly a continuous loop through both poles and require the basis to
+stay orthonormal, finite, and free of steps the whole way.
+*/
+for (const subject of [{ style: 'combat' }, { style: 'action' }, { mode: 'nose' }]) {
+  const name = subject.mode ?? subject.style
+  const rig = createRig(subject)
+  settle(rig)
+  // Pitch, not roll: this drives the sightline straight up, over the top, and straight down.
+  const bodyRate = { axis: new Vector3(0, 0, 1), rate: MathUtils.degToRad(90) }
+  let worstJump = 0
+  let worstSkew = 0
+  let previousUp = new Vector3().copy(rig.camera.up)
+  for (let frame = 0; frame < 480; frame += 1) {
+    rig.step({ bodyRate })
+    assert.ok(
+      Number.isFinite(rig.camera.up.x + rig.camera.up.y + rig.camera.up.z)
+        && Math.abs(rig.camera.up.length() - 1) < 1e-6,
+      `${name} camera up must stay a unit vector through the pole, frame ${frame}`,
+    )
+    worstJump = Math.max(worstJump, MathUtils.radToDeg(rig.camera.up.angleTo(previousUp)))
+    worstSkew = Math.max(worstSkew, basisError(rig.camera))
+    previousUp = new Vector3().copy(rig.camera.up)
+  }
+  assert.ok(
+    worstJump < 4,
+    `${name} camera up must not step at the pole, worst frame ${worstJump}°`,
+  )
+  assert.ok(
+    worstSkew < 1e-5,
+    `${name} rendered camera basis must stay orthonormal at the pole, worst ${worstSkew}`,
   )
 }
 
@@ -557,21 +727,30 @@ for (let pitchDeg = -80; pitchDeg <= 80; pitchDeg += 10) {
   rig.aircraft.input.pitch = 1
   const entryOffset = new Vector3().subVectors(rig.camera.position, rig.aircraft.position)
   const entryView = new Quaternion().copy(rig.camera.quaternion)
+  const entryFov = rig.camera.fov
   const fullFlip = { axis: new Vector3(0, 0, 1), rate: Math.PI / 2 }
   let worstOffset = 0
   let worstView = 0
+  let worstFov = 0
   for (let frame = 0; frame < 240; frame += 1) {
     rig.step({ bodyRate: fullFlip, preserveVelocity: true })
     worstOffset = Math.max(worstOffset, new Vector3()
       .subVectors(rig.camera.position, rig.aircraft.position)
       .distanceTo(entryOffset))
     worstView = Math.max(worstView, rig.camera.quaternion.angleTo(entryView))
+    worstFov = Math.max(worstFov, Math.abs(rig.camera.fov - entryFov))
   }
   assert.equal(rig.chase.actionHeld, true, 'Action must stay held through a 360° PSM flip')
   assert.ok(worstOffset < 1e-6, `Action offset must stay world-held, drifted ${worstOffset}`)
   assert.ok(
     worstView < 1e-6,
     `Action sightline must not follow the nose through the flip, moved ${worstView}`,
+  )
+  // The lens is the fourth way a held shot could be recomposed, and the only one a
+  // quaternion cannot see. High-G opens the FOV on purpose; a Cobra must not.
+  assert.ok(
+    worstFov < 0.01,
+    `Action must not open its lens under a held PSM shot, moved ${worstFov}°`,
   )
 }
 
@@ -652,8 +831,14 @@ for (let pitchDeg = -80; pitchDeg <= 80; pitchDeg += 10) {
     normal.aircraft.aoaDeg = 55
     manoeuvring.aircraft.aoaDeg = 55
     manoeuvring.aircraft.highGBlend = 1
-    normal.step()
-    manoeuvring.step()
+    // Both rigs are flown to a steady state before either is measured. High-G also walks the
+    // boom out, and the camera's ease toward a boom that is still moving is a real gap
+    // between the camera and its chase position — but it is not buffet, and measuring it as
+    // if it were would report the opposite of what this check is about.
+    for (let frame = 0; frame < 240; frame += 1) {
+      normal.step()
+      manoeuvring.step()
+    }
     const ordinaryShake = normal.camera.position.distanceTo(normal.chase.position)
     const calmShake = manoeuvring.camera.position.distanceTo(manoeuvring.chase.position)
     assert.ok(
