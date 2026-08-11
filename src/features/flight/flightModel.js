@@ -167,12 +167,17 @@ function stepPsmAssist(state, command, tuning, dt) {
     state.psmPhase = 'normal'
     state.psmElapsed = 0
     state.psmBlend = approach(state.psmBlend, 0, 5, dt)
+    state.psmEnvelopeBlend = approach(state.psmEnvelopeBlend, 0, 5, dt)
+    state.psmCooldownRemaining = 0
+    state.psmLevelWindow = 0
+    state.psmLevelBlend = approach(state.psmLevelBlend, 0, 5, dt)
     return
   }
 
   const inEntryWindow = state.speedKmh >= psm.entryMinKmh
     && state.speedKmh <= psm.entryMaxKmh
   state.psmElapsed += dt
+  state.psmCooldownRemaining = Math.max(0, state.psmCooldownRemaining - dt)
 
   const pitchUp = state.input.pitch >= psm.continuePitchThreshold
   const pitchDown = state.input.pitch <= psm.recoveryPitchThreshold
@@ -185,9 +190,35 @@ function stepPsmAssist(state, command, tuning, dt) {
     && Math.abs(state.aoaDeg) <= psm.poweredExitAoADeg
     && state.noseOffPathDeg <= psm.poweredExitNoseOffDeg
 
+  /*
+  The rotation budget for one arm, and the whole of the anti-spam rule.
+
+  `psmPitchTravelDeg` was previously zeroed only on entry from `high-aoa`, so a single arm
+  bought unlimited flips: once travel had passed `flipEnterTravelDeg` the pitch-up branch
+  below was satisfied forever, and the `recovery` fall-through re-entered the flip for free.
+  The budget closes that. Spending it does not take the stick away — it hands the manoeuvre
+  to the same assisted recovery a deliberate Pitch Down asks for, which is where the level
+  magnet further down picks the nose up and puts it on the horizon.
+
+  It is a latch, and it has to be. `psmPitchTravelDeg` keeps integrating through recovery, so
+  the nose coming back round unwinds it below the threshold within a fraction of a second —
+  a plain comparison would spend the budget and then hand it straight back.
+  */
+  if (Math.abs(state.psmPitchTravelDeg) >= psm.flipMaxTravelDeg) state.psmFlipSpent = true
+  const flipBudgetSpent = state.psmFlipSpent
+
+  // How far the nose has actually been brought round since recovery began, measured off the
+  // same integrated travel the rotation budget reads. This is what separates a pitch-down the
+  // player thought better of after a tenth of a second from one that has nearly finished.
+  const wasRecovering = state.psmPhase === 'recovery'
+  const recoveryProgressDeg = wasRecovering
+    ? Math.abs(state.psmPitchTravelDeg - state.psmRecoveryEntryTravelDeg)
+    : 0
+
   if (state.psmPhase === 'normal') {
     if (!command.psmArm) state.psmCanArm = true
-    if (state.psmCanArm && command.psmArm && inEntryWindow) {
+    if (state.psmCanArm && command.psmArm && inEntryWindow
+      && state.psmCooldownRemaining <= 0) {
       enterPsmPhase(state, 'high-aoa')
     }
   } else if (state.psmPhase === 'high-aoa') {
@@ -203,8 +234,9 @@ function stepPsmAssist(state, command, tuning, dt) {
 
     // Pitch Down is the only control that requests assisted recovery. There is deliberately
     // no hold timer: releasing the stick asks the rate loop to stop, not the game to finish
-    // the manoeuvre on the player's behalf.
-    if (pitchDown) {
+    // the manoeuvre on the player's behalf. A spent rotation budget is the one other thing
+    // that asks for it, and it asks for exactly the same thing rather than a special case.
+    if (pitchDown || flipBudgetSpent) {
       enterPsmPhase(state, 'recovery')
     } else if (pitchUp && psm.supportsPSMFlip
       && (state.psmPhase === 'post-stall-flip'
@@ -218,9 +250,22 @@ function stepPsmAssist(state, command, tuning, dt) {
   } else if (state.psmPhase === 'recovery') {
     if (recovered) {
       enterPsmPhase(state, 'normal')
-    } else if (!pitchDown) {
-      // Letting go halfway through recovery holds the new attitude. Pulling again can flow
-      // straight back into the flip; neither case leaves a hidden recovery command running.
+    } else if (!pitchDown && !flipBudgetSpent
+      && (pitchUp || recoveryProgressDeg < psm.holdInterruptTravelDeg)) {
+      /*
+      Letting go *early* holds the new attitude — that is the interrupt, and it stays. But it
+      may only be offered while the recovery has not yet done its work.
+
+      Without the travel term, any release at all handed the aircraft back to `cobra-hold`,
+      where `psmHolding` suppresses the centred-stick alpha recovery and `holdWeathervaneFactor`
+      removes the restoring moment. Alpha therefore stayed high, which kept the horizon magnet
+      gated off, which left nothing at all working: a deliberate pitch-down flown for most of a
+      second and then centred parked the jet at fifty degrees nose-high with no way down. That
+      is the manoeuvre-does-not-finish complaint, in its worst form.
+
+      A pull is still allowed to interrupt at any point, because pulling is an active request
+      for the nose rather than the absence of one.
+      */
       enterPsmPhase(state, pitchUp && psm.supportsPSMFlip
         ? 'post-stall-flip'
         : selectPsmHoldPhase(state, psm))
@@ -229,9 +274,64 @@ function stepPsmAssist(state, command, tuning, dt) {
     enterPsmPhase(state, 'normal')
   }
 
-  const target = isControlledPsmPhase(state.psmPhase) || state.psmPhase === 'recovery' ? 1 : 0
+  if (state.psmPhase === 'recovery' && !wasRecovering) {
+    state.psmRecoveryEntryTravelDeg = state.psmPitchTravelDeg
+  }
+
+  const psmActive = isControlledPsmPhase(state.psmPhase) || state.psmPhase === 'recovery'
+  if (!psmActive && state.psmWasActive) {
+    // One arm has finished. The cooldown is deliberately not a refused input — `envelopeOpen`
+    // simply stops being handed `psmBlend`, so a re-pull inside the window is a hard
+    // conventional turn with its own fence and its own G ceiling, not a second free tumble.
+    state.psmCooldownRemaining = psm.cooldownSeconds
+    state.psmFlipSpent = false
+  }
+  state.psmWasActive = psmActive
+
+  /*
+  The speed re-gate the latch never had. Every limit PSM opens is justified by an airstream
+  that has stopped being able to enforce anything, and that premise expires with speed —
+  but `inEntryWindow` was only ever read on the way in. Fading the blend rather than dropping
+  the phase keeps the hand-back smooth; `recovery` is included because recovery is precisely
+  the nose-down, accelerating part of the manoeuvre.
+  */
+  const overspeedGate = 1 - smooth01(
+    (state.speedKmh - psm.entryMaxKmh) / Math.max(psm.sustainFadeKmh, 1),
+  )
+  const target = psmActive ? overspeedGate : 0
   const response = target > state.psmBlend ? psm.engageResponse : psm.releaseResponse
   state.psmBlend = approach(state.psmBlend, target, response, dt)
+
+  /*
+  Two blends, because the assist and the licence are not the same thing.
+
+  `psmBlend` is how much post-stall *help* is running — the recovery rate demand, the float,
+  the damping, the authority the airframe keeps so it stays controllable while the nose comes
+  back round. That has to survive the whole manoeuvre including its end.
+
+  `psmEnvelopeBlend` is the pilot's licence to command post-stall rates, and it is the only
+  one `envelopeOpen` reads. Separating them is what makes the rotation budget mean anything:
+  handing a spent arm over to `recovery` moved the label but left the licence intact, so a
+  held stick simply kept rotating under a different phase name. Withdrawing the licence
+  instead returns the pitch ceiling to the conventional 58 deg/s against a recovery assist and
+  a weathervane that are both still working, on the same first-order chase everything else
+  here uses — the rotation runs down rather than stopping.
+  */
+  const envelopeTarget = psmActive && !state.psmFlipSpent ? overspeedGate : 0
+  const envelopeResponse = envelopeTarget > state.psmEnvelopeBlend
+    ? psm.engageResponse
+    : psm.releaseResponse
+  state.psmEnvelopeBlend = approach(
+    state.psmEnvelopeBlend, envelopeTarget, envelopeResponse, dt)
+
+  // How long the horizon magnet stays available after the manoeuvre. It is a window rather
+  // than a phase so that it survives the hand-back to `normal` — the whole point is to be
+  // there for the seconds *after* PSM lets go, when the nose is left somewhere untidy.
+  state.psmLevelWindow = psmActive
+    ? psm.levelWindowSeconds
+    : Math.max(0, state.psmLevelWindow - dt)
+  state.psmLevelBlend = approach(
+    state.psmLevelBlend, state.psmLevelWindow > 0 ? 1 : 0, psm.levelResponse, dt)
 }
 
 /*
@@ -331,6 +431,18 @@ export function createFlightState() {
     psmBlend: 0,
     psmCanArm: true,
     psmFloatBlend: 0,
+    // Anti-spam. One arm carries one rotation budget; spending it hands the manoeuvre to
+    // recovery, and finishing the manoeuvre starts a cooldown that withholds post-stall
+    // authority without withholding the controls.
+    psmEnvelopeBlend: 0,
+    psmRecoveryEntryTravelDeg: 0,
+    psmWasActive: false,
+    psmFlipSpent: false,
+    psmCooldownRemaining: 0,
+    // The horizon magnet's availability window and its blend, kept separate from `psmBlend`
+    // because the assist has to outlive the manoeuvre it tidies up after.
+    psmLevelWindow: 0,
+    psmLevelBlend: 0,
     gravityScale: 1,
     /*
     The two control authorities, published separately because they answer to different
@@ -395,6 +507,13 @@ export function resetFlightState(
   state.psmBlend = 0
   state.psmCanArm = true
   state.psmFloatBlend = 0
+  state.psmEnvelopeBlend = 0
+  state.psmRecoveryEntryTravelDeg = 0
+  state.psmWasActive = false
+  state.psmFlipSpent = false
+  state.psmCooldownRemaining = 0
+  state.psmLevelWindow = 0
+  state.psmLevelBlend = 0
   state.gravityScale = 1
   state.aeroAuthority = 0
   state.vectorAuthority = 0
@@ -755,7 +874,7 @@ export function stepFlight(state, command, envelope, dt) {
     : 1
   const envelopeOpen = Math.max(
     thinAir * commitment * manualEnvelopeShare,
-    state.psmBlend,
+    state.psmEnvelopeBlend,
   )
 
   // The nose can be swung much faster in thin air than in thick, and for a reason that is
@@ -799,9 +918,33 @@ export function stepFlight(state, command, envelope, dt) {
   // High-G spends structural margin, so it raises the load factor the fence allows. This
   // is the binding constraint at high speed, where the rate ceiling above is not.
   const maxGLoad = MathUtils.lerp(tuning.maxG, highG?.maxG ?? tuning.maxG, state.highGBlend)
+  /*
+  ...and what it relaxes to is a higher load-factor ceiling, not the absence of one.
+
+  The paragraph above is right that a rate cap derived from a load factor the airframe is not
+  pulling is a cap on nothing. It does not follow that there should be no cap: `envelopeOpen`
+  is a reading of pilot *consent*, not a measurement of whether the wing has stopped flying,
+  and the two part company the moment the aircraft is fast. Interpolated all the way to
+  `maxPitchRate`, an armed PSM deleted the fence outright at every speed — at 1100 km/h the
+  nose and the path equilibrated at the full 180 deg/s, which is 157 units/s² of centripetal
+  acceleration, which is seventeen and a half G, pulled at about 23 degrees of alpha by a
+  wing that was fully attached and making every bit of it.
+
+  Gating the relaxation on measured separation instead is the obvious repair and it is a trap:
+  alpha cannot grow if the fence is holding the rate down, so separation never arrives and the
+  fence never lifts. That is the alpha-widens-its-own-limit feedback loop this file warns
+  about, run backwards.
+
+  So the ceiling the relaxation reaches is `psmMaxG` rather than infinity. It is chosen to sit
+  above the structural rate limit everywhere inside the entry window — at 690 km/h it works
+  out at 230 deg/s against the envelope's 180 — so it is never the binding constraint during
+  the manoeuvre it exists for, and the Cobra is untouched. Past the window it is the only
+  thing still holding, and it holds at a number rather than at nothing.
+  */
+  const psmMaxGLoad = psm?.capable ? Math.max(psm.psmMaxG ?? maxGLoad, maxGLoad) : maxGLoad
   const gLimitRate = MathUtils.lerp(
     (maxGLoad * gravity) / Math.max(speed, 10),
-    maxPitchRate,
+    Math.min(maxPitchRate, (psmMaxGLoad * gravity) / Math.max(speed, 10)),
     envelopeOpen,
   )
   // Only the pull side is relaxed. `commitment` inside `envelopeOpen` is the absolute stick
@@ -918,6 +1061,63 @@ export function stepFlight(state, command, envelope, dt) {
       * smooth01(Math.abs(state.input.pitch) / Math.abs(psm.recoveryPitchThreshold))
       * pitchAuthority
       * state.psmBlend
+  }
+
+  /*
+  The horizon magnet: what makes a manoeuvre finish tidily without finishing it for the pilot.
+
+  A Cobra recovered to twenty-five degrees nose-high, or a flip whose last thirty degrees the
+  player let go of, leaves the aircraft pointing somewhere it cannot accelerate out of. The
+  assist above does not help — it points the nose at the *airstream*, and after a post-stall
+  manoeuvre the airstream may itself be thirty degrees down. This one points it at the
+  horizon, which is the thing the player was actually aiming for.
+
+  It obeys the same rule everything else here does: a rate demand added to `pitchCmd` and
+  paid for out of `pitchAuthority`. Nothing writes orientation, nothing slerps toward a
+  target attitude, and with the window closed the term is identically zero.
+
+  Four things decide how much of it there is, and all four exist to keep it undetectable.
+
+  `worldUp.y` is the coupling between the body pitch axis and the world horizon, and it is
+  the reason this is not a signed error times a gain. Body pitch moves the nose toward the
+  aircraft's own up vector, so the same rate that lowers the nose upright *raises* it
+  inverted — and at ninety degrees of bank it does neither. Reading the coupling directly
+  gets the inverted case right rather than gating it away, and fades the term out through
+  knife-edge where it has nothing to work with.
+
+  The dead zone is what stops it hunting. A magnet that keeps correcting through the last
+  degree is a magnet the player can feel breathing on the stick, which is the one thing it
+  may not do.
+
+  It stands down against `recoveryNeed`, because the alpha recovery above is aiming somewhere
+  else and two assists bidding on one axis is how both become visible. The wing flies first,
+  then the horizon is captured.
+
+  And it stands down against the stick. That is the adaptive half: a light pitch-down is a
+  player asking for the horizon and getting the whole of the help, while a committed
+  pitch-down is a player following someone downhill and getting none of it.
+  */
+  if (psm?.capable && state.psmLevelBlend > 1e-3) {
+    const levelErrorDeg = Math.abs(sensedPitchAttitudeDeg)
+    const levelInner = smooth01(
+      (levelErrorDeg - psm.levelDeadZoneDeg) / Math.max(psm.levelDeadZoneBlendDeg, 1e-3),
+    )
+    const levelOuter = 1 - smooth01(
+      (levelErrorDeg - psm.levelFullDeg)
+        / Math.max(psm.levelCaptureDeg - psm.levelFullDeg, 1e-3),
+    )
+    const levelHandsOff = 1 - smooth01(
+      Math.abs(state.input.pitch) / Math.max(psm.levelReleaseStickThreshold, 1e-3),
+    )
+    pitchCmd += MathUtils.degToRad(psm.levelPitchRateDeg)
+      * -Math.sign(worldForward.y)
+      * MathUtils.clamp(worldUp.y, -1, 1)
+      * levelInner
+      * levelOuter
+      * levelHandsOff
+      * (1 - recoveryNeed)
+      * state.psmLevelBlend
+      * pitchAuthority
   }
 
   /*

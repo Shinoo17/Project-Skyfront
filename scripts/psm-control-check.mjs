@@ -98,29 +98,51 @@ function stepFor(state, seconds, input, sample) {
     + ` float=${state.psmFloatBlend.toFixed(2)} sink=${state.velocity.y.toFixed(1)}`)
 }
 
-// Continuous flip: no AoA clamp at 90/120/180 and no completion-triggered recovery.
+/*
+Continuous flip: no AoA clamp at 90/120/180, and the whole rotation belongs to the player.
+
+What has changed is only what happens once the rotation is complete. A held stick used to buy
+laps without limit — `psmPitchTravelDeg` was zeroed only on entry, so past `flipEnterTravelDeg`
+the pitch-up branch stayed satisfied forever and the recovery fall-through re-entered the flip
+for free. One arm now carries one rotation: the 360 still finishes under the player's own
+input, and then the arm hands over to assisted recovery rather than offering another lap.
+*/
 {
   const state = createEntry()
   let sawFlip = false
-  let sawRecovery = false
+  let recoveredAt = null
   stepFor(state, 2.65, (t) => command({
     psmArm: t < 1.9,
     pitch: t >= 0.2 ? 1 : 0,
     throttle: 0.8,
-  }), (_t, sample) => {
+  }), (t, sample) => {
     sawFlip ||= sample.psmPhase === 'post-stall-flip'
-    sawRecovery ||= sample.psmPhase === 'recovery'
+    if (recoveredAt === null && sample.psmPhase === 'recovery') recoveredAt = t
   })
 
   assert.ok(sawFlip, 'Flip: continuing Pitch Up must enter POST_STALL_FLIP')
   assert.ok(state.psmPitchTravelDeg > 360,
     `Flip: held input must pass one full rotation (travel ${state.psmPitchTravelDeg.toFixed(0)}°)`)
-  assert.equal(sawRecovery, false, 'Flip: completing 360 degrees must not auto-recover')
+  assert.ok(recoveredAt !== null,
+    'Flip: a completed rotation must hand over to assisted recovery')
 
-  stepFor(state, 0.8, command({ throttle: 0.8 }))
-  assert.notEqual(state.psmPhase, 'recovery', 'Flip: releasing after 360 must stabilize, not recover')
+  // The hand-over is not allowed to arrive early. Anything short of the full rotation is the
+  // player being interrupted mid-manoeuvre, which is the failure this budget must not cause.
+  const travelAtHandover = tuning.postStallAssist.flipMaxTravelDeg
+  assert.ok(travelAtHandover >= 360,
+    `Flip: the rotation budget must cover a whole lap (${travelAtHandover}°)`)
+
+  // And a second lap is refused: holding the stick through recovery must not re-enter the
+  // flip, which is the spam this exists to stop.
+  let sawSecondFlip = false
+  stepFor(state, 1.2, command({ pitch: 1, throttle: 0.8 }), (_t, sample) => {
+    sawSecondFlip ||= sample.psmPhase === 'post-stall-flip'
+  })
+  assert.equal(sawSecondFlip, false,
+    'Flip: one arm must not buy a second rotation')
 
   console.log(`FLIP phase=${state.psmPhase} travel=${state.psmPitchTravelDeg.toFixed(0)}°`
+    + ` handover=${recoveredAt.toFixed(2)}s`
     + ` rate=${MathUtils.radToDeg(state.angularVelocity.z).toFixed(1)}°/s speed=${state.speedKmh.toFixed(0)}kmh`)
 }
 

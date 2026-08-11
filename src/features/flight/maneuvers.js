@@ -174,7 +174,11 @@ const MANEUVERS = [
       { seconds: 0.3, hold: ['throttle-up'], label: 'HOLD ALPHA' },
       { seconds: 0.85, hold: ['pitch-down', 'throttle-up'], label: 'RECOVER AOA' },
       { seconds: 1.0, hold: ['throttle-up'], label: 'REATTACH' },
-      { seconds: 0.35, hold: ['pitch-down', 'throttle-up'], label: 'LEVEL FLIGHT' },
+      // Shorter than the 0.35 this used to need, because it is no longer doing the whole
+      // job. The post-stall level assist now carries the nose through the last of the sweep
+      // once the wing is flying again, so a step timed against the unassisted rate drives
+      // straight past the horizon and finishes fourteen degrees nose-down.
+      { seconds: 0.2, hold: ['pitch-down', 'throttle-up'], label: 'LEVEL FLIGHT' },
       { seconds: 0.85, hold: ['throttle-up'], label: 'SETTLE' },
     ],
   },

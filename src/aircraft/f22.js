@@ -740,6 +740,91 @@ const f22 = {
           supportsPSMFlip: true,
           supportsPSMReversal: true,
 
+          /*
+          The rotation budget for one arm, and the cooldown between arms. Together they are
+          the whole answer to a player holding the stick back and flipping forever.
+
+          One full rotation, and then the manoeuvre is over. The budget is deliberately the
+          whole 360 rather than something short of it — a Kulbit that stops at 330 is a
+          Kulbit the player did not get to finish — and what changes is only what happens
+          *after* it: the arm hands over to recovery instead of offering a second lap, and
+          the magnet below lays the nose on the horizon rather than leaving it wherever the
+          rotation happened to run out.
+
+          The cooldown withholds `psmBlend` and nothing else: the stick still works, a pull
+          inside the window is an ordinary conventional pull with its own fence and its own
+          G ceiling. Two and a bit seconds is long enough that a second tumble is a decision
+          and short enough that it never reads as an input being eaten.
+          */
+          flipMaxTravelDeg: 360,
+          cooldownSeconds: 2.2,
+          /*
+          How far past the entry window post-stall authority survives before it has faded
+          out entirely. Every limit PSM opens is justified by an airstream that can no
+          longer enforce anything, and by 900 km/h that is simply not true any more —
+          without this the latch carried the whole open envelope into a dive.
+          */
+          sustainFadeKmh: 240,
+          /*
+          The load factor an armed PSM is allowed to reach, and the ceiling that replaces the
+          fence the assist used to delete outright. Above `highGTurn.maxG` because a vectored
+          pull past the stall genuinely is not the same structural case as a wing pulling in
+          the conventional envelope — and finite, because the alternative was 17.5G at
+          combat speed on an attached wing.
+
+          It never binds inside the entry window: at 660 km/h it works out at 240 deg/s
+          against a rate ceiling of 180, so the Cobra, the flip and the Kulbit see exactly
+          the numbers they saw before.
+          */
+          psmMaxG: 14,
+          /*
+          How far the nose must already have been brought round before a centred stick stops
+          meaning "hold it here". Below this a release is an interrupt and the aircraft keeps
+          the pose it is in, which is the existing and deliberate behaviour. Above it the
+          pitch-down has plainly been flown on purpose and letting go is the pilot expecting
+          it to finish — 25 degrees is a fifth of a second of committed nose-down at recovery
+          rate, which is comfortably more than a fumbled input and far less than a manoeuvre.
+          */
+          holdInterruptTravelDeg: 25,
+
+          /*
+          The horizon magnet. Angles are pitch attitude in degrees; the rate is the ceiling
+          on how fast the assist itself is allowed to move the nose.
+
+          The capture window is set from where the manoeuvre actually leaves the nose, not from
+          the tidy end of that range. A Cobra recovered short sits around 25 — the case named
+          in the report — but a pitch-down released a beat early leaves it past 50, and a
+          window that covered only the first would have done nothing in the case that needs
+          it most. Full strength out to 40, fading to nothing by 75, which is far enough that
+          a genuine vertical is never grabbed at.
+
+          Widening it is only safe because the window is not the thing keeping the assist out
+          of ordinary flying — three separate gates are. It is armed only by a post-stall
+          manoeuvre, it stands down until the wing is flying again, and it stands down against
+          the stick. Level flight, a held climb, and a deliberate zoom all see exactly zero.
+
+          20 deg/s is the perceptibility budget, not an authority figure: it is roughly a
+          third of the pilot's own `pitchRate: 58`, which is the point at which a nose being
+          tidied up reads as the airframe settling rather than as a second hand on the stick.
+          If the assist can be *seen* working, this number comes down — the window does not
+          go up.
+
+          The dead zone is what keeps it from hunting around level, and the stick threshold
+          is the adaptive half: half help at a quarter stick, none at all past 0.55, so a
+          committed pitch-down to follow someone downhill is never argued with.
+          */
+          levelCaptureDeg: 75,
+          levelFullDeg: 40,
+          levelDeadZoneDeg: 2,
+          levelDeadZoneBlendDeg: 3,
+          levelPitchRateDeg: 20,
+          levelReleaseStickThreshold: 0.55,
+          // Long enough to cover the hand-back, the beat after it, and the sweep down from
+          // the far end of the capture window at the rate above. It re-arms for free on the
+          // next manoeuvre, so there is nothing to run out of mid-fight.
+          levelWindowSeconds: 6,
+          levelResponse: 4,
+
           // Ordinary full aft stick remains behind the protected AoA fence. Maneuver Assist
           // is the only path to post-stall authority, so a low-speed dogfight pull cannot
           // become a Cobra by accident.
