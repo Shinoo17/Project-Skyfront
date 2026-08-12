@@ -388,6 +388,58 @@ assert.equal(input.commandSpeedKmh, limits.min, 'the command must stop at the bo
 assert.equal(input.throttle, envelope.minThrottle,
   'the slowest command must ask for the flight-idle stop')
 
+/*
+The number row names three of those speeds, and a detent is a jump rather than a hold. That
+distinction is the whole of it: the press snaps the command, and from the very next step the
+key is inert so W and S trim off the named speed instead of fighting it.
+*/
+{
+  const detents = envelope.speedDetentsKmh
+  assert.ok(Array.isArray(detents) && detents.length === 3,
+    'the envelope must name three speeds for the number row')
+  assert.equal(FLIGHT_BINDINGS.Digit1, 'speed-detent-1', '1 must select the slow detent')
+  assert.equal(FLIGHT_BINDINGS.Digit2, 'speed-detent-2', '2 must select the manoeuvring detent')
+  assert.equal(FLIGHT_BINDINGS.Digit3, 'speed-detent-3', '3 must select the transit detent')
+  assert.ok(detents.every((speedKmh) => speedKmh >= limits.min && speedKmh <= limits.max),
+    'every detent must name a speed the aircraft can actually be commanded to')
+
+  input.pressed.clear()
+  setCommandSpeedKmh(input, CRUISE_KMH, envelope)
+  input.pressed.add('speed-detent-2')
+  step()
+  assert.equal(input.commandSpeedKmh, detents[1], 'a detent must arrive in one step, not ramp')
+
+  // Held, it stands aside. Anything else would make the number row a speed lock.
+  input.pressed.add('throttle-up')
+  step()
+  assert.ok(input.commandSpeedKmh > detents[1], 'W must trim off a held detent')
+
+  // Last press wins: `pressed` iterates in insertion order, so a hand moving along the row
+  // gets the key it landed on rather than the lowest one still down.
+  input.pressed.add('speed-detent-3')
+  step()
+  assert.equal(input.commandSpeedKmh, detents[2], 'the most recent detent must win')
+
+  // Letting go of the newer key while the older one is still down is nobody pressing
+  // anything. A latch that watched the named speed rather than the keys would read the row
+  // naming 780 again and snap back to it on its own.
+  input.pressed.delete('throttle-up')
+  input.pressed.delete('speed-detent-3')
+  const afterRelease = input.commandSpeedKmh
+  step()
+  assert.equal(input.commandSpeedKmh, afterRelease,
+    'releasing a detent must not command anything — only a press may')
+
+  // Releasing and pressing again is a fresh edge, so the same key is repeatable.
+  input.pressed.clear()
+  step()
+  input.pressed.add('speed-detent-1')
+  step()
+  assert.equal(input.commandSpeedKmh, detents[0], 're-pressing a detent must snap again')
+  input.pressed.clear()
+  step()
+}
+
 // Altitude changes what a speed costs, not what the pilot asked for. Same command, thinner
 // air, less power — and the number on the HUD never moves by itself.
 input.pressed.clear()
@@ -407,5 +459,6 @@ assert.equal(accelerating.decelerate, false, 'W alone must not read as a deceler
 assert.equal(accelerating.highG, false, 'W alone must not request a high-G turn')
 
 console.log('PASS input: smooth axes, progressive braking, high-G on Space and W+S,'
-  + ' post-stall on Left Alt, analogue intent, speed command that holds, bounded band,'
+  + ' post-stall on Left Alt, analogue intent, speed command that holds, number-row detents,'
+  + ' bounded band,'
   + ' altitude-aware power')

@@ -320,6 +320,32 @@ const f22 = {
       // arguing with the pilot, and the engine is already the thing that decides how fast
       // the speed actually arrives — the command is only how fast it can be asked for.
       commandKmhPerSecond: 1320,
+      /*
+      Three named speeds on the number row, because a control that can name any speed
+      between 260 and 1440 is not the same thing as a control that tells the pilot which of
+      those speeds is worth being at. W and S still trim from wherever a detent leaves the
+      command, so this adds a way to arrive rather than taking one away.
+
+      It costs nothing in feel. `commandKmhPerSecond` is already seven times the engine's
+      own `accelerationKmhPerSecond`, so the ramp has never been the thing the pilot waits
+      on — the spool is, and the spool is untouched. A detent skips the part nobody could
+      feel and none of the part everybody can.
+
+      The three numbers are read off the flight model rather than chosen for roundness:
+
+        450   the middle of the Maneuver Assist entry window (220-660), where the nose can
+              be taken off the airstream at all
+        780   both fences fully open — `highGTurn` reaches full authority at its
+              `fullEnergyKmh` of 640 and `authorityRefSpeed` saturates the surfaces at
+              about 750, so this is where the hardest conventional turn lives
+       1100   military power at the deck: the transit setting, and the speed above which
+              the turn radius grows for nothing
+      */
+      speedDetentsKmh: [450, 780, 1100],
+      // The band the speed tape marks, and the same reading as the middle detent: fast
+      // enough for the whole high-G envelope, slow enough that the radius is still small.
+      // Nothing reads this but the HUD — it is a label on the physics, not a limit in it.
+      combatBandKmh: { min: 650, max: 1000 },
       // S is one arcade slow-down intent. It lowers the power lever and opens enough brake
       // to be immediately readable without making a short throttle correction dump all of
       // the aircraft's energy. A committed pull promotes it to the full high-G brake.
@@ -376,7 +402,31 @@ const f22 = {
           afterburnerMach: 1.2,
         },
         highAltitude: {
-          worldUnits: 800,
+          /*
+          At this range's scale — `kmhPerWorldUnitPerSecond: 22` puts one world unit at
+          about 6.1 m — the published high-altitude column belongs somewhere near 15 km,
+          which is roughly 2450 units. The old figure of 800 put it at 4.9 km, and the
+          mountain valley spawns at about 815: every sortie ever flown here has therefore
+          been collecting the entire high-altitude table from its first frame, and reading
+          a dry ceiling of 2230 km/h rather than 1100 for nothing but existing.
+
+          Correcting the reference alone does not fix it, because the range ceiling really
+          is stratospheric at this scale — about 2217 units, or 13.5 km — so smoothstep
+          would simply saturate a little higher up instead. The cap is what bounds it. At
+          0.3 the range spawns holding about 1390 km/h dry, climbing the whole 1400 units
+          to the ceiling buys three per cent more, and the top of the envelope is 1440 dry
+          and 1760 in reheat rather than 2230 and 2414.
+
+          That is the whole of the fix: altitude stops being a free speed doubling, and the
+          aircraft stays inside the band the manoeuvring model is tuned for — `referenceSpeed`
+          is 1100 km/h and `authorityRefSpeed` saturates the surfaces at about 750, neither
+          of which ever described an aircraft that fights at Mach 2.
+
+          For a future 4v4 / 8v8 mode this cap is the one knob worth turning: lower is less
+          head-on closure, and zero makes altitude worth nothing at all.
+          */
+          worldUnits: 2450,
+          maxPerformanceMix: 0.3,
           supercruiseMinKmh: 1850,
           supercruiseMinMach: 1.5,
           dryKmh: 2230,

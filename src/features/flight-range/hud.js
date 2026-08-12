@@ -95,7 +95,18 @@ function signed(value) {
   return `${rounded > 0 ? '+' : rounded < 0 ? '−' : ''}${Math.abs(rounded)}`
 }
 
-export function createFlightHud(canvas) {
+/*
+`combatBand` is the speed range the airframe manoeuvres best in — `envelope.combatBandKmh`,
+passed in rather than restated here, because which speeds those are is a property of the
+aircraft and not of the glass. Omit it and the tape draws exactly as it did before.
+
+It is on the HUD because the flight model does not otherwise say it anywhere. Every fence
+that makes 650 to 1000 the right place to be — the high-G energy gate, the surface authority
+curve, the point past which radius grows for nothing — is a smooth blend the pilot feels
+only after they have already lost the turn. A bracket on the tape is the one place that
+answer can be read before the merge instead of after it.
+*/
+export function createFlightHud(canvas, { combatBand = null } = {}) {
   const ctx = canvas.getContext('2d')
   let width = 0
   let height = 0
@@ -390,13 +401,38 @@ export function createFlightHud(canvas) {
 
   // --- Tapes ----------------------------------------------------------------
   function drawTape(layout, options) {
-    const { x, value, side, tape, label, subreadout, live, digits } = options
+    const { x, value, side, tape, label, subreadout, live, digits, band } = options
     const top = layout.cy - layout.tapeHeight / 2
     const bottom = layout.cy + layout.tapeHeight / 2
     const dir = side === 'left' ? -1 : 1
     const pixelsPerUnit = layout.tapeHeight / tape.span
 
     line(x, top, x, bottom, 1.4)
+
+    /*
+    The band, as a bracket standing inboard of the rail — the ticks, their labels and the
+    value box all live outboard, so this is the one side of the tape with nothing on it.
+
+    It brightens when the aircraft is inside it, which is the whole readout: the pilot's
+    eye is on the sightline, not the tape, and a bar that changes weight is legible from
+    the corner of it in a way a bar that only moves is not. The end caps are drawn only
+    when that end of the band is genuinely on screen, or a band running off the top would
+    grow a cap that reads as a limit the aircraft is against.
+    */
+    if (live && band) {
+      const bandTop = layout.cy - ((band.max - value) * pixelsPerUnit)
+      const bandBottom = layout.cy - ((band.min - value) * pixelsPerUnit)
+      const y1 = Math.max(top, Math.min(bottom, bandTop))
+      const y2 = Math.max(top, Math.min(bottom, bandBottom))
+      if (y2 - y1 > 1) {
+        const bandX = x - (dir * 6)
+        const inside = value >= band.min && value <= band.max
+        const color = inside ? HUD_GREEN : HUD_GREEN_DIM
+        line(bandX, y1, bandX, y2, inside ? 3 : 2, color)
+        if (bandTop >= top) line(bandX, y1, bandX - (dir * 5), y1, 1.4, color)
+        if (bandBottom <= bottom) line(bandX, y2, bandX - (dir * 5), y2, 1.4, color)
+      }
+    }
 
     if (live) {
       ctx.save()
@@ -704,6 +740,7 @@ export function createFlightHud(canvas) {
       value: state.speed,
       side: 'left',
       tape: SPEED_TAPE,
+      band: combatBand,
       label: 'SPEED · KM/H',
       subreadout: state.live ? `MACH ${state.mach.toFixed(2)}` : 'MACH –.–',
       digits: 4,

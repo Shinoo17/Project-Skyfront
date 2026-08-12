@@ -57,11 +57,12 @@ rather than guessed, and three constraints shaped them:
   the Split-S are entered slow, or from a climb, for exactly that reason.
 
 These are calibrated for one altitude band, and it is the band the only shipped map spawns
-in — the mountain valley measures out at about 815, above the 800 where the performance
-table switches to its high-altitude limits. A map that spawns materially below that holds a
-couple of hundred km/h less on the same throttle, and the post-stall scripts stop working:
-`npm run maneuver-check -- all 250` shows exactly how. A new map that spawns low needs its
-own entry throttles, not these.
+in — the mountain valley measures out at about 815, a quarter of the way up the performance
+ramp. A map that spawns materially below that holds a hundred km/h or so less on the same
+throttle, and the post-stall scripts stop working: `npm run maneuver-check -- all 250` shows
+exactly how. A new map that spawns low needs its own entry throttles, not these. The mix cap
+narrowed that spread — the ramp no longer saturates inside the range — but it did not close
+it.
 */
 
 /*
@@ -72,16 +73,19 @@ Throttle settings, named by the airspeed they hold at demonstration altitude:
 The performance model turns that setting into dry thrust and balances it against drag; the
 speeds below are the resulting trims rather than a direct throttle-to-speed interpolation.
 
-`dryLimit` is the part that bites. It runs from 1100 km/h at sea level to 2230 above
-`highAltitude.worldUnits` (800), and the range spawns a sortie at whatever clears the
-terrain — about 815 on the mountain valley, which is over that line. So these are computed
-against the high-altitude limit, not the sea-level one. Read at 250 units the same numbers
-come out roughly 200 km/h slower, which is the sort of error that turns a Cobra into a loop.
+`dryLimit` is the part that bites. It runs from 1100 km/h at sea level toward 2230 with
+altitude, held to `highAltitude.maxPerformanceMix` of that climb — which puts the mountain
+valley's spawn at about 1390. These four settings are computed against that number. They
+were recalibrated when the mix cap arrived: the speeds they name are unchanged, the
+settings that hold them are not, because the same lever against a 1390 limit is a much
+slower aircraft than it was against the 2230 the range used to collect for free. Read at
+250 units the same numbers come out roughly 100 km/h slower, which is the sort of error
+that turns a Cobra into a loop.
 */
-const THROTTLE_SLOW = 0.18 // ~475 km/h
-const THROTTLE_LOW = 0.215 // ~550 km/h
-const THROTTLE_MIL = 0.26 // ~645 km/h
-const THROTTLE_FAST = 0.328 // ~790 km/h
+const THROTTLE_SLOW = 0.255 // ~475 km/h
+const THROTTLE_LOW = 0.316 // ~550 km/h
+const THROTTLE_MIL = 0.393 // ~645 km/h
+const THROTTLE_FAST = 0.511 // ~790 km/h
 
 const MANEUVERS = [
   {
@@ -167,7 +171,7 @@ const MANEUVERS = [
     // path round after a stalled nose. Enter it at 550 and the pull stops being a pull
     // through and becomes a Cobra that runs out of airspeed at the top; enter it at 645
     // and the lift never lets the alpha past the stall at all.
-    entry: { throttle: 0.235, settleSeconds: 2.5 },
+    entry: { throttle: 0.35, settleSeconds: 2.5 },
     steps: [
       { seconds: 0.25, hold: ['maneuver-assist'], label: 'PSM READY' },
       { seconds: 1.0, hold: ['maneuver-assist'], axes: { pitch: 0.82 }, label: 'PULL' },
@@ -197,7 +201,12 @@ const MANEUVERS = [
     // rotation happened to stop at, and holding it to the same five-degree capture window
     // as a Cobra would mean tuning the recovery to a pose that is the point of the
     // manoeuvre being unpredictable.
-    entry: { throttle: THROTTLE_LOW, settleSeconds: 2.0 },
+    // Just above THROTTLE_LOW, at about 600 km/h. It was THROTTLE_LOW itself until the mix
+    // cap put the range on a 1390 km/h dry limit rather than a 2230 one: the same 550 km/h
+    // entry now sits much further up the drag curve, and the rotation ran out of airspeed
+    // before it had carried the nose round far enough to hold the label. The extra 50 km/h
+    // is the energy that difference costs, and nothing else about the script changed.
+    entry: { throttle: 0.36, settleSeconds: 2.0 },
     steps: [
       { seconds: 0.25, hold: ['maneuver-assist'], label: 'PSM READY' },
       // Long enough to carry the nose past the beam and round; the airstream's restoring

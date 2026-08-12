@@ -182,11 +182,35 @@ const report = (name, detail) => console.log(`PASS ${name.padEnd(26)} ${detail}`
   assert.ok(hard.peakAoA > normal.peakAoA,
     'A: High-G must let the wing work at a higher alpha')
   assert.ok(hard.peakG > normal.peakG, 'A: High-G must pull a higher load factor')
-  assert.ok(hard.peakDrag > normal.peakDrag * 1.5,
+  // Measured as a surcharge on the cruise arc rather than as a ratio of totals. Both pulls
+  // carry the same parasite drag as the datum, and how large that parasite term is depends
+  // only on where 900 km/h sits on the drag curve — which moved when
+  // `highAltitude.maxPerformanceMix` brought the dry limit down from 2230 to about 1390.
+  // The induced bill did not move; a ratio of totals would have said it did.
+  assert.ok(hard.peakDrag > normal.peakDrag + (cruise.peakDrag * 0.25),
     `A: High-G must cost real induced drag`
-    + ` (${hard.peakDrag.toFixed(1)} vs ${normal.peakDrag.toFixed(1)})`)
-  assert.ok(normalCost > 0, 'A: an ordinary pull must already cost energy against cruise')
-  assert.ok(hardCost > normalCost * 1.4,
+    + ` (${hard.peakDrag.toFixed(1)} vs ${normal.peakDrag.toFixed(1)},`
+    + ` cruise ${cruise.peakDrag.toFixed(1)})`)
+  /*
+  What an ordinary pull spends is airspeed, and this is the assertion that says so.
+
+  It used to read `normalCost > 0` — the pull holding less specific energy than the datum —
+  and that was never quite the claim it made. The datum is not in trim: 0.7 holds about 1020
+  km/h, so the cruise arc accelerates while the pull climbs, and `normalCost` is really a
+  comparison of two arcs going different places. It came out positive only while the dry
+  limit was 2230 and cruise had five hundred km/h of runway to gain energy down. Against the
+  limit `maxPerformanceMix` now allows, the pull trades its speed for height and finds
+  surplus thrust at the bottom, and the sign flips without anything about the pull changing.
+  */
+  assert.ok(normal.exitKmh < cruise.exitKmh * 0.85,
+    `A: an ordinary pull must already cost airspeed against cruise`
+    + ` (${normal.exitKmh.toFixed(0)} vs ${cruise.exitKmh.toFixed(0)} km/h)`)
+  // What High-G adds on top of that is an energy bill, and this one is a true energy
+  // comparison because both arcs are the same pull against the same datum. It is scaled by
+  // the kinetic energy the manoeuvre was entered with so it stays a statement about the
+  // trade rather than about the units.
+  const entryKineticEnergy = 0.5 * ((SPEED * toWorld) ** 2)
+  assert.ok(hardCost - normalCost > entryKineticEnergy * 0.1,
     `A: High-G must spend energy faster than the same pull without it`
     + ` (${hardCost.toFixed(0)} vs ${normalCost.toFixed(0)})`)
 

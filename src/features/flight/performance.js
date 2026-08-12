@@ -17,9 +17,32 @@ export function readThrottlePower(throttle, envelope) {
   )
 }
 
+/*
+How much of the high-altitude performance table applies here, 0..1.
+
+Two numbers do the work, because the published figures belong to an altitude this arena is
+not built to hand out for free.
+
+  worldUnits        where the table's high-altitude column would be fully earned — the real
+                    altitude those figures describe, converted to this range's scale
+  maxPerformanceMix how much of that column the range is willing to award at all, ever
+
+The cap is the arcade decision, and it is deliberately a cap on the *mix* rather than on the
+table. Scaling the mix moves the speed landmarks and their Mach landmarks together, so
+`readMach` keeps reading coherent pairs; editing `dryKmh` down instead would have left the
+Mach numbers describing a speed the aircraft no longer reaches.
+
+`performanceFloorUnits` is an optional third: altitude below it is worth nothing at all. No
+shipped aircraft sets one — the cap alone already flattens the ramp enough that climbing the
+whole of the mountain valley is worth about three per cent — but a per-mode envelope wanting
+a strictly single-table fighting volume has somewhere to say so.
+*/
 export function readAltitudePerformance(altitude, envelope) {
-  const { performance } = envelope
-  return smoothstep(altitude / performance.highAltitude.worldUnits)
+  const { highAltitude } = envelope.performance
+  const floor = highAltitude.performanceFloorUnits ?? 0
+  const ceiling = Math.max(highAltitude.worldUnits - floor, 1)
+  const cap = highAltitude.maxPerformanceMix ?? 1
+  return Math.min(cap, smoothstep((altitude - floor) / ceiling))
 }
 
 function readAfterburnerLimitKmh(altitudeMix, envelope) {
@@ -63,6 +86,14 @@ export function readTargetAirspeedKmh(throttle, altitude, reheat, envelope) {
 // rather than a setting they park on, so it does not belong on the same control.
 export function readDryCeilingKmh(altitude, envelope) {
   return readDryLimitKmh(readAltitudePerformance(altitude, envelope), envelope)
+}
+
+// The same ceiling at the best altitude there is, which after `maxPerformanceMix` is no
+// longer the table's high-altitude figure. This is the outer bound of the commandable band:
+// a speed above it is a number the aircraft cannot reach anywhere, at any height.
+export function readMaxDryCeilingKmh(envelope) {
+  const { highAltitude } = envelope.performance
+  return readDryLimitKmh(Math.min(1, highAltitude.maxPerformanceMix ?? 1), envelope)
 }
 
 /*

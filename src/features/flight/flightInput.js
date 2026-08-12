@@ -20,6 +20,12 @@ the pilot is asking for, in the same km/h the HUD already reads — and the thro
 model consumes is derived from it. The command holds where it is left, because a number
 you chose is a number you should still have thirty seconds later.
 
+The number row names three of those speeds outright — see `speedDetentsKmh` on the
+envelope. A detent is a jump, not a hold: it snaps the command on the press and then stands
+aside, so W and S trim away from it immediately and holding the key does not pin the
+aircraft to it. Last press wins while several are held, because a hand mashing the row
+means the key it landed on most recently.
+
 This is the arcade simplification and it is deliberate: there is no spool to reason about,
 no lever position to remember, and no unit conversion between what the pilot wants and
 what the instruments say. It stays honest because it is feedforward only. Drag from a hard
@@ -44,7 +50,7 @@ zero so the commanded speed holds, and the arcade air brake stands down so the c
 the same energy Space does — through induced drag, not through a board.
 */
 
-import { readThrottleForAirspeedKmh } from './performance'
+import { readMaxDryCeilingKmh, readThrottleForAirspeedKmh } from './performance'
 
 export const FLIGHT_BINDINGS = {
   ArrowUp: 'pitch-up',
@@ -55,6 +61,9 @@ export const FLIGHT_BINDINGS = {
   KeyE: 'yaw-right',
   KeyW: 'throttle-up',
   KeyS: 'throttle-down',
+  Digit1: 'speed-detent-1',
+  Digit2: 'speed-detent-2',
+  Digit3: 'speed-detent-3',
   KeyF: 'flaps',
   KeyV: 'rear-view',
   ShiftLeft: 'afterburner',
@@ -407,6 +416,49 @@ export function readThrottleDirection(pressed) {
   return digitalAxis(pressed, 'throttle-up', 'throttle-down')
 }
 
+// The speed detents, in the order `envelope.speedDetentsKmh` lists them. Actions rather
+// than key codes, so a gamepad d-pad or a touch button reaches the same three speeds.
+const SPEED_DETENT_CONTROLS = ['speed-detent-1', 'speed-detent-2', 'speed-detent-3']
+
+/*
+Which named speed is currently being asked for, or null for none.
+
+`pressed` is a Set and a Set iterates in insertion order, so walking it rather than the
+detent list is what makes the most recent press win: a pilot who holds 2 and then hits 3
+gets 3, instead of nothing until the first key comes back up.
+*/
+export function readSpeedDetentKmh(pressed, envelope) {
+  const detents = envelope.speedDetentsKmh
+  if (!detents?.length) return null
+  let selected = null
+  for (const control of pressed) {
+    const index = SPEED_DETENT_CONTROLS.indexOf(control)
+    if (index < 0) continue
+    const speedKmh = detents[index]
+    if (Number.isFinite(speedKmh)) selected = speedKmh
+  }
+  return selected
+}
+
+/*
+The one detent key that went down this step, or null.
+
+The edge is tracked on the keys rather than on the speed they name, and it has to be. A
+latched speed cannot tell a press from a release: hold 2, add 3, then let 3 go, and the row
+is naming 780 again — a different number from the latched 1100, which a speed latch reads as
+a fresh press and acts on. Nobody pressed anything. Watching the keys, releasing 3 adds no
+new control, so nothing happens and the command stays where the pilot last put it.
+
+The last new control wins for the same reason `readSpeedDetentKmh` does.
+*/
+function readPressedSpeedDetent(pressed, held) {
+  let selected = null
+  for (const control of pressed) {
+    if (SPEED_DETENT_CONTROLS.includes(control) && !held.has(control)) selected = control
+  }
+  return selected
+}
+
 export function readAccelerate(pressed) {
   return pressed.has('throttle-up') && !pressed.has('throttle-down')
 }
@@ -460,11 +512,15 @@ export function readAirBrake(pressed, pitch = 0, envelope = {}) {
 // would make the pilot's chosen number change by itself during a climb or a dive; letting
 // the command stand and letting the derived throttle saturate at full power keeps the
 // control honest and lets a climb simply deliver the speed that was already asked for.
+//
+// "Anywhere" is `readMaxDryCeilingKmh` rather than the table's high-altitude column,
+// because `maxPerformanceMix` means that column is no longer somewhere the aircraft can
+// get to. A command past this one would be a number that saturates the throttle at every
+// height on every map — a stretch of travel that does nothing.
 export function readCommandSpeedLimits(envelope) {
-  const { performance } = envelope
   return {
-    min: performance.minKmh,
-    max: Math.max(performance.seaLevel.dryKmh, performance.highAltitude.dryKmh),
+    min: envelope.performance.minKmh,
+    max: Math.max(envelope.performance.seaLevel.dryKmh, readMaxDryCeilingKmh(envelope)),
   }
 }
 
@@ -499,6 +555,10 @@ export function createFlightInputState(commandSpeedKmh = 0) {
     // first is a control; `throttle` is published for the flight model and the HUD.
     commandSpeedKmh,
     throttle: 0,
+    // Which detent keys were down last step, kept only so the next one can tell a fresh
+    // press from a key still being held. A detent that stayed applied would be a hold rather
+    // than a jump, and W/S could not trim away from it.
+    heldDetents: new Set(),
     intent: {
       pitch: 0,
       roll: 0,
@@ -548,6 +608,7 @@ export function releaseFlightInput(state) {
 export function resetFlightInput(state, commandSpeedKmh = state.commandSpeedKmh) {
   releaseFlightInput(state)
   state.commandSpeedKmh = commandSpeedKmh
+  state.heldDetents.clear()
   state.intent.pitch = 0
   state.intent.roll = 0
   state.intent.yaw = 0
@@ -604,9 +665,23 @@ export function stepFlightInput(state, step, envelope, altitude) {
 
   // W and S walk the commanded speed, which then holds. Power is whatever it takes to
   // serve that number here, so the pilot never operates the engine directly.
+  //
+  // A detent overrides the walk on the step its key goes down and on no other, so keeping it
+  // held is a walk again from the next step and W and S trim off the named speed with
+  // nothing to fight.
+  const detent = readPressedSpeedDetent(state.pressed, state.heldDetents)
+  const detentKmh = detent
+    ? envelope.speedDetentsKmh?.[SPEED_DETENT_CONTROLS.indexOf(detent)]
+    : null
+  state.heldDetents.clear()
+  for (const control of SPEED_DETENT_CONTROLS) {
+    if (state.pressed.has(control)) state.heldDetents.add(control)
+  }
   state.commandSpeedKmh = clampCommandSpeedKmh(
-    state.commandSpeedKmh
-      + (readThrottleDirection(state.pressed) * step * envelope.commandKmhPerSecond),
+    Number.isFinite(detentKmh)
+      ? detentKmh
+      : state.commandSpeedKmh
+        + (readThrottleDirection(state.pressed) * step * envelope.commandKmhPerSecond),
     envelope,
   )
   state.throttle = readThrottleForAirspeedKmh(state.commandSpeedKmh, altitude, envelope)

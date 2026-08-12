@@ -266,7 +266,7 @@ export default function FlightHud({
     const frame = dom.current.root
     if (!canvas || !frame) return undefined
 
-    const hud = createFlightHud(canvas)
+    const hud = createFlightHud(canvas, { combatBand: envelope.combatBandKmh ?? null })
 
     // The ratio is read per resize, not once: browser zoom and a drag onto a display of a
     // different density both fire the observer, and a backing store left at the old ratio

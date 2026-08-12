@@ -30,6 +30,7 @@ export {
   readMouseSensitivity,
   readMouseStickAxes,
   readPsmArm,
+  readSpeedDetentKmh,
   readThrottleDirection,
   releaseFlightInput,
   resetFlightInput,

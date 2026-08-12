@@ -27,7 +27,11 @@ import {
 const envelope = f22.flight.envelope
 const tuning = envelope.maneuvering
 const altitude = 815
-const throttle = 0.29
+// Chosen for the speed it trims at — about 710 km/h, a fast cruise — rather than for the
+// number itself. It was 0.29 while the range was collecting the whole high-altitude table;
+// against the dry limit `highAltitude.maxPerformanceMix` now allows it trims 190 km/h
+// slower, and a 65-degree banked case entered that slow is a different test.
+const throttle = 0.446
 const speedKmh = readTargetAirspeedKmh(throttle, altitude, 0, envelope)
 const speed = speedKmh / envelope.performance.kmhPerWorldUnitPerSecond
 const bankDeg = 65
