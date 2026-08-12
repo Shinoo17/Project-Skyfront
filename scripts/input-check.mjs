@@ -47,6 +47,13 @@ assert.equal(FLIGHT_BINDINGS.Space, 'high-g',
 assert.equal(FLIGHT_BINDINGS.AltLeft, 'maneuver-assist',
   'Left Alt must be the deliberate post-stall control modifier')
 
+// The left hand stays on WASD: A and D are roll, and the arrows remain a second set for a
+// pilot who would rather fly them, so neither hand is forced off what it is already doing.
+assert.equal(FLIGHT_BINDINGS.KeyA, 'roll-left', 'A must roll left')
+assert.equal(FLIGHT_BINDINGS.KeyD, 'roll-right', 'D must roll right')
+assert.equal(FLIGHT_BINDINGS.ArrowLeft, 'roll-left', 'the arrows must still fly the aircraft')
+assert.equal(FLIGHT_BINDINGS.ArrowRight, 'roll-right', 'the arrows must still fly the aircraft')
+
 input.pressed.add('pitch-up')
 const firstPitch = step().pitch
 assert.ok(firstPitch > 0 && firstPitch < 0.2, 'keyboard pitch must ramp instead of snapping')
@@ -66,15 +73,63 @@ assert.equal(input.commandSpeedKmh, commandBeforePsm,
   'Maneuver Assist must not move the commanded speed')
 input.pressed.clear()
 
-// Space is the other intent entirely: a turn command that arms nothing.
+/*
+Space is the other intent entirely, and it is one key with two readings: the board with the
+stick centred, the max-performance turn with it deflected. Both cut the power while they
+are held and neither one touches the commanded speed, so letting go is the whole recovery.
+*/
 const commandBeforeHighG = input.commandSpeedKmh
+const servingThrottle = input.throttle
 input.pressed.add('high-g')
 const highGIntent = step()
 assert.equal(highGIntent.highG, true, 'Space must publish high-G turn intent')
 assert.equal(highGIntent.psmArm, false, 'Space must never arm PSM')
-assert.equal(highGIntent.airBrake, 0, 'Space must not open the air brake')
+assert.ok(highGIntent.airBrake > 0, 'Space with a centred stick must start opening the board')
+assert.equal(input.throttle, envelope.minThrottle,
+  'Space must cut the power for as long as it is held')
 assert.equal(input.commandSpeedKmh, commandBeforeHighG,
   'Space must not move the commanded speed')
+
+for (let frame = 0; frame < 20; frame += 1) step()
+assert.equal(input.intent.airBrake, 1,
+  'a held Space with a centred stick must settle at the full board')
+
+// Deflect the stick and the same key is a turn instead: the board shuts, because the turn
+// is already being paid for in induced drag.
+input.pressed.add('pitch-up')
+for (let frame = 0; frame < 20; frame += 1) step()
+assert.equal(input.intent.airBrake, 0, 'a deflected stick must shut the board')
+assert.equal(input.intent.highG, true, 'the turn is still the same intent')
+
+input.pressed.clear()
+step()
+assert.equal(input.throttle, servingThrottle,
+  'releasing Space must hand back the power that serves the commanded speed')
+assert.equal(input.commandSpeedKmh, commandBeforeHighG,
+  'the commanded speed must survive the whole manoeuvre untouched')
+
+/*
+The brake reads the resolved stick, so the mouse reaches it too — and a mouse stick is a
+position that is live wherever the pointer was left. A small standing deflection is the
+pilot holding a heading while they slow down, not a turn, and it has to leave the board out.
+*/
+input.pressed.add('high-g')
+setAnalogFlightInput(input, 'test-mouse', { pitch: 0.2 }, { direct: true })
+for (let frame = 0; frame < 20; frame += 1) step()
+assert.equal(input.intent.airBrake, 1,
+  'a small standing mouse deflection must not close the board')
+setAnalogFlightInput(input, 'test-mouse', { pitch: 0.8 }, { direct: true })
+for (let frame = 0; frame < 20; frame += 1) step()
+assert.equal(input.intent.airBrake, 0, 'a committed mouse pull must shut the board')
+clearAnalogFlightInput(input, 'test-mouse')
+input.pressed.clear()
+for (let frame = 0; frame < 20; frame += 1) step()
+
+// A held key let go of comes back through the same filter it went out on, rather than
+// snapping: the aircraft stops being asked, it is not commanded to centre.
+input.pressed.add('pitch-up')
+for (let frame = 0; frame < 20; frame += 1) step()
+assert.equal(input.intent.pitch, 1, 'the stick must be full before the release is measured')
 input.pressed.clear()
 const firstRelease = step().pitch
 assert.ok(firstRelease > 0 && firstRelease < 1, 'released pitch must return continuously')
@@ -88,48 +143,41 @@ assert.equal(input.intent.roll, 0, 'opposing digital controls must cancel')
 input.pressed.clear()
 
 /*
-W+S is the alternative high-G chord, so it has to behave exactly like Space rather than
-like two speed commands arguing: the same turn intent, no PSM, no brake, and a commanded
-speed that simply holds where the pilot left it.
+W and S are the speed control and nothing else. Held together they are two commands
+cancelling — not a turn chord, because the turn has its own key — and neither of them
+reaches for the board: S is "ask for a lower speed", and the aircraft slows down by being
+asked to, at the rate the engine and the drag settle between them.
 */
 const commandBeforeOpposing = input.commandSpeedKmh
 input.pressed.add('throttle-up')
 input.pressed.add('throttle-down')
 const chord = step()
-assert.equal(chord.highG, true, 'W+S must request the same high-G turn Space does')
+assert.equal(chord.highG, false, 'W+S must not request a turn')
 assert.equal(chord.psmArm, false, 'W+S must never arm PSM')
 assert.equal(chord.accelerate, false, 'W+S must not also read as an accelerate command')
 assert.equal(chord.decelerate, false, 'W+S must not also read as a decelerate command')
 assert.equal(input.commandSpeedKmh, commandBeforeOpposing,
   'opposing speed commands must cancel')
-assert.equal(chord.airBrake, 0,
-  'the high-G chord must pay in induced drag, not through the air brake')
+assert.equal(chord.airBrake, 0, 'W+S must not open the board')
 
-// Leaving the chord by letting go of W is the transition a player actually flies: the turn
-// command ends and the key still held goes back to being an ordinary slow-down.
-input.pressed.delete('throttle-up')
-for (let frame = 0; frame < 12; frame += 1) step()
-assert.equal(input.intent.highG, false, 'releasing W must end the high-G chord')
-assert.equal(input.intent.decelerate, true, 'the S still held must resume slowing down')
-assert.equal(input.intent.airBrake, envelope.deceleration.airBrakeLevel,
-  'the air brake must re-open once the chord is broken')
 input.pressed.clear()
 for (let frame = 0; frame < 12; frame += 1) step()
 
-for (let frame = 0; frame < 12; frame += 1) step()
+const commandBeforeSlowing = input.commandSpeedKmh
 input.pressed.add('throttle-down')
 for (let frame = 0; frame < 12; frame += 1) step()
 assert.equal(input.intent.decelerate, true, 'S alone must publish decelerate intent')
 assert.equal(input.intent.highG, false, 'S alone must not request a high-G turn')
-assert.equal(input.intent.airBrake, envelope.deceleration.airBrakeLevel,
-  'held S must settle at the progressive arcade brake level')
+assert.equal(input.intent.airBrake, 0,
+  'S is a speed command, not a board: the brake belongs to Space')
+assert.ok(input.commandSpeedKmh < commandBeforeSlowing, 'held S must walk the command down')
 input.pressed.add('pitch-up')
 for (let frame = 0; frame < 12; frame += 1) step()
-assert.equal(input.intent.airBrake, 1, 'S plus a committed pull must command the full high-G brake')
+assert.equal(input.intent.airBrake, 0, 'a pull does not promote S into the board either')
 input.pressed.clear()
 for (let frame = 0; frame < 12; frame += 1) step()
-assert.equal(input.intent.pitch, 0, 'high-G pull must settle before the next device takes control')
-assert.equal(input.intent.airBrake, 0, 'released S must retract the air brake')
+assert.equal(input.intent.pitch, 0, 'the pull must settle before the next device takes control')
+setCommandSpeedKmh(input, CRUISE_KMH, envelope)
 
 setAnalogFlightInput(input, 'test-stick', { roll: 0.42, pitch: -0.25 })
 for (let frame = 0; frame < 10; frame += 1) step()
@@ -389,56 +437,23 @@ assert.equal(input.throttle, envelope.minThrottle,
   'the slowest command must ask for the flight-idle stop')
 
 /*
-The number row names three of those speeds, and a detent is a jump rather than a hold. That
-distinction is the whole of it: the press snaps the command, and from the very next step the
-key is inert so W and S trim off the named speed instead of fighting it.
+The number row is not a speed control. It briefly was, and it is gone rather than merely
+unbound: the row belongs to weapon selection, and a key that means two things means neither.
+W and S are the whole of the speed control.
 */
-{
-  const detents = envelope.speedDetentsKmh
-  assert.ok(Array.isArray(detents) && detents.length === 3,
-    'the envelope must name three speeds for the number row')
-  assert.equal(FLIGHT_BINDINGS.Digit1, 'speed-detent-1', '1 must select the slow detent')
-  assert.equal(FLIGHT_BINDINGS.Digit2, 'speed-detent-2', '2 must select the manoeuvring detent')
-  assert.equal(FLIGHT_BINDINGS.Digit3, 'speed-detent-3', '3 must select the transit detent')
-  assert.ok(detents.every((speedKmh) => speedKmh >= limits.min && speedKmh <= limits.max),
-    'every detent must name a speed the aircraft can actually be commanded to')
-
-  input.pressed.clear()
-  setCommandSpeedKmh(input, CRUISE_KMH, envelope)
-  input.pressed.add('speed-detent-2')
-  step()
-  assert.equal(input.commandSpeedKmh, detents[1], 'a detent must arrive in one step, not ramp')
-
-  // Held, it stands aside. Anything else would make the number row a speed lock.
-  input.pressed.add('throttle-up')
-  step()
-  assert.ok(input.commandSpeedKmh > detents[1], 'W must trim off a held detent')
-
-  // Last press wins: `pressed` iterates in insertion order, so a hand moving along the row
-  // gets the key it landed on rather than the lowest one still down.
-  input.pressed.add('speed-detent-3')
-  step()
-  assert.equal(input.commandSpeedKmh, detents[2], 'the most recent detent must win')
-
-  // Letting go of the newer key while the older one is still down is nobody pressing
-  // anything. A latch that watched the named speed rather than the keys would read the row
-  // naming 780 again and snap back to it on its own.
-  input.pressed.delete('throttle-up')
-  input.pressed.delete('speed-detent-3')
-  const afterRelease = input.commandSpeedKmh
-  step()
-  assert.equal(input.commandSpeedKmh, afterRelease,
-    'releasing a detent must not command anything — only a press may')
-
-  // Releasing and pressing again is a fresh edge, so the same key is repeatable.
-  input.pressed.clear()
-  step()
-  input.pressed.add('speed-detent-1')
-  step()
-  assert.equal(input.commandSpeedKmh, detents[0], 're-pressing a detent must snap again')
-  input.pressed.clear()
-  step()
-}
+assert.equal(FLIGHT_BINDINGS.Digit1, undefined, 'the number row must not fly the aircraft')
+assert.equal(FLIGHT_BINDINGS.Digit2, undefined, 'the number row must not fly the aircraft')
+assert.equal(FLIGHT_BINDINGS.Digit3, undefined, 'the number row must not fly the aircraft')
+assert.equal(envelope.speedDetentsKmh, undefined,
+  'the envelope must not carry named speeds nothing reads')
+input.pressed.clear()
+setCommandSpeedKmh(input, CRUISE_KMH, envelope)
+input.pressed.add('speed-detent-2')
+step()
+assert.equal(input.commandSpeedKmh, CRUISE_KMH,
+  'a stale detent action must not move the commanded speed')
+input.pressed.clear()
+step()
 
 // Altitude changes what a speed costs, not what the pilot asked for. Same command, thinner
 // air, less power — and the number on the HUD never moves by itself.
@@ -458,7 +473,7 @@ assert.equal(accelerating.accelerate, true,
 assert.equal(accelerating.decelerate, false, 'W alone must not read as a decelerate command')
 assert.equal(accelerating.highG, false, 'W alone must not request a high-G turn')
 
-console.log('PASS input: smooth axes, progressive braking, high-G on Space and W+S,'
-  + ' post-stall on Left Alt, analogue intent, speed command that holds, number-row detents,'
+console.log('PASS input: smooth axes, A/D roll, Space as board and turn with the power cut,'
+  + ' post-stall on Left Alt, analogue intent, speed command that holds, a free number row,'
   + ' bounded band,'
   + ' altitude-aware power')

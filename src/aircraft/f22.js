@@ -320,38 +320,30 @@ const f22 = {
       // arguing with the pilot, and the engine is already the thing that decides how fast
       // the speed actually arrives — the command is only how fast it can be asked for.
       commandKmhPerSecond: 1320,
-      /*
-      Three named speeds on the number row, because a control that can name any speed
-      between 260 and 1440 is not the same thing as a control that tells the pilot which of
-      those speeds is worth being at. W and S still trim from wherever a detent leaves the
-      command, so this adds a way to arrive rather than taking one away.
-
-      It costs nothing in feel. `commandKmhPerSecond` is already seven times the engine's
-      own `accelerationKmhPerSecond`, so the ramp has never been the thing the pilot waits
-      on — the spool is, and the spool is untouched. A detent skips the part nobody could
-      feel and none of the part everybody can.
-
-      The three numbers are read off the flight model rather than chosen for roundness:
-
-        450   the middle of the Maneuver Assist entry window (220-660), where the nose can
-              be taken off the airstream at all
-        780   both fences fully open — `highGTurn` reaches full authority at its
-              `fullEnergyKmh` of 640 and `authorityRefSpeed` saturates the surfaces at
-              about 750, so this is where the hardest conventional turn lives
-       1100   military power at the deck: the transit setting, and the speed above which
-              the turn radius grows for nothing
-      */
-      speedDetentsKmh: [450, 780, 1100],
-      // The band the speed tape marks, and the same reading as the middle detent: fast
-      // enough for the whole high-G envelope, slow enough that the radius is still small.
+      // The band the speed tape marks: fast enough for the whole high-G envelope, slow
+      // enough that the radius is still small. `highGTurn` reaches full authority at its
+      // `fullEnergyKmh` of 640 and `authorityRefSpeed` saturates the surfaces at about 750,
+      // so the hardest conventional turn lives inside this band and the tape says where.
       // Nothing reads this but the HUD — it is a label on the physics, not a limit in it.
       combatBandKmh: { min: 650, max: 1000 },
-      // S is one arcade slow-down intent. It lowers the power lever and opens enough brake
-      // to be immediately readable without making a short throttle correction dump all of
-      // the aircraft's energy. A committed pull promotes it to the full high-G brake.
+      /*
+      The board, which is Space with the stick centred rather than S.
+
+      `airBrakeLevel` is full, because a dedicated brake key that only half-deploys is a
+      control the pilot has to think about — the whole reading is "stop, hard, and let the
+      one chasing me overshoot", and the cost is already visible on the speed tape.
+
+      The two deflections are where the board starts closing and where it is fully shut. A
+      quarter of stick is the heading correction a pilot makes while decelerating straight
+      ahead, and a mouse left sitting off-centre reads about the same, so nothing below it
+      counts as a turn. Seven tenths is a turn nobody flies by accident, and past it the
+      energy is going into induced drag instead — charging for both would make a hard turn
+      cost more than it looks.
+      */
       deceleration: {
-        airBrakeLevel: 0.65,
-        fullBrakePitch: 0.72,
+        airBrakeLevel: 1,
+        turnOnsetDeflection: 0.25,
+        turnReleaseDeflection: 0.7,
       },
       // Reheat is a fuel state, not a switch. The F119 pushes roughly three times its dry
       // fuel flow in afterburner, so the airframe carries a burst of it rather than

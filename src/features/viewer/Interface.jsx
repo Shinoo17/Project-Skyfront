@@ -434,7 +434,7 @@ function ControlPanel({
             <AfterburnerButton active={afterburner} onChange={onAfterburnerChange} />
           </div>
 
-          <p className="flight-help">ARROWS: PITCH / ROLL &nbsp; Q E: YAW &nbsp; F: FLAPS &nbsp; W S: THROTTLE &nbsp; SHIFT: HOLD A/B</p>
+          <p className="flight-help">ARROWS: PITCH / ROLL &nbsp; A D: ROLL &nbsp; Q E: YAW &nbsp; F: FLAPS &nbsp; W S: SPEED &nbsp; SHIFT: HOLD A/B</p>
         </section>
       )}
 

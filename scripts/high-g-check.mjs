@@ -2,7 +2,8 @@
 
 The scheme this guards is two buttons that must never become one:
 
-  Space / W+S   a max-performance aerodynamic turn — more rate, more G, more drag
+  Space         spend speed for control — a board when the stick is centred, a
+                max-performance aerodynamic turn when it is not
   Left Alt      consent to post-stall control
 
 So the cases below are all comparisons. The same pull is flown with and without the
@@ -10,8 +11,9 @@ trigger, and what is asserted is the difference: a faster turn, a tighter radius
 drag bill and a faster bleed — while the PSM state machine stays asleep, the wing stays
 unstalled, and the nose stays near the flight path.
 
-Everything drives `stepFlight` with hand-built command objects except the chord case,
-which goes through `stepFlightInput` because the W+S equivalence lives in the input layer.
+Everything drives `stepFlight` with hand-built command objects except case F, which goes
+through `stepFlightInput` because the brake/turn split and the throttle cut both live in
+the input layer.
 */
 
 import assert from 'node:assert/strict'
@@ -366,75 +368,98 @@ const report = (name, detail) => console.log(`PASS ${name.padEnd(26)} ${detail}`
     + ` jerk=${run.maxAccelJump.toFixed(4)} (psm ${psmRun.maxAccelJump.toFixed(4)})`)
 }
 
-// ------------------------------------------------- F: W+S is the same control as Space
+/*
+F: Space is one key with two readings, and the stick is what picks between them.
+
+Centred it is the board — full brake, power cut, a straight deceleration. Deflected it is
+the max-performance turn, with the brake shut so the turn is paid for once, through induced
+drag, rather than twice. Both readings hold the commanded speed, because neither of them is
+a throttle command: the number the pilot chose has to be there to fly back to afterwards.
+*/
 {
   const SECONDS = 2.4
-  const controls = createFlightInputState(900)
-  const chordState = createEntry(900)
-  let chordAirBrake = 0
-  let chordHighG = false
+  const fly = (hold, seconds = SECONDS) => {
+    const controls = createFlightInputState(900)
+    const state = createEntry(900)
+    let peakAirBrake = 0
+    let highG = false
+    let minThrottle = 1
 
-  for (let t = 0; t < SECONDS; t += FLIGHT_FIXED_STEP) {
-    controls.pressed.clear()
-    controls.pressed.add('pitch-up')
-    controls.pressed.add('throttle-up')
-    controls.pressed.add('throttle-down')
-    const input = stepFlightInput(controls, FLIGHT_FIXED_STEP, envelope, chordState.position.y)
-    chordAirBrake = Math.max(chordAirBrake, input.airBrake)
-    chordHighG ||= input.highG
-    stepFlight(chordState, {
-      pitch: input.pitch,
-      roll: input.roll,
-      yaw: input.yaw,
-      flaps: input.flaps,
-      throttle: input.throttle,
-      airBrake: input.airBrake,
-      accelerate: input.accelerate,
-      decelerate: input.decelerate,
-      highG: input.highG,
-      psmArm: input.psmArm,
-      afterburnerCommanded: input.afterburner,
-      burnerLevel: 0,
-    }, envelope, FLIGHT_FIXED_STEP)
+    for (let t = 0; t < seconds; t += FLIGHT_FIXED_STEP) {
+      controls.pressed.clear()
+      for (const control of hold) controls.pressed.add(control)
+      const input = stepFlightInput(controls, FLIGHT_FIXED_STEP, envelope, state.position.y)
+      peakAirBrake = Math.max(peakAirBrake, input.airBrake)
+      minThrottle = Math.min(minThrottle, input.throttle)
+      highG ||= input.highG
+      stepFlight(state, {
+        pitch: input.pitch,
+        roll: input.roll,
+        yaw: input.yaw,
+        flaps: input.flaps,
+        throttle: input.throttle,
+        airBrake: input.airBrake,
+        accelerate: input.accelerate,
+        decelerate: input.decelerate,
+        highG: input.highG,
+        psmArm: input.psmArm,
+        afterburnerCommanded: input.afterburner,
+        burnerLevel: 0,
+      }, envelope, FLIGHT_FIXED_STEP)
+    }
+    return { controls, state, peakAirBrake, highG, minThrottle }
   }
 
-  const spaceControls = createFlightInputState(900)
-  const spaceState = createEntry(900)
-  for (let t = 0; t < SECONDS; t += FLIGHT_FIXED_STEP) {
-    spaceControls.pressed.clear()
-    spaceControls.pressed.add('pitch-up')
-    spaceControls.pressed.add('high-g')
-    const input = stepFlightInput(spaceControls, FLIGHT_FIXED_STEP, envelope, spaceState.position.y)
-    stepFlight(spaceState, {
-      pitch: input.pitch,
-      roll: input.roll,
-      yaw: input.yaw,
-      flaps: input.flaps,
-      throttle: input.throttle,
-      airBrake: input.airBrake,
-      accelerate: input.accelerate,
-      decelerate: input.decelerate,
-      highG: input.highG,
-      psmArm: input.psmArm,
-      afterburnerCommanded: input.afterburner,
-      burnerLevel: 0,
-    }, envelope, FLIGHT_FIXED_STEP)
-  }
+  const turn = fly(['pitch-up', 'high-g'])
+  const brake = fly(['high-g'])
+  const chord = fly(['pitch-up', 'throttle-up', 'throttle-down'])
+  const cruise = fly([])
 
-  assert.ok(chordHighG, 'F: W+S must publish High-G intent')
-  assert.equal(chordAirBrake, 0, 'F: the W+S chord must not open the air brake')
-  assert.equal(controls.commandSpeedKmh, 900,
-    'F: W+S must hold the commanded speed rather than fighting over it')
-  assert.ok(Math.abs(chordState.speedKmh - spaceState.speedKmh) < 1,
-    `F: the chord must fly the same turn Space does`
-    + ` (${chordState.speedKmh.toFixed(1)} vs ${spaceState.speedKmh.toFixed(1)} km/h)`)
-  assert.ok(Math.abs(chordState.highGBlend - spaceState.highGBlend) < 1e-6,
-    'F: both shortcuts must produce the same blend')
+  assert.ok(turn.highG, 'F: Space must publish High-G intent')
+  assert.ok(turn.peakAirBrake < 0.02,
+    `F: a deflected stick must shut the board (${turn.peakAirBrake.toFixed(3)})`)
+  assert.ok(brake.peakAirBrake > 0.98,
+    `F: a centred stick must deploy the full board (${brake.peakAirBrake.toFixed(3)})`)
+  assert.ok(brake.highG, 'F: the brake reading of Space still publishes the same intent')
 
-  report('F W+S equals Space', `brake=${chordAirBrake} cmd=${controls.commandSpeedKmh.toFixed(0)}km/h`
-    + ` chord=${chordState.speedKmh.toFixed(1)} space=${spaceState.speedKmh.toFixed(1)} km/h`
-    + ` blend=${chordState.highGBlend.toFixed(2)}`)
+  // The cut is on the derived power only. Both readings must come back to the same
+  // commanded speed the moment the key is released, which is the whole of the recovery.
+  assert.ok(turn.minThrottle <= envelope.minThrottle + 1e-9
+    && brake.minThrottle <= envelope.minThrottle + 1e-9,
+  'F: Space must cut the power while it is held')
+  assert.equal(turn.controls.commandSpeedKmh, 900,
+    'F: Space must leave the commanded speed exactly where the pilot put it')
+  assert.equal(brake.controls.commandSpeedKmh, 900,
+    'F: braking must leave the commanded speed exactly where the pilot put it')
+
+  /*
+  Both readings cost speed and that is the whole price list, but they are not measured
+  against each other: the turn bleeds harder here, because induced drag at nine G outbids a
+  board, and a brake that had to beat that would be a brake nobody could fly behind.
+
+  What the board has to beat is the pilot doing nothing, and by enough to be a decision — a
+  chunk of the energy state inside a couple of seconds, straight ahead, which is what makes
+  it something to let an overshooting chaser fly past.
+  */
+  assert.ok(cruise.state.speedKmh > 850,
+    `F: a hand off the keys must hold the commanded speed (${cruise.state.speedKmh.toFixed(1)} km/h)`)
+  assert.ok(brake.state.speedKmh < cruise.state.speedKmh - 250,
+    `F: the board must be a readable deceleration on its own`
+    + ` (${brake.state.speedKmh.toFixed(1)} vs ${cruise.state.speedKmh.toFixed(1)} km/h)`)
+
+  // W+S is two speed commands cancelling now that the turn has its own key.
+  assert.equal(chord.highG, false, 'F: W+S must no longer request a turn')
+  assert.equal(chord.peakAirBrake, 0, 'F: W+S must not open the board')
+  assert.equal(chord.controls.commandSpeedKmh, 900,
+    'F: opposing speed commands must still cancel')
+
+  report('F Space brake vs turn', `turn brake=${turn.peakAirBrake.toFixed(2)}`
+    + ` speed=${turn.state.speedKmh.toFixed(1)} km/h`
+    + ` | board brake=${brake.peakAirBrake.toFixed(2)}`
+    + ` speed=${brake.state.speedKmh.toFixed(1)} km/h`
+    + ` | hands off ${cruise.state.speedKmh.toFixed(1)} km/h`
+    + ` | W+S highG=${chord.highG}`)
 }
 
 console.log('PASS high-G: rate/radius/drag/bleed trade, never post-stall, energy-gated,'
-  + ' smooth release and PSM handoff, W+S identical to Space')
+  + ' smooth release and PSM handoff, Space as board and turn with the command intact')

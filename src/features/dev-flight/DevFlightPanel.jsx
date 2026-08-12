@@ -202,9 +202,10 @@ export default function DevFlightPanel({
       </dl>
 
       <p className="dev-panel-hint">
-        Drag to orbit · scroll to zoom · right-drag to pan. Arrows,
+        Drag to orbit · scroll to zoom · right-drag to pan. Arrows, <kbd>A</kbd>/<kbd>D</kbd>,
         <kbd>Q</kbd>/<kbd>E</kbd>, <kbd>W</kbd>/<kbd>S</kbd> and <kbd>SHIFT</kbd> fly the
-        aircraft. Hold <kbd>W</kbd>+<kbd>S</kbd>, then pull up to arm arcade PSM.
+        aircraft. <kbd>SPACE</kbd> air brakes, or turns hard while the stick is deflected.
+        Hold <kbd>ALT</kbd>, then pull up to arm arcade PSM.
       </p>
 
       <p className="dev-panel-hint">

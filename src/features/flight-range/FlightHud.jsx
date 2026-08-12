@@ -108,8 +108,17 @@ function readAdvisory(telemetry) {
   // The max-performance turn, named while it is being flown. It ranks below the manoeuvre
   // captions because it cannot happen at the same time as any of them, and it says what it
   // costs: the whole point of the control is that the pilot is spending energy for rate.
+  // The power is cut for as long as the key is held, so the caption has to say so: a
+  // throttle bar sitting at idle in the middle of a nine-G pull reads as a failed engine
+  // otherwise, and the commanded speed is still sitting there waiting to be flown back to.
   if (telemetry.highGBlend > 0.5) {
-    return { key: 'high-g', label: 'HIGH-G TURN · ENERGY BLEED', tone: 'caution' }
+    return { key: 'high-g', label: 'HIGH-G TURN · POWER CUT · ENERGY BLEED', tone: 'caution' }
+  }
+  // The other reading of the same key, and it ranks below the turn for the same reason the
+  // taper exists: a deflected stick means the pilot is turning, and the board is already on
+  // its way shut by the time this would be worth saying.
+  if (telemetry.airBrake) {
+    return { key: 'airbrake', label: 'AIRBRAKE · POWER CUT', tone: 'caution' }
   }
   if (telemetry.flaps) return { key: 'flaps', label: 'FLAPS DOWN', tone: 'caution' }
   return { key: 'clear', label: 'FLIGHT PATH CLEAR', tone: 'normal' }
@@ -433,15 +442,16 @@ export default function FlightHud({
 
           <div className="deck-row is-modes">
             {/* The two flight-action keys, side by side because the difference between them
-                is the thing the pilot has to learn: HI-G turns as hard as the wing can,
-                MNV consents to leaving the wing behind. */}
+                is the thing the pilot has to learn: BRK/G brakes with the stick centred and
+                turns as hard as the wing can with it deflected, and MNV consents to leaving
+                the wing behind. */}
             <HoldControl
               control="high-g"
-              label="Hold for a high-G turn"
+              label="Hold to air brake, or to turn hard while the stick is deflected"
               icon={Orbit}
               controls={controls}
             >
-              HI-G
+              BRK/G
             </HoldControl>
             <HoldControl
               control="maneuver-assist"
@@ -509,11 +519,12 @@ export default function FlightHud({
           {!mouseFlightEnabled && 'flight control off'}
         </span>
         <kbd>↑</kbd><kbd>↓</kbd><span>pitch</span>
-        <kbd>←</kbd><kbd>→</kbd><span>roll</span>
+        <kbd>A</kbd><kbd>D</kbd><span>roll</span>
         <kbd>Q</kbd><kbd>E</kbd><span>yaw</span>
-        <kbd>W</kbd><kbd>S</kbd><span>faster / slower · S brakes</span>
+        <kbd>W</kbd><kbd>S</kbd><span>faster / slower · holds</span>
         <kbd>SHIFT</kbd><span>afterburner</span>
-        <kbd>SPACE</kbd><kbd>↑</kbd><span>maneuver</span>
+        <kbd>SPACE</kbd><span>air brake · turn hard while pulling</span>
+        <kbd>ALT</kbd><kbd>↑</kbd><span>maneuver</span>
         <kbd>C</kbd><kbd>ESC</kbd><span>camera · release &amp; menu</span>
       </p>}
     </div>

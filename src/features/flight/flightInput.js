@@ -20,11 +20,9 @@ the pilot is asking for, in the same km/h the HUD already reads — and the thro
 model consumes is derived from it. The command holds where it is left, because a number
 you chose is a number you should still have thirty seconds later.
 
-The number row names three of those speeds outright — see `speedDetentsKmh` on the
-envelope. A detent is a jump, not a hold: it snaps the command on the press and then stands
-aside, so W and S trim away from it immediately and holding the key does not pin the
-aircraft to it. Last press wins while several are held, because a hand mashing the row
-means the key it landed on most recently.
+The number row briefly named three of those speeds outright. It does not any more: the row
+belongs to weapon selection, and two controls on one key is a key that means neither. What
+that leaves is one way to set speed, which is W and S, and one place to read it.
 
 This is the arcade simplification and it is deliberate: there is no spool to reason about,
 no lever position to remember, and no unit conversion between what the pilot wants and
@@ -35,7 +33,7 @@ sags below its commanded speed in a turn and has to be flown back up to it.
 Two separate intents sit above the stick, and the whole control scheme depends on the
 player never confusing them:
 
-  high-g          Space, or W+S held together — "turn as hard as this wing can"
+  high-g          Space — "spend speed for control"
   maneuver-assist Left Alt — "I am asking for post-stall control"
 
 They are different keys because they are different regimes. High-G stays an aerodynamic
@@ -44,10 +42,22 @@ path. Maneuver Assist is the consent line for PSM, where the nose is allowed to 
 airstream entirely. Neither one implies the other, and no amount of high-G alpha opens the
 post-stall envelope on its own.
 
-W+S is the alternative high-G chord because those two keys are already under the fingers.
-Held together they neither accelerate nor decelerate: `readThrottleDirection` cancels to
-zero so the commanded speed holds, and the arcade air brake stands down so the chord costs
-the same energy Space does — through induced drag, not through a board.
+Space is one key with two readings, and they are the same sentence rather than two controls
+sharing a button: *trade speed for control*. Held with the stick centred it is the air
+brake, a board out and a straight deceleration. Held with the stick deflected it is the
+max-performance turn, and the board closes because the turn is already spending the energy
+through induced drag — paying twice would make a hard turn cost more than the pilot asked
+for. The taper between them is continuous, so a stick eased into a turn eases the brake
+shut rather than stepping it.
+
+Whichever reading it is, the throttle is cut while the key is down and `commandSpeedKmh` is
+left exactly where the pilot put it. That is what makes Space free of any book-keeping: let
+go, and the power comes back up to serve the speed that was already asked for. The cost was
+the speed lost while it was held, which is on the tape, and there is nothing else to watch.
+
+W and S are therefore the speed control and nothing else. They do not open the brake — S is
+"ask for a lower speed", not "deploy a board" — and held together they are two speed
+commands cancelling rather than a turn chord, because the turn has its own key.
 */
 
 import { readMaxDryCeilingKmh, readThrottleForAirspeedKmh } from './performance'
@@ -57,13 +67,12 @@ export const FLIGHT_BINDINGS = {
   ArrowDown: 'pitch-down',
   ArrowLeft: 'roll-left',
   ArrowRight: 'roll-right',
+  KeyA: 'roll-left',
+  KeyD: 'roll-right',
   KeyQ: 'yaw-left',
   KeyE: 'yaw-right',
   KeyW: 'throttle-up',
   KeyS: 'throttle-down',
-  Digit1: 'speed-detent-1',
-  Digit2: 'speed-detent-2',
-  Digit3: 'speed-detent-3',
   KeyF: 'flaps',
   KeyV: 'rear-view',
   ShiftLeft: 'afterburner',
@@ -186,6 +195,12 @@ export const MOUSE_STICK_GATE = {
 
 function clampAxis(value) {
   return Math.max(-1, Math.min(1, Number(value) || 0))
+}
+
+// The same ease the flight model uses, kept local so this module still depends on nothing.
+function smoothstep01(value) {
+  const clamped = Math.max(0, Math.min(1, Number(value) || 0))
+  return clamped * clamped * (3 - (2 * clamped))
 }
 
 /*
@@ -416,49 +431,6 @@ export function readThrottleDirection(pressed) {
   return digitalAxis(pressed, 'throttle-up', 'throttle-down')
 }
 
-// The speed detents, in the order `envelope.speedDetentsKmh` lists them. Actions rather
-// than key codes, so a gamepad d-pad or a touch button reaches the same three speeds.
-const SPEED_DETENT_CONTROLS = ['speed-detent-1', 'speed-detent-2', 'speed-detent-3']
-
-/*
-Which named speed is currently being asked for, or null for none.
-
-`pressed` is a Set and a Set iterates in insertion order, so walking it rather than the
-detent list is what makes the most recent press win: a pilot who holds 2 and then hits 3
-gets 3, instead of nothing until the first key comes back up.
-*/
-export function readSpeedDetentKmh(pressed, envelope) {
-  const detents = envelope.speedDetentsKmh
-  if (!detents?.length) return null
-  let selected = null
-  for (const control of pressed) {
-    const index = SPEED_DETENT_CONTROLS.indexOf(control)
-    if (index < 0) continue
-    const speedKmh = detents[index]
-    if (Number.isFinite(speedKmh)) selected = speedKmh
-  }
-  return selected
-}
-
-/*
-The one detent key that went down this step, or null.
-
-The edge is tracked on the keys rather than on the speed they name, and it has to be. A
-latched speed cannot tell a press from a release: hold 2, add 3, then let 3 go, and the row
-is naming 780 again — a different number from the latched 1100, which a speed latch reads as
-a fresh press and acts on. Nobody pressed anything. Watching the keys, releasing 3 adds no
-new control, so nothing happens and the command stays where the pilot last put it.
-
-The last new control wins for the same reason `readSpeedDetentKmh` does.
-*/
-function readPressedSpeedDetent(pressed, held) {
-  let selected = null
-  for (const control of pressed) {
-    if (SPEED_DETENT_CONTROLS.includes(control) && !held.has(control)) selected = control
-  }
-  return selected
-}
-
 export function readAccelerate(pressed) {
   return pressed.has('throttle-up') && !pressed.has('throttle-down')
 }
@@ -467,16 +439,10 @@ export function readDecelerate(pressed) {
   return pressed.has('throttle-down') && !pressed.has('throttle-up')
 }
 
-// The two speed keys held together are the high-G chord rather than two commands
-// arguing. Kept private so every reader below asks the same question the same way.
-function isHighGChord(pressed) {
-  return pressed.has('throttle-up') && pressed.has('throttle-down')
-}
-
-// Max-performance turn intent. One dedicated action plus the W+S chord, resolved here so
-// the model, the HUD and the bot all see one boolean and no key codes.
+// Max-performance turn intent. One action, resolved here so the model, the HUD and the bot
+// all see one boolean and no key codes.
 export function readHighG(pressed) {
-  return pressed.has('high-g') || isHighGChord(pressed)
+  return pressed.has('high-g')
 }
 
 // PSM stays deliberate instead of opening during an ordinary slow, hard turn — or during a
@@ -490,21 +456,43 @@ export function readAfterburnerCommand(pressed) {
   return pressed.has('afterburner')
 }
 
-export function readAirBrake(pressed, pitch = 0, envelope = {}) {
-  // A dedicated air-brake action remains available for future HOTAS adapters, but the
-  // default arcade control speaks in intent: S means slow down, so it reduces power and
-  // progressively opens the brake. A committed pull gets the full brake for a high-G turn.
+/*
+How far the board is out, 0..1, read off the same key that asks for the turn.
+
+`axes` is the resolved stick — the targets the axes are chasing this step, before the
+smoothing, so the brake answers the hand rather than the filter. Deflection is the length of
+the whole stick rather than pitch alone: a roll into a turn is the pilot committing to one
+just as much as a pull is, and taking the magnitude means an easing diagonal reads the same
+as an easing pull instead of registering as neither.
+
+The taper is what makes Space one control instead of two. Up to `turnOnsetDeflection` it is
+the full board; past `turnReleaseDeflection` the brake is shut and the turn pays its own way
+through induced drag. In between it is smooth, so there is no deflection at which the
+aircraft changes its mind about what the key means.
+
+The onset is not decoration. A mouse stick is a position, and it is live wherever the pointer
+was left — small standing deflections are ordinary, and without a threshold the pilot would
+be braking at a bit under half the board while believing the stick was centred. Slowing down
+straight ahead still wants small corrections to hold a heading, and those corrections are not
+the turn this control means.
+
+A dedicated air-brake action stays above all of it for a future HOTAS adapter, where the
+board is its own lever and the pilot means the board.
+*/
+export function readAirBrake(pressed, axes = {}, envelope = {}) {
   if (pressed.has('air-brake')) return 1
-  // W+S is a turn command, not a deceleration command. Leaving the brake open here would
-  // make the chord bleed harder than Space does, and the two are advertised as the same
-  // control. High-G pays its energy through induced drag either way.
-  if (isHighGChord(pressed)) return 0
-  if (!pressed.has('throttle-down')) return 0
+  if (!pressed.has('high-g')) return 0
 
   const deceleration = envelope.deceleration ?? {}
-  const fullBrakePitch = deceleration.fullBrakePitch ?? 0.72
-  if (pitch >= fullBrakePitch) return 1
-  return Math.max(0, Math.min(1, deceleration.airBrakeLevel ?? 0.65))
+  const level = Math.max(0, Math.min(1, deceleration.airBrakeLevel ?? 1))
+  const onset = deceleration.turnOnsetDeflection ?? 0.25
+  const release = Math.max(deceleration.turnReleaseDeflection ?? 0.7, onset + 1e-3)
+  const deflection = Math.hypot(
+    Number(axes.pitch) || 0,
+    Number(axes.roll) || 0,
+    Number(axes.yaw) || 0,
+  )
+  return level * (1 - smoothstep01((deflection - onset) / (release - onset)))
 }
 
 // The commandable band is the whole dry envelope the airframe has anywhere, not the
@@ -555,10 +543,6 @@ export function createFlightInputState(commandSpeedKmh = 0) {
     // first is a control; `throttle` is published for the flight model and the HUD.
     commandSpeedKmh,
     throttle: 0,
-    // Which detent keys were down last step, kept only so the next one can tell a fresh
-    // press from a key still being held. A detent that stayed applied would be a hold rather
-    // than a jump, and W/S could not trim away from it.
-    heldDetents: new Set(),
     intent: {
       pitch: 0,
       roll: 0,
@@ -608,7 +592,6 @@ export function releaseFlightInput(state) {
 export function resetFlightInput(state, commandSpeedKmh = state.commandSpeedKmh) {
   releaseFlightInput(state)
   state.commandSpeedKmh = commandSpeedKmh
-  state.heldDetents.clear()
   state.intent.pitch = 0
   state.intent.roll = 0
   state.intent.yaw = 0
@@ -653,7 +636,7 @@ export function stepFlightInput(state, step, envelope, altitude) {
   )
   state.intent.airBrake = smoothAxis(
     state.intent.airBrake,
-    readAirBrake(state.pressed, targets.pitch, envelope),
+    readAirBrake(state.pressed, targets, envelope),
     RESPONSE.airBrake,
     step,
   )
@@ -665,26 +648,27 @@ export function stepFlightInput(state, step, envelope, altitude) {
 
   // W and S walk the commanded speed, which then holds. Power is whatever it takes to
   // serve that number here, so the pilot never operates the engine directly.
-  //
-  // A detent overrides the walk on the step its key goes down and on no other, so keeping it
-  // held is a walk again from the next step and W and S trim off the named speed with
-  // nothing to fight.
-  const detent = readPressedSpeedDetent(state.pressed, state.heldDetents)
-  const detentKmh = detent
-    ? envelope.speedDetentsKmh?.[SPEED_DETENT_CONTROLS.indexOf(detent)]
-    : null
-  state.heldDetents.clear()
-  for (const control of SPEED_DETENT_CONTROLS) {
-    if (state.pressed.has(control)) state.heldDetents.add(control)
-  }
   state.commandSpeedKmh = clampCommandSpeedKmh(
-    Number.isFinite(detentKmh)
-      ? detentKmh
-      : state.commandSpeedKmh
-        + (readThrottleDirection(state.pressed) * step * envelope.commandKmhPerSecond),
+    state.commandSpeedKmh
+      + (readThrottleDirection(state.pressed) * step * envelope.commandKmhPerSecond),
     envelope,
   )
-  state.throttle = readThrottleForAirspeedKmh(state.commandSpeedKmh, altitude, envelope)
+  /*
+  Space cuts the power and leaves the command alone.
+
+  The cut is applied here, to the derived throttle, and never to `commandSpeedKmh` — the
+  number the pilot chose survives the manoeuvre untouched, so releasing the key is the whole
+  of the recovery: the next step derives the same power it would have had, and the model
+  spools back up to it. The engine's own spool is what softens the step at both ends, which
+  is why this is a plain assignment rather than another filter.
+
+  `minThrottle` rather than zero because that is where the arcade power lever bottoms out —
+  the same idle the fully-decelerating S command reaches.
+  */
+  const servingThrottle = readThrottleForAirspeedKmh(state.commandSpeedKmh, altitude, envelope)
+  state.throttle = readHighG(state.pressed)
+    ? Math.min(servingThrottle, envelope.minThrottle ?? 0)
+    : servingThrottle
   state.intent.throttle = state.throttle
 
   return state.intent
