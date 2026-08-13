@@ -54,7 +54,7 @@ export const FLIGHT_CAMERA_STYLE_OPTIONS = [
   {
     id: 'action',
     label: 'Action',
-    detail: 'Close 69° lens · cinematic PSM orbit',
+    detail: 'Close 69° lens · inertial PSM framing',
   },
 ]
 
@@ -94,14 +94,16 @@ const CAMERA_STYLES = {
     // the exit from a manoeuvre.
     offset: new Vector3(-15.5, 4.8, 0),
     lookAhead: 13,
-    // Less of the sightline is given to momentum than it was. The velocity share is what
-    // makes the camera hang behind the nose during a pitch change, and past about a quarter
-    // it stops reading as weight and starts reading as the aim not keeping up.
-    velocityBlend: 0.26,
+    // Action reads the flight path before it reads the nose. That is what lets a looping
+    // aircraft come back toward the lens at the top of an Immelmann instead of dragging the
+    // whole camera round with its quaternion. Recovery temporarily reverses that priority:
+    // Pitch Down is an explicit request to put the chase rig back behind the nose.
+    velocityBlend: 0.82,
+    recoveryVelocityBlend: 0.18,
     positionResponse: 3.4,
     targetResponse: 4.4,
-    returnResponse: 1.9,
-    returnDuration: 2.8,
+    returnDuration: 0.85,
+    returnMinDuration: 0.62,
     baseFov: 69,
     speedFov: 3,
     brakingFov: 3,
@@ -111,6 +113,28 @@ const CAMERA_STYLES = {
     burnerBoom: 0.07,
     shake: 0.28,
   },
+}
+
+const CONTROLLED_PSM_PHASES = new Set([
+  'post-stall',
+  'cobra-hold',
+  'post-stall-flip',
+  'post-stall-reversal',
+])
+const ACTION_ENTRY_SETTLE_SECONDS = 0.42
+const ACTION_DRIFT_SETTLE_SECONDS = 0.55
+const ACTION_DRIFT_ARC_RAD = MathUtils.degToRad(2.2)
+const ACTION_DRIFT_TILT_RAD = MathUtils.degToRad(3)
+const ACTION_DRIFT_DOLLY = 0.035
+const ACTION_DRIFT_FOV = 0.65
+
+function isControlledPsmPhase(phase) {
+  return CONTROLLED_PSM_PHASES.has(phase)
+}
+
+function recoveryAlignment(noseOffPathDeg) {
+  if (!Number.isFinite(noseOffPathDeg)) return 0
+  return 1 - MathUtils.smoothstep(noseOffPathDeg, 20, 70)
 }
 
 export function readFlightCameraStyle() {
@@ -233,19 +257,36 @@ export function createChaseCameraState() {
     freeLookAim: 1,
     freeLookAimRate: 0,
     freeLookHeld: false,
-    // Action camera captures these three world-space offsets on the first controlled PSM
-    // frame. Only aircraft translation is applied while they are held, so the jet is free
-    // to pitch, flip, or reverse inside a stable shot.
+    // Action captures the screen pose and the entry flight-path frame on the first
+    // controlled PSM frame. The former prevents an entry cut; the latter is the inertial
+    // composition the shot settles onto and then holds while the aircraft rotates inside it.
     actionOffset: new Vector3(),
     actionTargetOffset: new Vector3(),
     actionUp: new Vector3(),
+    actionDesiredOffset: new Vector3(),
+    actionDesiredTargetOffset: new Vector3(),
+    actionDesiredUp: new Vector3(),
+    actionFrameForward: new Vector3(),
+    actionFrameUp: new Vector3(),
+    actionFrameRight: new Vector3(),
+    actionDriftOffset: new Vector3(),
+    actionDriftTargetOffset: new Vector3(),
+    actionDriftUp: new Vector3(),
+    actionDriftRotation: new Quaternion(),
+    actionDriftStep: new Quaternion(),
+    actionElapsed: 0,
+    actionFov: BASE_FOV,
     actionReturnUp: new Vector3(),
     actionReturnOffset: new Vector3(),
+    actionReturnAimOffset: new Vector3(),
+    actionReturnAimTarget: new Vector3(),
     actionReturnDirection: new Vector3(),
     actionReturnTargetDirection: new Vector3(),
     actionReturnRotation: new Quaternion(),
     actionReturnStep: new Quaternion(),
     actionReturnElapsed: 0,
+    actionReturnProgress: 0,
+    actionReturnAlignmentStart: 0,
     actionHeld: false,
     actionBlocked: false,
     actionReturning: false,
@@ -274,7 +315,10 @@ export function resetChaseCamera(chase, camera, aircraftState) {
   chase.actionHeld = false
   chase.actionBlocked = false
   chase.actionReturning = false
+  chase.actionElapsed = 0
   chase.actionReturnElapsed = 0
+  chase.actionReturnProgress = 0
+  chase.actionReturnAlignmentStart = 0
   chase.boom = 1
   chase.followUp.copy(LOCAL_UP)
   chase.position
@@ -310,7 +354,6 @@ export function updateChaseCamera(chase, camera, {
   distance = 'normal',
   cameraLook,
   rearView = false,
-  accelerateRequested = false,
 }) {
   if (!camera) return
 
@@ -393,11 +436,14 @@ export function updateChaseCamera(chase, camera, {
   const freeLooking = !rearView && rotated
   const lookAhead = mode === 'nose' ? NOSE_CAMERA_LOOK_AHEAD : profile.lookAhead
 
-  // Action is not a looser chase camera. It is a shot held in the world frame the instant
-  // controlled post-stall flight begins. The stored offsets still inherit aircraft
-  // translation, so the jet cannot fly away from the lens, but attitude is deliberately
-  // absent: a Cobra stands upright in frame and a full flip turns inside an unchanged shot.
+  // Action is not a looser chase camera. Controlled post-stall flight captures the current
+  // screen pose so entry cannot cut, then spends less than half a second composing onto the
+  // velocity direction that existed at entry. Position still inherits aircraft translation,
+  // but attitude is deliberately absent: a Cobra stands upright in frame and a Kulbit turns
+  // inside the flight-path frame instead of dragging the camera around with the nose.
   const psmPhase = aircraftState.psmPhase ?? 'normal'
+  const controlledPsm = isControlledPsmPhase(psmPhase)
+  const psmRecovery = psmPhase === 'recovery'
   const psmManeuver = psmPhase !== 'normal' && psmPhase !== 'high-aoa'
   const pitchHeld = Math.abs(aircraftState.input?.pitch ?? 0) > 0.12
   if (!psmManeuver) chase.actionBlocked = false
@@ -405,42 +451,88 @@ export function updateChaseCamera(chase, camera, {
     && mode === 'chase'
     && !rearView
     && !freeLooking
-    && psmManeuver
+    && controlledPsm
 
   if (!chase.actionHeld
     && !chase.actionBlocked
     && actionEligible
-    && pitchHeld
-    && !accelerateRequested) {
+    && (pitchHeld || chase.actionReturning)) {
     // Capture against the previous aircraft position. The translation pass below carries
     // camera and aim onto this frame before either is compared with its captured target.
     chase.actionOffset.subVectors(camera.position, chase.previousPosition)
     chase.actionTargetOffset.subVectors(chase.aim, chase.previousPosition)
-    chase.actionUp.copy(camera.up)
+    chase.actionUp.copy(camera.up).normalize()
+
+    // The entry velocity is the one invariant a Cobra and a Kulbit share. World up projected
+    // across it gives the shot a readable horizon without ever consulting the aircraft after
+    // capture. At a vertical entry world up has no projection, so the airframe up from the
+    // capture frame is the continuous fallback rather than an arbitrary axis.
+    if (aircraftState.velocity.lengthSq() > 1) {
+      chase.actionFrameForward.copy(aircraftState.velocity).normalize()
+    } else {
+      chase.actionFrameForward.copy(attitude.forward).normalize()
+    }
+    chase.actionFrameUp.copy(LOCAL_UP).addScaledVector(
+      chase.actionFrameForward,
+      -LOCAL_UP.dot(chase.actionFrameForward),
+    )
+    if (chase.actionFrameUp.lengthSq() < 1e-6) {
+      chase.actionFrameUp.copy(attitude.up).addScaledVector(
+        chase.actionFrameForward,
+        -attitude.up.dot(chase.actionFrameForward),
+      )
+    }
+    if (chase.actionFrameUp.lengthSq() < 1e-6) chase.actionFrameUp.copy(BODY_RIGHT)
+    chase.actionFrameUp.normalize()
+    chase.actionFrameRight.crossVectors(
+      chase.actionFrameForward,
+      chase.actionFrameUp,
+    ).normalize()
+
+    const actionScale = distanceScale * chase.boom
+    chase.actionDesiredOffset
+      .copy(chase.actionFrameForward).multiplyScalar(profile.offset.x * actionScale)
+      .addScaledVector(chase.actionFrameUp, profile.offset.y * actionScale)
+      .addScaledVector(chase.actionFrameRight, profile.offset.z * actionScale)
+    chase.actionDesiredTargetOffset
+      .copy(chase.actionFrameForward)
+      .multiplyScalar(profile.lookAhead)
+    chase.actionDesiredUp.copy(chase.actionFrameUp)
+    chase.actionElapsed = 0
+    chase.actionFov = camera.fov
     chase.actionHeld = true
     chase.actionReturning = false
     chase.actionReturnElapsed = 0
-  } else if (chase.actionHeld && (accelerateRequested
+    chase.actionReturnProgress = 0
+  } else if (chase.actionHeld && (!controlledPsm
+    || psmRecovery
     || style !== 'action'
     || mode !== 'chase'
     || rearView
     || freeLooking)) {
-    // Releasing pitch or Alt deliberately does not hand the shot back. A Cobra may be held
-    // upright for several seconds, or stopped near 180 degrees, without the camera beginning
-    // to chase the nose. W is the flight-control handoff; explicit camera controls remain an
-    // escape hatch so free look, rear view, and the nose camera cannot become trapped.
+    // Centring pitch deliberately does not hand the shot back: Cobra hold has no timer.
+    // Pitch Down moves the flight model to recovery and is the semantic camera handoff too.
+    // Camera controls remain an escape hatch so free look, rear view, and the nose camera
+    // cannot become trapped in the authored shot.
     chase.actionHeld = false
-    chase.actionBlocked = psmManeuver
+    // Free look is an explicit rejection of the authored shot and blocks recapture until
+    // PSM ends. Recovery is different: if the pilot releases Pitch Down early and the
+    // flight model returns to a controlled hold, the camera must be allowed to freeze the
+    // pose currently on screen instead of continuing toward the tail.
+    chase.actionBlocked = psmManeuver && freeLooking
     chase.actionReturning = true
-    chase.actionReturnOffset.copy(chase.actionOffset)
+    chase.actionReturnOffset.subVectors(camera.position, chase.previousPosition)
+    chase.actionReturnAimOffset.subVectors(chase.aim, chase.previousPosition)
     // The horizon the held shot was composed on. It has to come back with the boom, on the
     // same clock: now that the ordinary camera rides the full airframe roll, a shot held
     // through an inverted Cobra can be a half-turn away from where the chase rig wants to
     // be, and handing the up axis straight back would spend the whole return in one frame.
     chase.actionReturnUp.copy(camera.up)
     chase.actionReturnElapsed = 0
+    chase.actionReturnProgress = 0
+    chase.actionReturnAlignmentStart = recoveryAlignment(aircraftState.noseOffPathDeg)
   }
-  if (style !== 'action') {
+  if (style !== 'action' || mode !== 'chase' || rearView) {
     chase.actionHeld = false
     chase.actionBlocked = false
     chase.actionReturning = false
@@ -453,7 +545,10 @@ export function updateChaseCamera(chase, camera, {
   chase.followForward.copy(attitude.forward)
   if (mode !== 'nose' && !rearView && aircraftState.velocity.lengthSq() > 1) {
     chase.velocityDirection.copy(aircraftState.velocity).normalize()
-    chase.followForward.lerp(chase.velocityDirection, profile.velocityBlend).normalize()
+    const velocityBlend = style === 'action' && (psmRecovery || chase.actionReturning)
+      ? profile.recoveryVelocityBlend
+      : profile.velocityBlend
+    chase.followForward.lerp(chase.velocityDirection, velocityBlend).normalize()
   }
   /*
   The camera's up is the airframe's up, for the cockpit and for both chase styles alike. The
@@ -598,9 +693,53 @@ export function updateChaseCamera(chase, camera, {
   }
 
   if (chase.actionHeld) {
-    chase.position.copy(aircraftState.position).add(chase.actionOffset)
-    chase.target.copy(aircraftState.position).add(chase.actionTargetOffset)
-    chase.up.copy(chase.actionUp)
+    const entryBlend = MathUtils.smoothstep(
+      chase.actionElapsed,
+      0,
+      ACTION_ENTRY_SETTLE_SECONDS,
+    )
+    const driftBlend = MathUtils.smoothstep(
+      chase.actionElapsed,
+      0,
+      ACTION_DRIFT_SETTLE_SECONDS,
+    )
+    const driftArc = ACTION_DRIFT_ARC_RAD
+      * driftBlend
+      * Math.sin(chase.actionElapsed * 0.55)
+    const driftDolly = 1 + (ACTION_DRIFT_DOLLY
+      * driftBlend
+      * Math.sin(chase.actionElapsed * 0.7))
+    const driftLift = Math.tan(ACTION_DRIFT_TILT_RAD)
+      * (chase.actionDesiredOffset.length() + chase.actionDesiredTargetOffset.length())
+      * driftBlend
+      * (0.72 + (0.28 * Math.sin(chase.actionElapsed * 0.43)))
+
+    chase.actionDriftRotation.setFromAxisAngle(chase.actionFrameUp, driftArc)
+    chase.actionDriftOffset
+      .lerpVectors(chase.actionOffset, chase.actionDesiredOffset, entryBlend)
+      .applyQuaternion(chase.actionDriftRotation)
+      .multiplyScalar(driftDolly)
+    chase.actionDriftTargetOffset
+      .lerpVectors(chase.actionTargetOffset, chase.actionDesiredTargetOffset, entryBlend)
+      .applyQuaternion(chase.actionDriftStep.setFromAxisAngle(
+        chase.actionFrameUp,
+        driftArc * 0.25,
+      ))
+      .addScaledVector(chase.actionFrameUp, driftLift)
+
+    chase.actionDriftRotation.setFromUnitVectors(chase.actionUp, chase.actionDesiredUp)
+    chase.actionDriftUp
+      .copy(chase.actionUp)
+      .applyQuaternion(chase.actionDriftStep.identity().slerp(
+        chase.actionDriftRotation,
+        entryBlend,
+      ))
+      .normalize()
+
+    chase.position.copy(aircraftState.position).add(chase.actionDriftOffset)
+    chase.target.copy(aircraftState.position).add(chase.actionDriftTargetOffset)
+    chase.up.copy(chase.actionDriftUp)
+    chase.actionElapsed += step
     alignment = 1
   }
 
@@ -619,9 +758,7 @@ export function updateChaseCamera(chase, camera, {
   }
 
   const rigidNose = mode === 'nose' && !rearView
-  const response = chase.actionReturning
-    ? (profile.returnResponse ?? profile.positionResponse)
-    : profile.positionResponse
+  const response = profile.positionResponse
   const blend = 1 - Math.exp(-response * step)
   const orbiting = freeLooking && mode !== 'nose'
   const actionFollowing = style === 'action' && mode === 'chase' && !rearView
@@ -651,21 +788,38 @@ export function updateChaseCamera(chase, camera, {
     }
   } else if (chase.actionReturning) {
     /*
-    W hands the shot back along an orbit, not a world-space chord. The direction turns on
-    the unit sphere while the boom length closes independently, so even a Cobra that left
+    Recovery hands the shot back along an orbit, not a world-space chord. The direction turns
+    on the unit sphere while the boom length closes independently, so even a Cobra that left
     the camera in front of the nose travels around the aircraft rather than through it.
 
-    The smoothstep clock is intentional here instead of a frame-wise lerp: it leaves the
-    held shot at rest, gathers pace, then arrives behind the aircraft at rest. The chase
-    target stays live throughout, allowing the player to accelerate into the exit without
-    the camera returning to a tail position the aircraft has already left behind.
+    The clock guarantees a 0.62–0.85 second handoff. Nose/flight-path alignment may advance
+    it inside that window, so Pitch Down feels connected immediately without allowing a
+    single fast physics frame to snap the camera to the tail.
     */
     chase.actionReturnElapsed = Math.min(
       chase.actionReturnElapsed + step,
-      profile.returnDuration ?? 2.4,
+      profile.returnDuration ?? 0.85,
     )
-    const duration = profile.returnDuration ?? 2.4
-    const progress = MathUtils.smoothstep(chase.actionReturnElapsed / duration, 0, 1)
+    const duration = profile.returnDuration ?? 0.85
+    const minimumDuration = Math.min(profile.returnMinDuration ?? 0.62, duration)
+    const clockProgress = MathUtils.smoothstep(chase.actionReturnElapsed / duration, 0, 1)
+    const currentAlignment = recoveryAlignment(aircraftState.noseOffPathDeg)
+    const alignmentProgress = MathUtils.clamp(
+      (currentAlignment - chase.actionReturnAlignmentStart)
+        / Math.max(1 - chase.actionReturnAlignmentStart, 1e-6),
+      0,
+      1,
+    )
+    const alignmentTimeGate = MathUtils.smoothstep(
+      chase.actionReturnElapsed / minimumDuration,
+      0,
+      1,
+    )
+    const progress = Math.max(
+      clockProgress,
+      Math.min(alignmentProgress, alignmentTimeGate),
+    )
+    chase.actionReturnProgress = progress
     const startRadius = chase.actionReturnOffset.length()
     chase.actionReturnTargetDirection.subVectors(chase.position, aircraftState.position)
     const targetRadius = chase.actionReturnTargetDirection.length()
@@ -740,9 +894,17 @@ export function updateChaseCamera(chase, camera, {
   // lagged into line with the sightline degenerates the whole basis. Take the component
   // across the sightline before handing it over and that can never happen.
   const aimDirect = modeChanged || rearChanged || rigidNose || orbiting || chase.actionHeld
-  if (aimDirect) chase.aim.copy(chase.target)
+  if (chase.actionReturning) {
+    chase.actionReturnAimTarget.subVectors(chase.target, aircraftState.position)
+    chase.actionDriftTargetOffset.lerpVectors(
+      chase.actionReturnAimOffset,
+      chase.actionReturnAimTarget,
+      chase.actionReturnProgress,
+    )
+    chase.aim.copy(aircraftState.position).add(chase.actionDriftTargetOffset)
+  } else if (aimDirect) chase.aim.copy(chase.target)
   else chase.aim.lerp(chase.target, 1 - Math.exp(-(
-    chase.actionReturning ? response : profile.targetResponse
+    profile.targetResponse
   ) * step))
 
   chase.look.subVectors(chase.aim, camera.position)
@@ -755,7 +917,7 @@ export function updateChaseCamera(chase, camera, {
   camera.lookAt(chase.aim)
 
   if (chase.actionReturning
-    && chase.actionReturnElapsed >= (profile.returnDuration ?? 2.4)
+    && chase.actionReturnProgress >= 1
     && camera.position.distanceToSquared(chase.position) < 0.0025
     && chase.aim.distanceToSquared(chase.target) < 0.0025) {
     chase.actionReturning = false
@@ -768,25 +930,28 @@ export function updateChaseCamera(chase, camera, {
   const rawDecel = step > 0 ? (chase.previousSpeed - speed) / step : 0
   chase.previousSpeed = speed
   chase.decel = MathUtils.lerp(chase.decel, Math.max(rawDecel, 0), 1 - Math.exp(-5 * step))
-  const targetFov = mode === 'nose'
-    ? NOSE_FOV
-    : profile.baseFov
-      + (profile.speedFov * MathUtils.clamp((speed - 45) / 28, 0, 1))
-      - (profile.brakingFov * MathUtils.clamp(chase.decel / 22, 0, 1))
-      + (profile.maneuverFov * loadBlend)
-      + (profile.burnerFov * burnerLevel)
+  const actionDriftFov = chase.actionFov + (ACTION_DRIFT_FOV
+    * MathUtils.smoothstep(chase.actionElapsed, 0, ACTION_DRIFT_SETTLE_SECONDS)
+    * Math.sin(chase.actionElapsed * 0.65))
+  const targetFov = chase.actionHeld
+    ? actionDriftFov
+    : mode === 'nose'
+      ? NOSE_FOV
+      : profile.baseFov
+        + (profile.speedFov * MathUtils.clamp((speed - 45) / 28, 0, 1))
+        - (profile.brakingFov * MathUtils.clamp(chase.decel / 22, 0, 1))
+        + (profile.maneuverFov * loadBlend)
+        + (profile.burnerFov * burnerLevel)
   chase.fov = MathUtils.lerp(chase.fov, targetFov, 1 - Math.exp(-3.5 * step))
   if (Math.abs(camera.fov - chase.fov) > 0.01 && camera instanceof PerspectiveCamera) {
     camera.fov = chase.fov
     camera.updateProjectionMatrix()
   }
 
-  // Hard manoeuvres already create strong visual motion. Suppressing 85% of the random
-  // buffet at full blend preserves aerodynamic feedback without making the authored shot
-  // vibrate around the aircraft. This one *does* read post-stall as well: a held Cobra shot
-  // is exactly the frame that must not be shaken, which is the opposite of the lens argument
-  // above — the buffet is a thing being taken away from the shot, not added to it.
-  const maneuverShake = MathUtils.lerp(1, 0.15, MathUtils.clamp(Math.max(
+  // Hard manoeuvres already create strong visual motion. The inertial Action shot owns its
+  // deterministic drift and gets no random buffet; every other view keeps the strongly
+  // reduced aerodynamic vibration used at full manoeuvre blend.
+  const maneuverShake = chase.actionHeld ? 0 : MathUtils.lerp(1, 0.15, MathUtils.clamp(Math.max(
     loadBlend,
     aircraftState.psmBlend ?? 0,
   ), 0, 1))

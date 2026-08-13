@@ -32,6 +32,7 @@ function createAircraft(speed = 200) {
     orientation: new Quaternion(),
     velocity: new Vector3(speed, 0, 0),
     aoaDeg: 0,
+    noseOffPathDeg: 0,
     highGBlend: 0,
     psmBlend: 0,
     psmPhase: 'normal',
@@ -80,7 +81,7 @@ function createRig({
   }
   refreshAttitude(attitude, aircraft)
 
-  const step = ({ bodyRate, preserveVelocity = false, accelerateRequested = false } = {}) => {
+  const step = ({ bodyRate, preserveVelocity = false } = {}) => {
     if (bodyRate) {
       aircraft.orientation
         .multiply(new Quaternion().setFromAxisAngle(bodyRate.axis, bodyRate.rate * FRAME))
@@ -102,7 +103,6 @@ function createRig({
       distance,
       cameraLook: look,
       rearView: false,
-      accelerateRequested,
     })
   }
 
@@ -716,105 +716,163 @@ for (const subject of [{ style: 'combat' }, { style: 'action' }, { mode: 'nose' 
   )
 }
 
-// ------------------------------------------------------------ Action holds the entry shot
-// A four-second PSM flip must happen inside one world-space camera angle. Position still
-// rides aircraft translation, but the relative offset, sightline, and horizon stay fixed.
+// ----------------------------------------------------- Action holds the entry flight path
+// A full Kulbit rotates inside the velocity frame captured at entry. The shot is allowed a
+// small deterministic dolly, arc, tilt, and lens breath, but none may become a second turn
+// that chases the aircraft nose around the loop.
 {
   const rig = createRig({ style: 'action' })
   settle(rig)
   rig.aircraft.psmPhase = 'post-stall'
   rig.aircraft.psmBlend = 1
   rig.aircraft.input.pitch = 1
-  const entryOffset = new Vector3().subVectors(rig.camera.position, rig.aircraft.position)
   const entryView = new Quaternion().copy(rig.camera.quaternion)
   const entryFov = rig.camera.fov
   const fullFlip = { axis: new Vector3(0, 0, 1), rate: Math.PI / 2 }
-  let worstOffset = 0
   let worstView = 0
   let worstFov = 0
-  for (let frame = 0; frame < 240; frame += 1) {
-    rig.step({ bodyRate: fullFlip, preserveVelocity: true })
-    worstOffset = Math.max(worstOffset, new Vector3()
-      .subVectors(rig.camera.position, rig.aircraft.position)
-      .distanceTo(entryOffset))
+  let closestRadius = Infinity
+  let farthestRadius = 0
+  for (let frame = 0; frame < 480; frame += 1) {
+    rig.step({ bodyRate: frame < 240 ? fullFlip : undefined, preserveVelocity: true })
+    const radius = rig.camera.position.distanceTo(rig.aircraft.position)
+    closestRadius = Math.min(closestRadius, radius)
+    farthestRadius = Math.max(farthestRadius, radius)
     worstView = Math.max(worstView, rig.camera.quaternion.angleTo(entryView))
     worstFov = Math.max(worstFov, Math.abs(rig.camera.fov - entryFov))
   }
-  assert.equal(rig.chase.actionHeld, true, 'Action must stay held through a 360° PSM flip')
-  assert.ok(worstOffset < 1e-6, `Action offset must stay world-held, drifted ${worstOffset}`)
+  assert.equal(rig.chase.actionHeld, true, 'Action must hold indefinitely after a Kulbit')
   assert.ok(
-    worstView < 1e-6,
-    `Action sightline must not follow the nose through the flip, moved ${worstView}`,
+    rig.chase.actionFrameForward.angleTo(new Vector3(1, 0, 0)) < 1e-6,
+    'Action must capture the entry velocity direction, not the rotating nose',
   )
-  // The lens is the fourth way a held shot could be recomposed, and the only one a
-  // quaternion cannot see. High-G opens the FOV on purpose; a Cobra must not.
   assert.ok(
-    worstFov < 0.01,
-    `Action must not open its lens under a held PSM shot, moved ${worstFov}°`,
+    MathUtils.radToDeg(worstView) < 6,
+    `Action cinematic drift must stay subtle through the flip, moved ${MathUtils.radToDeg(worstView)}°`,
+  )
+  assert.ok(
+    farthestRadius / closestRadius < 1.08,
+    `Action dolly must stay inside an 8% framing window, ${closestRadius} to ${farthestRadius}`,
+  )
+  assert.ok(
+    worstFov < 1,
+    `Action lens breath must stay below one degree during PSM, moved ${worstFov}°`,
   )
 }
 
-// Releasing pitch and Alt after a half flip must leave the shot alone for a full five
-// seconds. W is the only flight-control handoff, and its return starts smoothly rather
-// than spending the first frame snapping toward the new tail position.
+// A centred stick keeps a Cobra in the inertial shot for as long as the pilot wants. Pitch
+// Down is the handoff: recovery follows the returning nose, starts without a cut, travels an
+// orbit instead of a chord through the aircraft, and completes inside the authored window.
 {
   const rig = createRig({ style: 'action' })
   settle(rig)
-  rig.aircraft.psmPhase = 'post-stall-flip'
+  rig.aircraft.psmPhase = 'post-stall'
   rig.aircraft.psmBlend = 1
   rig.aircraft.input.pitch = 1
-  const halfFlip = { axis: new Vector3(0, 0, 1), rate: Math.PI / 2 }
-  for (let frame = 0; frame < 120; frame += 1) {
-    rig.step({ bodyRate: halfFlip, preserveVelocity: true })
+  rig.aircraft.noseOffPathDeg = 90
+  const cobraPull = { axis: new Vector3(0, 0, 1), rate: Math.PI / 2 }
+  for (let frame = 0; frame < 60; frame += 1) {
+    rig.step({ bodyRate: cobraPull, preserveVelocity: true })
   }
-  const heldView = new Quaternion().copy(rig.camera.quaternion)
   rig.aircraft.input.pitch = 0
   rig.aircraft.psmPhase = 'cobra-hold'
-  let worstHeldView = 0
-  for (let frame = 0; frame < 120; frame += 1) {
-    rig.step({ preserveVelocity: true })
-    worstHeldView = Math.max(worstHeldView, heldView.angleTo(rig.camera.quaternion))
-  }
-  // Alt release / PSM completion is represented by the model returning to NORMAL. It must
-  // not be treated as camera intent: the shot remains where the player left it.
-  rig.aircraft.psmPhase = 'normal'
-  rig.aircraft.psmBlend = 0
-  for (let frame = 0; frame < 180; frame += 1) {
-    rig.step({ preserveVelocity: true })
-    worstHeldView = Math.max(worstHeldView, heldView.angleTo(rig.camera.quaternion))
-  }
-  assert.equal(rig.chase.actionHeld, true, 'Pitch/Alt release must keep Action held for 5s')
-  assert.equal(rig.chase.actionReturning, false, 'elapsed time must never return Action')
-  assert.ok(
-    worstHeldView < 1e-6,
-    `the held Action sightline must remain unchanged for 5s, moved ${worstHeldView}`,
-  )
+  for (let frame = 0; frame < 300; frame += 1) rig.step({ preserveVelocity: true })
+  assert.equal(rig.chase.actionHeld, true, 'a centred Cobra must keep the inertial shot')
+  assert.equal(rig.chase.actionReturning, false, 'elapsed hold time must not return Action')
 
-  rig.step({ preserveVelocity: true, accelerateRequested: true })
-  assert.equal(rig.chase.actionHeld, false, 'W acceleration must release the Action shot')
-  assert.equal(rig.chase.actionReturning, true, 'W must enter a smooth camera return')
-  assert.ok(
-    heldView.angleTo(rig.camera.quaternion) < MathUtils.degToRad(2),
-    'the first W-return frame must not snap toward the tail',
-  )
+  const heldView = new Quaternion().copy(rig.camera.quaternion)
   const returnStartRadius = rig.camera.position.distanceTo(rig.aircraft.position)
   let nearestReturnRadius = returnStartRadius
-  for (let frame = 0; frame < 360; frame += 1) {
-    rig.step({ preserveVelocity: true })
+  let returnFrames = -1
+  rig.aircraft.input.pitch = -1
+  rig.aircraft.psmPhase = 'recovery'
+  const pitchDown = { axis: new Vector3(0, 0, 1), rate: -MathUtils.degToRad(120) }
+  for (let frame = 0; frame < 90; frame += 1) {
+    rig.aircraft.noseOffPathDeg = Math.max(0, 90 - ((frame + 1) * 2))
+    rig.step({ bodyRate: frame < 45 ? pitchDown : undefined, preserveVelocity: true })
     nearestReturnRadius = Math.min(
       nearestReturnRadius,
       rig.camera.position.distanceTo(rig.aircraft.position),
     )
+    if (returnFrames < 0 && !rig.chase.actionReturning) returnFrames = frame + 1
+    if (frame === 0) {
+      assert.ok(
+        heldView.angleTo(rig.camera.quaternion) < MathUtils.degToRad(2),
+        'the first Pitch Down recovery frame must not snap toward the nose',
+      )
+    }
   }
+  const returnSeconds = returnFrames * FRAME
+  assert.equal(rig.chase.actionHeld, false, 'Pitch Down must release the inertial hold')
+  assert.ok(
+    returnSeconds >= 0.6 && returnSeconds <= 0.9,
+    `Action recovery must finish in 0.6–0.9s, took ${returnSeconds}s`,
+  )
   assert.ok(
     nearestReturnRadius > returnStartRadius * 0.72,
-    `Action return must orbit around the aircraft, not cut a chord through it: ${nearestReturnRadius}`,
+    `Action recovery must orbit, not cut through the aircraft: ${nearestReturnRadius}`,
   )
+  for (let frame = 0; frame < 180; frame += 1) rig.step({ preserveVelocity: true })
   assert.ok(
     rig.camera.position.distanceTo(rig.chase.position) < 0.06,
-    'Action must settle back onto the live chase position',
+    `Action must settle back onto the live nose-follow position, gap ${rig.camera.position.distanceTo(rig.chase.position)}`,
   )
-  assert.equal(rig.chase.actionReturning, false, 'Action return must finish cleanly')
+  assert.equal(rig.chase.actionReturning, false, 'Action recovery must finish cleanly')
+}
+
+// The flight model lets an early Pitch Down release interrupt recovery and hold the new
+// attitude. The camera must honour the same ownership: recapture the current screen pose
+// without a cut instead of finishing a return the pilot cancelled.
+{
+  const rig = createRig({ style: 'action' })
+  settle(rig)
+  rig.aircraft.psmPhase = 'post-stall'
+  rig.aircraft.psmBlend = 1
+  rig.aircraft.input.pitch = 1
+  for (let frame = 0; frame < 45; frame += 1) {
+    rig.step({
+      bodyRate: { axis: new Vector3(0, 0, 1), rate: Math.PI / 2 },
+      preserveVelocity: true,
+    })
+  }
+  rig.aircraft.psmPhase = 'recovery'
+  rig.aircraft.input.pitch = -1
+  rig.aircraft.noseOffPathDeg = 65
+  rig.step({ preserveVelocity: true })
+  assert.equal(rig.chase.actionReturning, true, 'Pitch Down must begin camera recovery')
+  const interruptedView = new Quaternion().copy(rig.camera.quaternion)
+
+  rig.aircraft.psmPhase = 'cobra-hold'
+  rig.aircraft.input.pitch = 0
+  rig.step({ preserveVelocity: true })
+  assert.equal(rig.chase.actionHeld, true, 'an interrupted recovery must resume Action hold')
+  assert.equal(rig.chase.actionReturning, false, 'resumed hold must cancel camera recovery')
+  assert.ok(
+    interruptedView.angleTo(rig.camera.quaternion) < MathUtils.degToRad(1),
+    'resuming hold must capture the current view without a cut',
+  )
+}
+
+// Outside PSM, Action stays velocity-dominant. At the top of an Immelmann the original
+// flight path therefore keeps the camera behind the motion while the reversed nose points
+// back toward the screen — the cinematic front view the manoeuvre needs.
+{
+  const rig = createRig({ style: 'action' })
+  settle(rig)
+  const halfLoop = { axis: new Vector3(0, 0, 1), rate: Math.PI / 2 }
+  for (let frame = 0; frame < 120; frame += 1) {
+    rig.step({ bodyRate: halfLoop, preserveVelocity: true })
+  }
+  for (let frame = 0; frame < 90; frame += 1) rig.step({ preserveVelocity: true })
+  const towardCamera = new Vector3()
+    .subVectors(rig.camera.position, rig.aircraft.position)
+    .normalize()
+    .dot(rig.attitude.forward)
+  const pathGap = MathUtils.radToDeg(rig.chase.followForward.angleTo(
+    new Vector3().copy(rig.aircraft.velocity).normalize(),
+  ))
+  assert.ok(towardCamera > 0.8, `Immelmann nose must point toward the Action lens, ${towardCamera}`)
+  assert.ok(pathGap < 10, `Action must stay close to the Immelmann flight path, gap ${pathGap}°`)
 }
 
 // ------------------------------------------------------- manoeuvre buffet is intentionally calm
