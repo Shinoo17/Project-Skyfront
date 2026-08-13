@@ -27,8 +27,6 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { createFlightHud } from './hud'
-import { readCommandSpeedLimits, setCommandSpeedKmh } from '../flight/useFlightControls'
-import { readDryCeilingKmh } from '../flight/performance'
 import { EMPTY_TELEMETRY } from '../flight/telemetry'
 
 const RESET_CAPTIONS = {
@@ -90,7 +88,7 @@ function readAdvisory(telemetry) {
     return { key: 'psm-recovery', label: 'PSM RECOVERY', tone: 'caution' }
   }
   if (telemetry.psmPhase === 'cobra-hold') {
-    return { key: 'psm-cobra', label: 'COBRA HOLD · ↓ RECOVER · W EXIT', tone: 'caution' }
+    return { key: 'psm-cobra', label: 'COBRA HOLD · ↓ RECOVER · ↑ CONTINUE', tone: 'caution' }
   }
   if (telemetry.psmPhase === 'post-stall-flip') {
     return { key: 'psm-flip', label: 'FLIP · RELEASE TO HOLD · ↓ RECOVER', tone: 'caution' }
@@ -106,19 +104,14 @@ function readAdvisory(telemetry) {
   const maneuver = MANEUVER_CAPTIONS[telemetry.maneuver]
   if (maneuver) return { key: `mnv-${telemetry.maneuver}`, label: maneuver, tone: 'caution' }
   // The max-performance turn, named while it is being flown. It ranks below the manoeuvre
-  // captions because it cannot happen at the same time as any of them, and it says what it
-  // costs: the whole point of the control is that the pilot is spending energy for rate.
-  // The power is cut for as long as the key is held, so the caption has to say so: a
-  // throttle bar sitting at idle in the middle of a nine-G pull reads as a failed engine
-  // otherwise, and the commanded speed is still sitting there waiting to be flown back to.
+  // captions because it cannot happen at the same time as any of them, and says the one
+  // consequence the pilot needs now: MIL power cannot refund the turn's energy bill.
   if (telemetry.highGBlend > 0.5) {
-    return { key: 'high-g', label: 'HIGH-G TURN · POWER CUT · ENERGY BLEED', tone: 'caution' }
+    return { key: 'high-g', label: 'HIGH-G TURN · SPEED BLEED', tone: 'caution' }
   }
-  // The other reading of the same key, and it ranks below the turn for the same reason the
-  // taper exists: a deflected stick means the pilot is turning, and the board is already on
-  // its way shut by the time this would be worth saying.
+  // The airbrake is independent and may remain active during this or any other regime.
   if (telemetry.airBrake) {
-    return { key: 'airbrake', label: 'AIRBRAKE · POWER CUT', tone: 'caution' }
+    return { key: 'airbrake', label: 'AIRBRAKE · HEAVY DECEL', tone: 'caution' }
   }
   if (telemetry.flaps) return { key: 'flaps', label: 'FLAPS DOWN', tone: 'caution' }
   return { key: 'clear', label: 'FLIGHT PATH CLEAR', tone: 'normal' }
@@ -213,16 +206,22 @@ function FreeLookControl({ controls }) {
 function formatDebug(value) {
   if (!value.live) return 'FLIGHT DEBUG\nstandby'
   const row = (label, text) => `${label.padEnd(9)}${text}`
+  const trend = value.acceleration > 5 ? '↑' : value.acceleration < -5 ? '↓' : '→'
   return [
     'FLIGHT DEBUG',
-    row('SPD', `${value.speed.toFixed(0)} km/h  M${value.mach.toFixed(2)}`
-      + `  CMD ${value.commandSpeed.toFixed(0)}`),
+    row('SPD', `${value.speed.toFixed(0)} km/h ${trend} ${value.acceleration.toFixed(1)} km/h/s`
+      + `  M${value.mach.toFixed(2)}`),
     row('FWD', `${value.forwardSpeed.toFixed(0)} km/h  ${value.flightRegime}`),
+    row('ENGINE', `cmd ${value.commandedThrottle.toFixed(2)}  actual ${value.engineThrottle.toFixed(2)}`),
+    row('FORCE', `T ${value.thrust.toFixed(1)}  D ${value.totalDrag.toFixed(1)} km/h/s`),
+    row('DRAG', `P ${value.parasiteDrag.toFixed(1)}  I ${value.inducedDrag.toFixed(1)}`
+      + `  B ${value.airbrakeDrag.toFixed(1)}`),
+    row('BRAKE', `${Math.round(value.airbrakeAmount * 100)}%`),
     row('ALT', `${value.altitude.toFixed(0)}  V/S ${value.verticalSpeed.toFixed(1)}`),
     row('AOA', `${value.aoa.toFixed(1)}°  SLIP ${value.sideslip.toFixed(1)}°`),
-    row('G', value.gLoad.toFixed(2)),
+    row('G', `${value.currentG.toFixed(2)}${value.extremeManeuverActive ? '  EXTREME' : ''}`),
     row('RATE', `P${value.pitchRate.toFixed(0)} R${value.rollRate.toFixed(0)} Y${value.yawRate.toFixed(0)} °/s`),
-    row('THR', `${Math.round(value.throttle * 100)}%  A/B ${value.afterburnerState}`),
+    row('A/B', value.afterburnerState),
     row('TVC', `${value.thrustVector.toFixed(1)}°`),
     row('STALL', `${Math.round(value.postStallBlend * 100)}%${value.airBrake ? ' +brake' : ''}`),
     row('HI-G', `${Math.round(value.highGBlend * 100)}%`),
@@ -258,9 +257,6 @@ export default function FlightHud({
   mouseStickLive = true,
 }) {
   const glassOnly = variant === 'glass'
-  // The widest band the selector ever spans. Its live `max` is narrowed to the dry ceiling
-  // at the current altitude every frame; this is only the outer bound.
-  const commandSpeedLimits = readCommandSpeedLimits(envelope)
   const dom = useRef({})
   const [advisory, setAdvisory] = useState(() => readAdvisory(EMPTY_TELEMETRY))
   const advisoryKey = useRef(advisory.key)
@@ -317,10 +313,6 @@ export default function FlightHud({
       setText(nodes.afterburnerReserve, value.live
         ? value.afterburnerSeconds.toFixed(1)
         : '–')
-      if (nodes.throttleFill) {
-        nodes.throttleFill.style.setProperty('--thrust', String(value.throttle))
-        nodes.throttleFill.classList.toggle('is-afterburner', value.afterburner)
-      }
       // The reserve rides on the key itself, so the pilot's thumb and their eye are on the
       // same control while the burner drains.
       if (nodes.afterburner) {
@@ -328,18 +320,16 @@ export default function FlightHud({
         nodes.afterburner.classList.toggle('is-active', value.afterburner)
         nodes.afterburner.classList.toggle('is-depleted', value.afterburnerState === 'depleted')
       }
-      if (nodes.slider && document.activeElement !== nodes.slider) {
-        const rounded = Math.round(value.commandSpeed / 10) * 10
-        if (Number(nodes.slider.value) !== rounded) nodes.slider.value = String(rounded)
-      }
-      // The selector tops out at the dry speed this altitude can actually hold, so its
-      // travel always means something. The stored command is left alone — only the range
-      // of the widget moves, and reheat is a separate burst past the end of it.
-      if (nodes.slider && value.live) {
-        const ceiling = String(Math.round(readDryCeilingKmh(value.altitude, envelope)))
-        if (nodes.slider.max !== ceiling) nodes.slider.max = ceiling
-      }
-      setText(nodes.commandSpeed, value.live ? value.commandSpeed.toFixed(0) : '–')
+      const powerIntent = value.extremeManeuverActive
+        ? 'EXTREME · HOLD'
+        : value.afterburnerActive
+          ? 'AFTERBURNER'
+          : value.commandedThrottle >= 0.99
+            ? 'MIL POWER'
+            : value.commandedThrottle <= 0.01
+              ? 'IDLE'
+              : 'AUTO ASSIST'
+      setText(nodes.powerIntent, value.live ? powerIntent : '–')
       if (nodes.debug) setText(nodes.debug, formatDebug(value))
     }
 
@@ -349,19 +339,6 @@ export default function FlightHud({
       observer.disconnect()
     }
   }, [telemetry, envelope])
-
-  useEffect(() => {
-    const slider = dom.current.slider
-    if (!slider) return undefined
-
-    // The slider names a speed, the same as W and S do. Nothing here touches the throttle:
-    // power is derived from the commanded speed every frame.
-    const setSpeed = (event) => {
-      setCommandSpeedKmh(controls.current, Number(event.currentTarget.value), envelope)
-    }
-    slider.addEventListener('input', setSpeed)
-    return () => slider.removeEventListener('input', setSpeed)
-  }, [controls, envelope])
 
   return (
     <div
@@ -441,17 +418,13 @@ export default function FlightHud({
           </div>
 
           <div className="deck-row is-modes">
-            {/* The two flight-action keys, side by side because the difference between them
-                is the thing the pilot has to learn: BRK/G brakes with the stick centred and
-                turns as hard as the wing can with it deflected, and MNV consents to leaving
-                the wing behind. */}
             <HoldControl
-              control="high-g"
-              label="Hold to air brake, or to turn hard while the stick is deflected"
+              control="air-brake"
+              label="Hold to deploy the airbrake"
               icon={Orbit}
               controls={controls}
             >
-              BRK/G
+              BRK
             </HoldControl>
             <HoldControl
               control="maneuver-assist"
@@ -479,30 +452,17 @@ export default function FlightHud({
 
           <div className="deck-throttle">
             <div className="deck-throttle-head">
-              <span><Gauge size={14} strokeWidth={1.9} /> SPEED</span>
-              {/* The commanded number in words, and the power serving it as a bar. The
-                  pilot flies the number; the bar is only there to show what it costs. */}
+              <span><Gauge size={14} strokeWidth={1.9} /> POWER INTENT</span>
               <span className="deck-command-speed">
-                <b ref={(node) => { dom.current.commandSpeed = node }}>–</b> km/h
+                <b ref={(node) => { dom.current.powerIntent = node }}>–</b>
               </span>
-              <div className="deck-thrust" ref={(node) => { dom.current.throttleFill = node }} aria-hidden="true">
-                <i />
-              </div>
             </div>
             <div className="deck-throttle-row">
-              <HoldControl control="throttle-down" label="Ask for less speed and open the air brake" icon={Minus} controls={controls}>
+              <HoldControl control="throttle-down" label="Request idle power" icon={Minus} controls={controls}>
                 Slow
               </HoldControl>
-              <input
-                type="range"
-                min={commandSpeedLimits.min}
-                max={commandSpeedLimits.max}
-                step="10"
-                defaultValue={commandSpeedLimits.min}
-                ref={(node) => { dom.current.slider = node }}
-                aria-label="Commanded airspeed in kilometres per hour"
-              />
-              <HoldControl control="throttle-up" label="Ask for more speed" icon={Plus} controls={controls}>
+              <span className="deck-power-hint"><kbd>W</kbd> + <kbd>S</kbd> EXTREME</span>
+              <HoldControl control="throttle-up" label="Request military power" icon={Plus} controls={controls}>
                 Fast
               </HoldControl>
             </div>
@@ -521,9 +481,10 @@ export default function FlightHud({
         <kbd>↑</kbd><kbd>↓</kbd><span>pitch</span>
         <kbd>A</kbd><kbd>D</kbd><span>roll</span>
         <kbd>Q</kbd><kbd>E</kbd><span>yaw</span>
-        <kbd>W</kbd><kbd>S</kbd><span>faster / slower · holds</span>
+        <kbd>W</kbd><kbd>S</kbd><span>MIL power / idle</span>
+        <kbd>W+S</kbd><span>extreme maneuver</span>
         <kbd>SHIFT</kbd><span>afterburner</span>
-        <kbd>SPACE</kbd><span>air brake · turn hard while pulling</span>
+        <kbd>SPACE</kbd><span>airbrake</span>
         <kbd>ALT</kbd><kbd>↑</kbd><span>maneuver</span>
         <kbd>C</kbd><kbd>ESC</kbd><span>camera · release &amp; menu</span>
       </p>}

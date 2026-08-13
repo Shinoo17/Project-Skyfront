@@ -146,13 +146,16 @@ const MANEUVERS = [
     exitsLevel: true,
     entry: { throttle: THROTTLE_LOW, settleSeconds: 2.2 },
     steps: [
-      { seconds: 2.2, hold: [], axes: { pitch: 0.72 }, label: 'ZOOM' },
-      { seconds: 1.8, hold: ['yaw-right', 'afterburner'], label: 'PEDAL' },
-      { seconds: 0.7, hold: [], axes: { pitch: -0.25 }, label: 'LEVEL OFF' },
-      // The jet comes out of the pedal turn at about 340 km/h, and at that energy the nose
-      // keeps falling on its own — the FCC damps rate, it does not hold an attitude. A
-      // little back stick on the way out is what a pilot would be doing anyway.
-      { seconds: 1.0, hold: [], axes: { pitch: 0.62 }, label: 'SETTLE' },
+      // S now owns the light 100 km/h/s brake, so the setup commands the low-energy apex
+      // explicitly instead of relying on climb drag to happen to deliver it.
+      { seconds: 2.0, hold: ['throttle-down'], axes: { pitch: 0.72 }, label: 'ZOOM / BRAKE' },
+      { seconds: 0.2, hold: ['throttle-down', 'yaw-right'], axes: { pitch: 0.72 }, label: 'PEDAL IN' },
+      { seconds: 0.9, hold: ['yaw-right', 'afterburner'], label: 'PEDAL / POWER' },
+      { seconds: 1.0, hold: ['yaw-right'], label: 'PEDAL / COAST' },
+      { seconds: 0.95, hold: ['afterburner'], axes: { pitch: -0.9 }, label: 'LEVEL OFF' },
+      // The explicit S setup leaves more energy in the recovery than the old climb-drag
+      // setup did, so only a light back-stick capture is needed after the forward sweep.
+      { seconds: 0.65, hold: [], axes: { pitch: 0.1 }, label: 'SETTLE' },
     ],
   },
 

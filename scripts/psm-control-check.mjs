@@ -6,7 +6,7 @@ These scenarios exercise the deliberate PSM state machine rather than maneuver l
   - holding Pitch Up can carry one continuous rotation past 360 degrees;
   - a 180-degree reversal preserves old momentum and engine force reverses it over time;
   - Pitch Down is the only input that starts assisted recovery;
-  - the reversal survives the spring-loaded power lever returning to trim.
+  - the reversal survives a slow speed selection while reheat reverses momentum.
 
 The first four drive the model with hand-built command objects, which deliberately skips
 the input layer. The last one goes through `stepFlightInput` instead, because the thing it
@@ -27,6 +27,7 @@ import {
   resetFlightState,
   stepFlight,
 } from '../src/features/flight/flightModel.js'
+import { readThrottlePower } from '../src/features/flight/performance.js'
 
 const envelope = f22.flight.envelope
 const tuning = envelope.maneuvering
@@ -211,7 +212,7 @@ speed-selector decision — and what lets the pilot enter it slow, as the manoeu
 */
 {
   const state = createEntry(480)
-  const controls = createFlightInputState(480)
+  const controls = createFlightInputState(readThrottlePower(0.5, envelope))
   let released = false
   let minVx = state.velocity.x
   let maxVxAfterRelease = -Infinity
@@ -226,16 +227,21 @@ speed-selector decision — and what lets the pilot enter it slow, as the manoeu
       controls.pressed.add('pitch-up')
     }
 
-    const input = stepFlightInput(controls, FLIGHT_FIXED_STEP, envelope, state.position.y)
+    const input = stepFlightInput(controls, FLIGHT_FIXED_STEP, envelope, state.position.y, {
+      speedKmh: state.speedKmh,
+    })
     stepFlight(state, {
       pitch: input.pitch,
       roll: input.roll,
       yaw: input.yaw,
       flaps: input.flaps,
       throttle: input.throttle,
+      commandedThrottle: input.commandedThrottle,
       airBrake: input.airBrake,
       accelerate: input.accelerate,
+      decelerate: input.decelerate,
       psmArm: input.psmArm,
+      extremeManeuverActive: input.extremeManeuverActive,
       afterburnerCommanded: input.afterburner,
       burnerLevel: input.afterburner ? 1 : 0,
     }, envelope, FLIGHT_FIXED_STEP)
@@ -246,19 +252,17 @@ speed-selector decision — and what lets the pilot enter it slow, as the manoeu
     }
   }
 
-  assert.ok(released, 'Speed command: the entry must still reach the reversal point')
-  assert.equal(controls.commandSpeedKmh, 480,
-    'Speed command: the manoeuvre must not need the speed control touched at all')
-  assert.ok(controls.throttle < 1,
-    'Speed command: a slow command must leave the lever well off full power')
-  assert.ok(maxVxAfterRelease > 5, 'Speed command: old forward momentum must survive the turn')
+  assert.ok(released, 'Engine intent: the entry must still reach the reversal point')
+  assert.ok(controls.commandedThrottle < 1,
+    'Engine intent: Shift must override the core for reheat without rewriting dry intent')
+  assert.ok(maxVxAfterRelease > 5, 'Engine intent: old forward momentum must survive the turn')
   assert.ok(minVx < -2,
-    `Speed command: reheat must reverse world velocity on its own (min ${minVx.toFixed(1)})`)
+    `Engine intent: reheat must reverse world velocity on its own (min ${minVx.toFixed(1)})`)
 
-  console.log(`SPEED COMMAND cmd=${controls.commandSpeedKmh.toFixed(0)}kmh`
-    + ` thr=${controls.throttle.toFixed(2)}`
+  console.log(`ENGINE INTENT cmd=${controls.commandedThrottle.toFixed(2)}`
+    + ` actual=${state.engineThrottle.toFixed(2)}`
     + ` range=${maxVxAfterRelease.toFixed(1)}..${minVx.toFixed(1)} speed=${state.speedKmh.toFixed(0)}kmh`)
 }
 
 console.log('PASS PSM control: hold, continuous flip, inertial reversal, player-owned recovery,'
-  + ' reversal from a slow speed command')
+  + ' reversal from partial dry-power intent')

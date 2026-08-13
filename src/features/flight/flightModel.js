@@ -47,10 +47,10 @@ two are kept apart on purpose:
   psmArm   consent to leave that envelope: the post-stall alpha limit, the nozzle-fed rate
            authority, and the phases that go with them.
 
-`highGBlend` and `psmBlend` are therefore separate numbers with separate consumers.
-`envelopeOpen` — the one door to post-stall authority — reads `psmBlend` and never
-`highGBlend`, which is what makes "hold Space and pull" a hard turn rather than a Cobra no
-matter how long it is held or how slow the aircraft gets.
+`highGBlend` and `psmBlend` are therefore separate numbers with separate consumers. The
+keyboard's W+S Extreme chord requests both intents, then aircraft energy decides which
+envelope can answer: High-G remains conventional and `psmArm` is the only value allowed to
+open post-stall authority. Dedicated bot/HOTAS actions may still request either one alone.
 
 Unassisted high-AoA control still reads two continuous numbers every step:
 
@@ -126,6 +126,11 @@ function smooth01(value) {
 // Frame-rate independent first-order chase.
 function approach(current, target, rate, dt) {
   return current + ((target - current) * (1 - Math.exp(-rate * dt)))
+}
+
+function moveTowards(current, target, maxDelta) {
+  if (Math.abs(target - current) <= maxDelta) return target
+  return current + (Math.sign(target - current) * maxDelta)
 }
 
 function enterPsmPhase(state, phase) {
@@ -341,11 +346,12 @@ It is a request, an energy gate, and a first-order chase — nothing else. What 
 then buys lives entirely inside the conventional envelope: a faster pitch rate, a higher G
 ceiling, an alpha fence that stays below the stall, a quicker roll, and a much larger
 induced-drag bill. It is deliberately never mixed into `envelopeOpen`, which is the only
-door to post-stall authority, so Space cannot open what Alt is for.
+door to post-stall authority. The W+S Extreme chord publishes `psmArm` separately when the
+player intends to cross that door; a dedicated High-G action cannot do it by accident.
 
-An armed PSM owns the pitch axis outright, so the trigger stands down there rather than
-having two assists bidding for the same axis. Releasing Alt hands the blend straight back,
-on the same smooth chase everything else here uses.
+An armed PSM owns the pitch axis outright, so High-G stands down there rather than having
+two assists bidding for the same axis. Releasing the chord/assist hands the blend straight
+back on the same smooth chase everything else here uses.
 */
 function stepHighG(state, command, tuning, dt) {
   const highG = tuning.highGTurn
@@ -379,9 +385,20 @@ export function createFlightState() {
     angularVelocity: new Vector3(),
     // Pilot input after smoothing — also what the control surfaces animate from.
     input: { pitch: 0, roll: 0, yaw: 0 },
-    // Actual dry-engine core power after spool, 0..1. The throttle is its setpoint; an
-    // afterburner request temporarily drives the target through the MIL detent.
+    // Dry power command and actual spooled engine power, both normalized idle..MIL.
+    commandedThrottle: 0,
+    engineThrottle: 0,
+    // Compatibility alias used by existing nozzle/FX code.
     engineCoreLevel: 0,
+    afterburnerActive: false,
+    extremeManeuverActive: false,
+    airbrakeAmount: 0,
+    acceleration: 0,
+    thrust: 0,
+    parasiteDrag: 0,
+    inducedDrag: 0,
+    airbrakeDrag: 0,
+    totalDrag: 0,
     speedKmh: 0,
     // Signed speed along the nose. Unlike `speedKmh`, this goes negative in a tailslide.
     forwardSpeedKmh: 0,
@@ -484,7 +501,18 @@ export function resetFlightState(
   state.input.pitch = 0
   state.input.roll = 0
   state.input.yaw = 0
-  state.engineCoreLevel = readThrottlePower(throttle, envelope)
+  state.commandedThrottle = readThrottlePower(throttle, envelope)
+  state.engineThrottle = state.commandedThrottle
+  state.engineCoreLevel = state.engineThrottle
+  state.afterburnerActive = false
+  state.extremeManeuverActive = false
+  state.airbrakeAmount = 0
+  state.acceleration = 0
+  state.thrust = 0
+  state.parasiteDrag = 0
+  state.inducedDrag = 0
+  state.airbrakeDrag = 0
+  state.totalDrag = 0
   state.speedKmh = speedKmh
   state.forwardSpeedKmh = speedKmh
   state.backwardFlight = false
@@ -620,9 +648,9 @@ function liftShape(alphaRad, tuning) {
 /*
 One fixed step. `command` is the resolved pilot intent:
 
-  { pitch, roll, yaw: -1..1, throttle: 0..1, flaps: 0..1,
+  { pitch, roll, yaw: -1..1, commandedThrottle: 0..1, flaps: 0..1,
     airBrake: 0..1, accelerate: boolean, decelerate: boolean,
-    highG: boolean, psmArm: boolean,
+    highG: boolean, psmArm: boolean, extremeManeuverActive: boolean,
     afterburnerCommanded: boolean, burnerLevel: 0..1 }
 
 `highG` and `psmArm` are the two intent flags and they mean different things. `highG` asks
@@ -635,8 +663,16 @@ Returns nothing; mutates `state` in place.
 export function stepFlight(state, command, envelope, dt) {
   const tuning = envelope.maneuvering
   const toWorld = 1 / envelope.performance.kmhPerWorldUnitPerSecond
+  const engine = envelope.engineControl ?? {}
+  const aerodynamics = envelope.aerodynamics ?? {}
 
-  state.airBrake = command.airBrake > 0.05
+  const airbrakeTarget = MathUtils.clamp(command.airBrake ?? 0, 0, 1)
+  const airbrakeRate = airbrakeTarget > state.airbrakeAmount
+    ? (aerodynamics.airbrakeDeployRate ?? 4)
+    : (aerodynamics.airbrakeRetractRate ?? 6)
+  state.airbrakeAmount = moveTowards(state.airbrakeAmount, airbrakeTarget, airbrakeRate * dt)
+  state.airBrake = state.airbrakeAmount > 0.05
+  state.extremeManeuverActive = Boolean(command.extremeManeuverActive)
 
   // Device shaping happens once in flightInput. The model sees the same continuous pilot
   // intent whether it came from keyboard ramping, a gamepad, a pointer, or the touch HUD.
@@ -644,14 +680,19 @@ export function stepFlight(state, command, envelope, dt) {
   state.input.roll = command.roll
   state.input.yaw = command.yaw
 
-  const selectedCorePower = readThrottlePower(command.throttle, envelope)
+  const selectedCorePower = Number.isFinite(command.commandedThrottle)
+    ? MathUtils.clamp(command.commandedThrottle, 0, 1)
+    : readThrottlePower(command.throttle, envelope)
+  state.commandedThrottle = selectedCorePower
   const coreTarget = command.afterburnerCommanded
-    ? Math.max(selectedCorePower, envelope.afterburner.coreTarget)
+    ? Math.max(selectedCorePower, engine.militaryPower ?? envelope.afterburner.coreTarget ?? 1)
     : selectedCorePower
-  const coreResponse = coreTarget > state.engineCoreLevel
-    ? envelope.performance.engineSpoolUpResponse
-    : envelope.performance.engineSpoolDownResponse
-  state.engineCoreLevel = approach(state.engineCoreLevel, coreTarget, coreResponse, dt)
+  const coreRate = coreTarget > state.engineThrottle
+    ? (engine.engineSpoolUpRate ?? 1)
+    : (engine.engineSpoolDownRate ?? 1.5)
+  state.engineThrottle = moveTowards(state.engineThrottle, coreTarget, coreRate * dt)
+  state.engineCoreLevel = state.engineThrottle
+  state.afterburnerActive = (command.burnerLevel ?? 0) > 0
 
   const speed = state.velocity.length()
   state.speedKmh = speed / toWorld
@@ -1015,8 +1056,8 @@ export function stepFlight(state, command, envelope, dt) {
 
   // Normal-flight stall protection. The soft fence removes further pilot demand before
   // the stall; this small restoring rate catches momentum that carries the nose beyond it.
-  // It is deliberately absent while PSM owns pitch, so Space remains a clean consent line
-  // rather than an assist fighting another assist.
+  // It is deliberately absent while PSM owns pitch, so the explicit PSM intent remains a
+  // clean consent line rather than an assist fighting another assist.
   if (!psmOwnsPitch && sensedAlphaRad > 0 && state.input.pitch >= 0) {
     const protectedLimit = aoaLimit
     const protectionNeed = smooth01(
@@ -1397,6 +1438,7 @@ export function stepFlight(state, command, envelope, dt) {
     state.engineCoreLevel, command.burnerLevel, envelope) * toWorld
   accel.addScaledVector(worldForward, propulsion)
   state.thrustForce.copy(worldForward).multiplyScalar(propulsion)
+  state.thrust = propulsion / toWorld
 
   // Lift is the aircraft-up axis projected perpendicular to the relative wind. Banking
   // rotates this vector with the airframe, so its vertical share falls naturally (roughly
@@ -1446,8 +1488,9 @@ export function stepFlight(state, command, envelope, dt) {
   const postStallBlend = smooth01(
     (alphaDeg - tuning.stallAoADeg) / tuning.postStallDisplayRangeDeg,
   )
-  let dragMag = readDragKmhPerSecond(
-    state.speedKmh, state.position.y, envelope) * toWorld
+  const parasiteCoefficient = aerodynamics.parasiteDragCoefficient ?? 1
+  let parasiteDrag = readDragKmhPerSecond(
+    state.speedKmh, state.position.y, envelope) * toWorld * parasiteCoefficient
   /*
   Separated-flow drag shape. Sine up to the beam, and past it a decay toward a floor rather
   than either of the two obvious wrong answers.
@@ -1477,15 +1520,31 @@ export function stepFlight(state, command, envelope, dt) {
   trigger still held costs nothing extra, and a maximum pull costs several times what the
   same pull costs without it.
   */
-  dragMag += qFactor * (
-    (tuning.aoaDragGain * sinAlpha * sinAlpha
-      * MathUtils.lerp(1, tuning.postStallDragMultiplier, postStallBlend)
-      * MathUtils.lerp(1, highG?.dragMultiplier ?? 1, state.highGBlend)
-      * MathUtils.lerp(1, psm?.dragMultiplier ?? 1, state.psmBlend))
-    + (tuning.sideslipDragGain * sinBeta * sinBeta)
-    + (tuning.airBrakeDrag * command.airBrake)
+  parasiteDrag += qFactor * (
+    (tuning.sideslipDragGain * sinBeta * sinBeta)
     + (tuning.flapsDrag * command.flaps)
   )
+  const currentG = Math.abs(liftMag / gravity)
+  const highGFactor = 1 + (
+    (aerodynamics.inducedDragLoadFactorCoefficient ?? 0.04)
+    * (Math.max(currentG - 1, 0) ** 2)
+  )
+  const inducedDrag = qFactor
+    * (aerodynamics.inducedDragCoefficient ?? 0)
+    * sinAlpha * sinAlpha
+    * highGFactor
+    * MathUtils.lerp(1, tuning.postStallDragMultiplier, postStallBlend)
+    * MathUtils.lerp(1, highG?.dragMultiplier ?? 1, state.highGBlend)
+    * MathUtils.lerp(1, psm?.dragMultiplier ?? 1, state.psmBlend)
+  const airbrakeDrag = qFactor
+    * (aerodynamics.airbrakeDragCoefficient ?? 0)
+    * state.airbrakeAmount
+  const dragMag = parasiteDrag + inducedDrag + airbrakeDrag
+
+  state.parasiteDrag = parasiteDrag / toWorld
+  state.inducedDrag = inducedDrag / toWorld
+  state.airbrakeDrag = airbrakeDrag / toWorld
+  state.totalDrag = dragMag / toWorld
   if (hasPath) {
     accel.addScaledVector(pathDir, -dragMag)
     state.dragForce.copy(pathDir).multiplyScalar(-dragMag)
@@ -1501,6 +1560,7 @@ export function stepFlight(state, command, envelope, dt) {
   if (hasNewPath) pathDir.copy(state.velocity).normalize()
   state.position.addScaledVector(state.velocity, dt)
   state.speedKmh = newSpeed / toWorld
+  state.acceleration = ((newSpeed - speed) / dt) / toWorld
 
   // How far this step actually bent the trajectory. Smoothed, because a single fixed step
   // of it is a very small angle and the regimes read off it should not chatter.

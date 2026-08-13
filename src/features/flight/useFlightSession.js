@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 
 import { getAircraft } from '../../aircraft'
 import { getMap } from '../../maps'
-import { readTargetAirspeedKmh } from './performance'
+import { readThrottlePower } from './performance'
 import { createTelemetry } from './telemetry'
 import useFlightControls from './useFlightControls'
 
@@ -52,16 +52,10 @@ export default function useFlightSession({ mapId, aircraftId, extraKeys, paused 
     ...extraKeys,
   }), [extraKeys, paused])
 
-  // Seeded at the band the range actually flies in so the HUD reads a real commanded speed
-  // on its first frame. FlightAircraft re-seeds it from the map's own spawn altitude the
-  // moment it mounts, which is what a map spawning lower down needs.
+  // Seed the player intent at the aircraft's authored cruise power. Spawn speed is derived
+  // from that trim at the map altitude by FlightAircraft; live speed never is.
   const controls = useFlightControls({
-    commandSpeedKmh: readTargetAirspeedKmh(
-      envelope.idleThrottle,
-      envelope.performance.highAltitude.worldUnits,
-      0,
-      envelope,
-    ),
+    initialCommandedThrottle: readThrottlePower(envelope.idleThrottle, envelope),
     keyActions,
     paused,
   })

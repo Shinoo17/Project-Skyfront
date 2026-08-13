@@ -309,42 +309,40 @@ const f22 = {
     envelope: {
       idleThrottle: 0.42,
       minThrottle: 0.08,
-      // W and S do not move a power lever, they name a speed: the pilot asks for 900 and
-      // the aircraft goes and gets 900. Power is derived from that number rather than
-      // selected directly, which is the whole arcade simplification — one control, one
-      // unit, and the same unit the HUD already shouts in.
-      //
-      // Per second of held key, and deliberately quick: this is the same authority the old
-      // power lever had, so a dogfight can still dump or restore its whole energy state in
-      // about a second and a half. Slowing it down makes the aircraft feel like it is
-      // arguing with the pilot, and the engine is already the thing that decides how fast
-      // the speed actually arrives — the command is only how fast it can be asked for.
-      commandKmhPerSecond: 1320,
+      /*
+      Player intent and engine response. W/S select these dry-power endpoints; they never
+      touch velocity. With neither key held, the input controller softly estimates the dry
+      power needed for current parasite drag, with no remembered target speed. The engine
+      then moves toward that command at the linear rates below.
+      */
+      engineControl: {
+        engineSpoolUpRate: 1.05,
+        engineSpoolDownRate: 1.55,
+        militaryPower: 1,
+        idlePower: 0,
+        afterburnerMultiplier: 370 / 190,
+        autoPowerAssistStrength: 1.4,
+        extremeChordWindow: 0.18,
+      },
+      /*
+      Energy tuning. The base performance curve supplies parasite drag; induced drag and
+      the independent airbrake are layered onto it in the same force integration. The load
+      factor term follows 1 + k(G-1)^2, so violent turns become progressively expensive.
+      */
+      aerodynamics: {
+        parasiteDragCoefficient: 1,
+        inducedDragCoefficient: 26,
+        inducedDragLoadFactorCoefficient: 0.04,
+        airbrakeDragCoefficient: 18,
+        airbrakeDeployRate: 4,
+        airbrakeRetractRate: 6,
+      },
       // The band the speed tape marks: fast enough for the whole high-G envelope, slow
       // enough that the radius is still small. `highGTurn` reaches full authority at its
       // `fullEnergyKmh` of 640 and `authorityRefSpeed` saturates the surfaces at about 750,
       // so the hardest conventional turn lives inside this band and the tape says where.
       // Nothing reads this but the HUD — it is a label on the physics, not a limit in it.
       combatBandKmh: { min: 650, max: 1000 },
-      /*
-      The board, which is Space with the stick centred rather than S.
-
-      `airBrakeLevel` is full, because a dedicated brake key that only half-deploys is a
-      control the pilot has to think about — the whole reading is "stop, hard, and let the
-      one chasing me overshoot", and the cost is already visible on the speed tape.
-
-      The two deflections are where the board starts closing and where it is fully shut. A
-      quarter of stick is the heading correction a pilot makes while decelerating straight
-      ahead, and a mouse left sitting off-centre reads about the same, so nothing below it
-      counts as a turn. Seven tenths is a turn nobody flies by accident, and past it the
-      energy is going into induced drag instead — charging for both would make a hard turn
-      cost more than it looks.
-      */
-      deceleration: {
-        airBrakeLevel: 1,
-        turnOnsetDeflection: 0.25,
-        turnReleaseDeflection: 0.7,
-      },
       // Reheat is a fuel state, not a switch. The F119 pushes roughly three times its dry
       // fuel flow in afterburner, so the airframe carries a burst of it rather than
       // minutes of it: hold the burner, watch the reserve drain, and get it back only
@@ -365,17 +363,14 @@ const f22 = {
         // After a burnout the reserve has to climb this far before it will relight, which
         // with the dwell above is the cooldown the third gauge counts down.
         relightReserve: 0.32,
-        // Light-off is quick, shutdown quicker: about 1.2 s up and 0.6 s down.
-        spoolUpPerSecond: 0.85,
-        spoolDownPerSecond: 1.7,
+        // MIL to full reheat is about 0.4 s; shutdown takes about 0.3 s.
+        spoolUpPerSecond: 2.5,
+        spoolDownPerSecond: 3.33,
       },
       performance: {
         minKmh: 260,
         kmhPerWorldUnitPerSecond: 22,
-        // The pilot moves a power lever, the engine follows with inertia, and thrust rises
-        // progressively rather than giving half throttle the same acceleration as MIL.
-        engineSpoolUpResponse: 5.5,
-        engineSpoolDownResponse: 6.5,
+        // Dry thrust rises progressively rather than giving half throttle MIL acceleration.
         throttlePowerExponent: 1.35,
         // A running F119 still makes useful thrust at flight idle. Keeping that floor in
         // both thrust and drag preserves the authored trim speeds while preventing a
@@ -690,7 +685,6 @@ const f22 = {
         fallingLeafYawPhaseRad: 1.15,
         fallingLeafLabelThreshold: 0.32,
 
-        aoaDragGain: 26,
         postStallDragMultiplier: 1.25,
         // What the separated-flow bill decays to once the airframe has come round past
         // broadside and is meeting the air the other way. Held at 1 instead, a tumble stops
@@ -699,18 +693,16 @@ const f22 = {
         beyondBeamDragFactor: 0.62,
         sideslipDragGain: 9,
         postStallSideForceFactor: 0.35,
-        airBrakeDrag: 12,
         flapsDrag: 4,
 
         /*
-        High-G turn. The other half of the two-button arcade scheme, and deliberately not
-        the same half as the block below it.
+        High-G turn, requested by the W+S Extreme chord (or a dedicated device action).
 
         This is a max-performance *aerodynamic* turn: the FCC is allowed a faster pitch
         rate, a higher structural G ceiling, a slightly wider alpha fence and a quicker
         roll into the turn — and it is billed for all of it in induced drag. Nothing here
-        touches `envelopeOpen`, the post-stall alpha limit, or the PSM state machine, so
-        holding Space can never produce a Cobra.
+        touches `envelopeOpen`, the post-stall alpha limit, or the PSM state machine. The
+        chord's separate PSM intent is what may open that envelope at sufficiently low energy.
 
         `aoaLimitDeg` is the number that keeps the regimes apart. It sits just under
         `stallAoADeg`, which means a maximum high-G pull leaves the wing flying: the nose

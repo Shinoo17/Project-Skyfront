@@ -2251,8 +2251,7 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   letter-spacing: 0.17em;
 }
 
-/* The commanded speed is the control, so it gets the digits and the bright ink. Everything
-   else in this block is the cost of serving it. */
+/* The normal HUD names the engine state, not a simulator-style throttle percentage. */
 .deck-command-speed {
   flex: 0 0 auto;
   white-space: nowrap;
@@ -2265,28 +2264,6 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
   letter-spacing: 0.06em;
 }
 
-/* Thrust reads as a bar, not a number — it is what the commanded speed is costing, which
-   the pilot judges by feel rather than to three digits. */
-.deck-thrust {
-  position: relative;
-  flex: 1;
-  height: 7px;
-  background: var(--hud-green-soft);
-}
-
-.deck-thrust i {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: calc(var(--thrust, 0) * 100%);
-  background: var(--hud-ice);
-}
-
-.deck-thrust.is-afterburner i {
-  box-shadow: 0 0 9px rgba(48, 255, 104, 0.62);
-}
-
 .deck-throttle-row {
   display: grid;
   grid-template-columns: 50px minmax(0, 1fr) 50px;
@@ -2296,6 +2273,20 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
 
 .deck-throttle-row .deck-key {
   min-height: 42px;
+}
+
+.deck-power-hint {
+  color: var(--hud-green-dim);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.deck-power-hint kbd {
+  color: var(--hud-green, #62ff84);
 }
 
 .deck-throttle-row input {

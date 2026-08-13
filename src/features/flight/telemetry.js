@@ -76,7 +76,6 @@ export const EMPTY_TELEMETRY = {
   afterburnerSeconds: 0,
   afterburnerCooldown: 0,
   afterburnerState: 'off',
-  engineCoreLevel: 0,
   camera: null,
   // Where the pointer sits inside the gate, in gate radii per axis and unclamped, or null
   // when the mouse is not flying the aircraft. The HUD draws the gate from it: the pointer
@@ -99,10 +98,20 @@ export const EMPTY_TELEMETRY = {
   roll: 0,
   sinceReset: 999,
   speed: 0,
+  acceleration: 0,
   forwardSpeed: 0,
   backwardFlight: false,
-  throttle: 0,
-  commandSpeed: 0,
+  commandedThrottle: 0,
+  engineThrottle: 0,
+  thrust: 0,
+  parasiteDrag: 0,
+  inducedDrag: 0,
+  airbrakeDrag: 0,
+  totalDrag: 0,
+  airbrakeAmount: 0,
+  afterburnerActive: false,
+  currentG: 1,
+  extremeManeuverActive: false,
   verticalSpeed: 0,
 }
 

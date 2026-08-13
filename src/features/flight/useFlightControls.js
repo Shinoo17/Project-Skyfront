@@ -11,7 +11,6 @@ export {
   MOUSE_SENSITIVITY_RANGE,
   MOUSE_STICK_GATE,
   centreMouseStick,
-  clampCommandSpeedKmh,
   clearAnalogFlightInput,
   clearMouseStick,
   createFlightInputState,
@@ -22,8 +21,8 @@ export {
   readAfterburnerCommand,
   readAirBrake,
   readAxes,
-  readCommandSpeedLimits,
   readDecelerate,
+  readExtremeManeuver,
   readHighG,
   readMouseFlightEnabled,
   readMousePitchInverted,
@@ -34,7 +33,7 @@ export {
   releaseFlightInput,
   resetFlightInput,
   setAnalogFlightInput,
-  setCommandSpeedKmh,
+  setCommandedThrottle,
   stepFlightInput,
   writeMouseFlightEnabled,
   writeMousePitchInverted,
@@ -51,7 +50,7 @@ Holds pilot input in a ref rather than React state: the render loop reads it eve
 frame, and a dogfight will read two of these per frame. Only the surfaces that show
 input in the DOM re-render, and they do it from onChange.
 
-  controls.current = { pressed: Set<controlName>, commandSpeedKmh: number }
+  controls.current = { pressed: Set<controlName>, commandedThrottle: number }
 
 Every binding is a held control, including the afterburner: the pilot holds it for as long
 as they want the burner, and releasing is what shuts it down. Nothing here latches.
@@ -66,14 +65,14 @@ the key that opens the menu is also the key that closes it.
 */
 export default function useFlightControls({
   bindings = FLIGHT_BINDINGS,
-  commandSpeedKmh = 0,
+  initialCommandedThrottle = 0,
   onPress,
   onChange,
   keyActions,
   paused = false,
 } = {}) {
   const controls = useRef(null)
-  if (!controls.current) controls.current = createFlightInputState(commandSpeedKmh)
+  if (!controls.current) controls.current = createFlightInputState(initialCommandedThrottle)
   const handlers = useRef({})
   handlers.current = { onPress, onChange, keyActions }
 

@@ -2,11 +2,11 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 
 import { createBotStatus } from './botStatus'
-import { readTargetAirspeedKmh } from './performance'
+import { readThrottlePower } from './performance'
 import {
   clearAnalogFlightInput,
   setAnalogFlightInput,
-  setCommandSpeedKmh,
+  setCommandedThrottle,
 } from './useFlightControls'
 
 /*
@@ -54,7 +54,6 @@ export default function ManeuverBot({
   status,
   loop = false,
   envelope,
-  spawn = null,
   onRequestReset,
   onFinished,
 }) {
@@ -117,18 +116,11 @@ export default function ManeuverBot({
     const flight = telemetry.current
 
     if (state.phase === 'arm') {
-      // The bot holds the pilot's speed control, not a private throttle: it converts the
-      // script's authored entry throttle into the speed that throttle holds at the spawn
-      // altitude, and the reset then respawns the aircraft already flying it.
-      setCommandSpeedKmh(
+      // The bot sets the same dry-power intent W/S control. Reset uses the matching
+      // level-flight equilibrium only as an initial condition, then forces own speed.
+      setCommandedThrottle(
         controls.current,
-        readTargetAirspeedKmh(
-          maneuver.entry.throttle,
-          spawn?.y ?? telemetry.current.altitude,
-          0,
-          envelope,
-        ),
-        envelope,
+        readThrottlePower(maneuver.entry.throttle, envelope),
       )
       releaseControls(controls)
       state.previousSinceReset = flight.sinceReset

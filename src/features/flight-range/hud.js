@@ -572,11 +572,6 @@ export function createFlightHud(canvas, { combatBand = null } = {}) {
     const barX = left + (layout.compact ? 32 : 40)
     const barW = layout.compact ? 72 : 116
 
-    text(state.afterburner ? 'THR·AB' : 'THR', left, first, display(12), HUD_GREEN_DIM)
-    bar(barX, first, barW, 12, state.throttle, HUD_GREEN)
-    text(`${String(Math.round(state.throttle * 100)).padStart(3, ' ')}%`,
-      barX + barW + 10, first, display(12, 700), HUD_GREEN)
-
     // Ground clearance earns a bar as well as digits: it is the number that ends the
     // sortie, and the colour says how much of it is left without anything to read.
     const clearance = state.live
@@ -584,10 +579,10 @@ export function createFlightHud(canvas, { combatBand = null } = {}) {
       : 0
     const clearanceColor = state.groundClearance < 120 ? HUD_GREEN_ALERT
       : state.groundClearance < 260 ? HUD_GREEN_CAUTION : HUD_GREEN
-    text('GND', left, second, display(12), HUD_GREEN_DIM)
-    bar(barX, second, barW, 10, clearance, state.live ? clearanceColor : HUD_GREEN_DIM)
+    text('GND', left, first, display(12), HUD_GREEN_DIM)
+    bar(barX, first, barW, 10, clearance, state.live ? clearanceColor : HUD_GREEN_DIM)
     text(state.live ? pad(state.groundClearance, 3) : '–––',
-      barX + barW + 10, second, display(12, 700),
+      barX + barW + 10, first, display(12, 700),
       state.live ? clearanceColor : HUD_GREEN_DIM)
 
     const pitch = state.live ? signed(state.pitch) : '––'
@@ -742,7 +737,9 @@ export function createFlightHud(canvas, { combatBand = null } = {}) {
       tape: SPEED_TAPE,
       band: combatBand,
       label: 'SPEED · KM/H',
-      subreadout: state.live ? `MACH ${state.mach.toFixed(2)}` : 'MACH –.–',
+      subreadout: state.live
+        ? `MACH ${state.mach.toFixed(2)}  ${state.acceleration > 5 ? '↑' : state.acceleration < -5 ? '↓' : '→'}`
+        : 'MACH –.–',
       digits: 4,
       live: state.live,
     })

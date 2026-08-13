@@ -27,14 +27,13 @@ import {
   createAfterburnerState,
   readMach,
   readTargetAirspeedKmh,
-  readThrottleForAirspeedKmh,
+  readThrottlePower,
   resetAfterburnerState,
   stepAfterburner,
 } from './performance'
 import { applySurfaceTargets } from './surfaces'
 import {
   centreMouseStick,
-  clampCommandSpeedKmh,
   clearAnalogFlightInput,
   readMouseStickAxes,
   resetFlightInput,
@@ -167,19 +166,22 @@ export default function FlightAircraft({
     resetAfterburnerState(reheat.current)
     resetCondensationState(condensation.current)
     state.spawn.copy(spawn)
-    // The commanded speed is the spawn speed: one number seeds both, so a sortie always
-    // begins already flying what the pilot's control says it is flying. A full reset picks
-    // the speed `idleThrottle` holds at this map's spawn altitude, which is what makes a
-    // low-spawning map enter its own band rather than a borrowed one.
+    // A reset starts in level-flight trim for the current dry-power intent. This is only an
+    // initial condition: once flying, forces are the sole writer of velocity.
     if (!keepThrottle) {
       resetFlightInput(
         controls.current,
-        readTargetAirspeedKmh(envelope.idleThrottle, state.spawn.y, 0, envelope),
+        readThrottlePower(envelope.idleThrottle, envelope),
       )
     }
-    const spawnSpeedKmh = clampCommandSpeedKmh(controls.current.commandSpeedKmh, envelope)
-    controls.current.commandSpeedKmh = spawnSpeedKmh
-    controls.current.throttle = readThrottleForAirspeedKmh(spawnSpeedKmh, state.spawn.y, envelope)
+    controls.current.throttle = envelope.minThrottle
+      + (controls.current.commandedThrottle * (1 - envelope.minThrottle))
+    const spawnSpeedKmh = readTargetAirspeedKmh(
+      controls.current.throttle,
+      state.spawn.y,
+      0,
+      envelope,
+    )
     resetFlightState(
       state.model,
       state.spawn,
@@ -239,6 +241,9 @@ export default function FlightAircraft({
       step,
       envelope,
       flight.current.model.position.y,
+      {
+        speedKmh: flight.current.model.speedKmh,
+      },
     )
 
     const current = flight.current
@@ -260,6 +265,7 @@ export default function FlightAircraft({
       yaw: input.yaw,
       flaps: input.flaps,
       throttle: input.throttle,
+      commandedThrottle: input.commandedThrottle,
       airBrake: input.airBrake,
       // The four semantic intents, published exactly as the input layer resolved them. The
       // bot writes the same actions into the same layer, so player and AI hand the model
@@ -268,6 +274,7 @@ export default function FlightAircraft({
       decelerate: input.decelerate,
       highG: input.highG,
       psmArm: input.psmArm,
+      extremeManeuverActive: input.extremeManeuverActive,
       afterburnerCommanded: burnerRequested,
       burnerLevel: burner.level,
     }
@@ -423,16 +430,23 @@ export default function FlightAircraft({
         : burnerRequested
           ? 'spooling'
           : 'off'
-    readout.engineCoreLevel = aircraftState.engineCoreLevel
     readout.mach = readMach(aircraftState.speedKmh, aircraftState.position.y, envelope)
     readout.speed = aircraftState.speedKmh
     readout.forwardSpeed = aircraftState.forwardSpeedKmh
     readout.backwardFlight = aircraftState.backwardFlight
     readout.verticalSpeed = aircraftState.velocity.y
-    readout.throttle = input.throttle
-    // The speed the pilot asked for, next to the speed they have. The pair is the point:
-    // the gap is what a hard turn or an open brake is costing them.
-    readout.commandSpeed = controls.current.commandSpeedKmh
+    readout.acceleration = aircraftState.acceleration
+    readout.commandedThrottle = aircraftState.commandedThrottle
+    readout.engineThrottle = aircraftState.engineThrottle
+    readout.thrust = aircraftState.thrust
+    readout.parasiteDrag = aircraftState.parasiteDrag
+    readout.inducedDrag = aircraftState.inducedDrag
+    readout.airbrakeDrag = aircraftState.airbrakeDrag
+    readout.totalDrag = aircraftState.totalDrag
+    readout.airbrakeAmount = aircraftState.airbrakeAmount
+    readout.afterburnerActive = aircraftState.afterburnerActive
+    readout.currentG = aircraftState.gLoad
+    readout.extremeManeuverActive = aircraftState.extremeManeuverActive
     readout.flaps = input.flaps
     readout.aoa = aircraftState.aoaDeg
     readout.sideslip = aircraftState.sideslipDeg

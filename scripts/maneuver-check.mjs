@@ -44,6 +44,7 @@ import MANEUVERS, { readManeuverSeconds } from '../src/features/flight/maneuvers
 import {
   createAfterburnerState,
   readTargetAirspeedKmh,
+  readThrottlePower,
   stepAfterburner,
 } from '../src/features/flight/performance.js'
 import {
@@ -108,11 +109,10 @@ const SPAWN_Y = Number(spawnArg ?? OBSERVED_SPAWN_Y)
 function fly(timeline, { throttle: entryThrottle, onSample }) {
   const state = createFlightState()
   const reheat = createAfterburnerState()
-  // Scripts are still calibrated by entry throttle, because that is what the band notes
-  // above are written in. The control the pilot actually holds is a speed, so convert once
-  // here: the map is linear both ways, so the round trip hands back this exact throttle.
+  // Scripts are calibrated by their initial dry-power intent and enter at its level-flight
+  // force equilibrium. Live speed is force-integrated from there.
   const entrySpeedKmh = readTargetAirspeedKmh(entryThrottle, SPAWN_Y, 0, envelope)
-  const controls = createFlightInputState(entrySpeedKmh)
+  const controls = createFlightInputState(readThrottlePower(entryThrottle, envelope))
 
   resetFlightState(
     state,
@@ -149,7 +149,9 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
       clearAnalogFlightInput(controls, SCRIPT_ANALOG_SOURCE)
     }
     for (let frame = 0; frame < Math.round(step.seconds / FRAME); frame += 1) {
-      const input = stepFlightInput(controls, FRAME, envelope, state.position.y)
+      const input = stepFlightInput(controls, FRAME, envelope, state.position.y, {
+        speedKmh: state.speedKmh,
+      })
       const burnerRequested = input.afterburner
       const burner = stepAfterburner(
         reheat,
@@ -169,9 +171,13 @@ function fly(timeline, { throttle: entryThrottle, onSample }) {
           yaw: input.yaw,
           flaps: input.flaps,
           throttle: input.throttle,
+          commandedThrottle: input.commandedThrottle,
           airBrake: input.airBrake,
           accelerate: input.accelerate,
+          decelerate: input.decelerate,
+          highG: input.highG,
           psmArm: input.psmArm,
+          extremeManeuverActive: input.extremeManeuverActive,
           afterburnerCommanded: burnerRequested,
           burnerLevel: burner.level,
         }, envelope, FLIGHT_FIXED_STEP)

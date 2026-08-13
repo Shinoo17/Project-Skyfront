@@ -81,31 +81,21 @@ export function readTargetAirspeedKmh(throttle, altitude, reheat, envelope) {
   return lerp(dryTarget, readAfterburnerLimitKmh(altitudeMix, envelope), level)
 }
 
-// The dry ceiling the aircraft can actually hold at this altitude, which is what a speed
-// selector has to top out at. Reheat goes past it, but reheat is a burst the pilot spends
-// rather than a setting they park on, so it does not belong on the same control.
+// The dry ceiling supplied by the physical engine model at this altitude.
 export function readDryCeilingKmh(altitude, envelope) {
   return readDryLimitKmh(readAltitudePerformance(altitude, envelope), envelope)
 }
 
-// The same ceiling at the best altitude there is, which after `maxPerformanceMix` is no
-// longer the table's high-altitude figure. This is the outer bound of the commandable band:
-// a speed above it is a number the aircraft cannot reach anywhere, at any height.
+// The same physical ceiling at the best altitude there is, after `maxPerformanceMix`.
 export function readMaxDryCeilingKmh(envelope) {
   const { highAltitude } = envelope.performance
   return readDryLimitKmh(Math.min(1, highAltitude.maxPerformanceMix ?? 1), envelope)
 }
 
 /*
-The inverse of the dry branch above, and the whole of the arcade speed control: the pilot
-names an airspeed, this turns it back into the power setting that holds it, and the flight
-model never learns that anything changed. Both directions are linear in `power`, so the
-round trip is exact — seeding a command from `idleThrottle` gives `idleThrottle` back.
-
-It is feedforward, not a speed hold, and that is deliberate. A hard turn bills induced and
-brake drag the power lever never hears about, so the aircraft bleeds below the commanded
-number and has to be flown back up to it. That bleed is the energy game; closing a loop
-around it would hand the player their speed back for free.
+Inverse of the dry trim branch above. Neutral auto power assist uses this as feed-forward:
+the power that pays parasite drag at the speed the aircraft has now. It is never paired with
+a stored target speed or used to correct velocity.
 */
 export function readThrottleForAirspeedKmh(speedKmh, altitude, envelope) {
   const { performance } = envelope
@@ -125,16 +115,19 @@ reheat meet drag at the authored afterburner limit.
 */
 export function readPropulsionKmhPerSecond(engineCoreLevel, reheat, envelope) {
   const { performance } = envelope
+  const engine = envelope.engineControl ?? {}
   const core = clamp01(engineCoreLevel)
   const dryThrust = performance.accelerationKmhPerSecond * (
     performance.idleThrustFraction
     + ((1 - performance.idleThrustFraction)
       * (core ** performance.throttlePowerExponent))
   )
-  const augmentedThrust = (
-    performance.afterburnerAccelerationKmhPerSecond
-    - performance.accelerationKmhPerSecond
-  ) * clamp01(reheat)
+  const afterburnerMultiplier = engine.afterburnerMultiplier
+    ?? (performance.afterburnerAccelerationKmhPerSecond
+      / performance.accelerationKmhPerSecond)
+  const augmentedThrust = performance.accelerationKmhPerSecond
+    * Math.max(0, afterburnerMultiplier - 1)
+    * clamp01(reheat)
   return dryThrust + augmentedThrust
 }
 

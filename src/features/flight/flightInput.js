@@ -1,66 +1,20 @@
 /*
-Device-neutral pilot input.
+Device-neutral pilot input. This layer publishes what the player wants; it never changes
+velocity or asks for a target airspeed. W requests military power, S requests idle, Shift
+requests reheat, and Space requests the airbrake independently. The W+S chord is resolved
+before either throttle command and freezes the existing power intent while it asks the
+flight-control model for its extreme/high-G envelope.
 
-Device adapters only hold semantic actions or publish analogue axes. The flight loop calls
-`stepFlightInput` once per rendered frame and receives one continuous intent object. Physics
-never needs to know whether pitch came from an arrow key, a gamepad, a pointer, or a touch
-control.
-
-`pressed` remains public because the HUD and the manoeuvre bot are device adapters too: they
-hold the exact same actions as the keyboard. Analogue sources are kept separately and mixed
-by strongest deflection so adding a gamepad cannot make keyboard controls fight it.
-
-The mouse is one of those adapters. It holds a stick whose position is the pointer's position
-inside a gate on the glass — see `setMouseStick` and `moveMouseStick` below — and publishes
-through the same analogue path everything else uses, so nothing downstream of
-`stepFlightInput` knows a mouse exists, or whether the browser has locked it.
-
-W and S are a speed control, not a power lever. They move `commandSpeedKmh` — the airspeed
-the pilot is asking for, in the same km/h the HUD already reads — and the throttle the
-model consumes is derived from it. The command holds where it is left, because a number
-you chose is a number you should still have thirty seconds later.
-
-The number row briefly named three of those speeds outright. It does not any more: the row
-belongs to weapon selection, and two controls on one key is a key that means neither. What
-that leaves is one way to set speed, which is W and S, and one place to read it.
-
-This is the arcade simplification and it is deliberate: there is no spool to reason about,
-no lever position to remember, and no unit conversion between what the pilot wants and
-what the instruments say. It stays honest because it is feedforward only. Drag from a hard
-pull, the air brake, and reheat are all still settled by the flight model, so the aircraft
-sags below its commanded speed in a turn and has to be flown back up to it.
-
-Two separate intents sit above the stick, and the whole control scheme depends on the
-player never confusing them:
-
-  high-g          Space — "spend speed for control"
-  maneuver-assist Left Alt — "I am asking for post-stall control"
-
-They are different keys because they are different regimes. High-G stays an aerodynamic
-turn: more rate, more alpha, far more induced drag, and a nose that stays near the flight
-path. Maneuver Assist is the consent line for PSM, where the nose is allowed to leave the
-airstream entirely. Neither one implies the other, and no amount of high-G alpha opens the
-post-stall envelope on its own.
-
-Space is one key with two readings, and they are the same sentence rather than two controls
-sharing a button: *trade speed for control*. Held with the stick centred it is the air
-brake, a board out and a straight deceleration. Held with the stick deflected it is the
-max-performance turn, and the board closes because the turn is already spending the energy
-through induced drag — paying twice would make a hard turn cost more than the pilot asked
-for. The taper between them is continuous, so a stick eased into a turn eases the brake
-shut rather than stepping it.
-
-Whichever reading it is, the throttle is cut while the key is down and `commandSpeedKmh` is
-left exactly where the pilot put it. That is what makes Space free of any book-keeping: let
-go, and the power comes back up to serve the speed that was already asked for. The cost was
-the speed lost while it was held, which is on the tape, and there is nothing else to watch.
-
-W and S are therefore the speed control and nothing else. They do not open the brake — S is
-"ask for a lower speed", not "deploy a board" — and held together they are two speed
-commands cancelling rather than a turn chord, because the turn has its own key.
+With neither W nor S held, commanded dry power softly follows the power required to pay the
+current parasite-drag bill. Because that estimate follows current airspeed rather than a
+remembered target speed, it can make level cruise easy without refunding a climb, dive, or
+high-G turn. Engine spool and every change to actual velocity remain downstream.
 */
 
-import { readMaxDryCeilingKmh, readThrottleForAirspeedKmh } from './performance'
+import {
+  readThrottleForAirspeedKmh,
+  readThrottlePower,
+} from './performance'
 
 export const FLIGHT_BINDINGS = {
   ArrowUp: 'pitch-up',
@@ -77,7 +31,7 @@ export const FLIGHT_BINDINGS = {
   KeyV: 'rear-view',
   ShiftLeft: 'afterburner',
   ShiftRight: 'afterburner',
-  Space: 'high-g',
+  Space: 'air-brake',
   AltLeft: 'maneuver-assist',
 }
 
@@ -195,12 +149,6 @@ export const MOUSE_STICK_GATE = {
 
 function clampAxis(value) {
   return Math.max(-1, Math.min(1, Number(value) || 0))
-}
-
-// The same ease the flight model uses, kept local so this module still depends on nothing.
-function smoothstep01(value) {
-  const clamped = Math.max(0, Math.min(1, Number(value) || 0))
-  return clamped * clamped * (3 - (2 * clamped))
 }
 
 /*
@@ -439,8 +387,12 @@ export function readDecelerate(pressed) {
   return pressed.has('throttle-down') && !pressed.has('throttle-up')
 }
 
-// Max-performance turn intent. One action, resolved here so the model, the HUD and the bot
-// all see one boolean and no key codes.
+export function readExtremeManeuver(pressed) {
+  return pressed.has('throttle-up') && pressed.has('throttle-down')
+}
+
+// Bots and alternate devices may still publish a dedicated high-g action. Keyboard W+S is
+// combined with it in `stepFlightInput`, before W or S is interpreted as throttle intent.
 export function readHighG(pressed) {
   return pressed.has('high-g')
 }
@@ -456,68 +408,14 @@ export function readAfterburnerCommand(pressed) {
   return pressed.has('afterburner')
 }
 
-/*
-How far the board is out, 0..1, read off the same key that asks for the turn.
-
-`axes` is the resolved stick — the targets the axes are chasing this step, before the
-smoothing, so the brake answers the hand rather than the filter. Deflection is the length of
-the whole stick rather than pitch alone: a roll into a turn is the pilot committing to one
-just as much as a pull is, and taking the magnitude means an easing diagonal reads the same
-as an easing pull instead of registering as neither.
-
-The taper is what makes Space one control instead of two. Up to `turnOnsetDeflection` it is
-the full board; past `turnReleaseDeflection` the brake is shut and the turn pays its own way
-through induced drag. In between it is smooth, so there is no deflection at which the
-aircraft changes its mind about what the key means.
-
-The onset is not decoration. A mouse stick is a position, and it is live wherever the pointer
-was left — small standing deflections are ordinary, and without a threshold the pilot would
-be braking at a bit under half the board while believing the stick was centred. Slowing down
-straight ahead still wants small corrections to hold a heading, and those corrections are not
-the turn this control means.
-
-A dedicated air-brake action stays above all of it for a future HOTAS adapter, where the
-board is its own lever and the pilot means the board.
-*/
-export function readAirBrake(pressed, axes = {}, envelope = {}) {
-  if (pressed.has('air-brake')) return 1
-  if (!pressed.has('high-g')) return 0
-
-  const deceleration = envelope.deceleration ?? {}
-  const level = Math.max(0, Math.min(1, deceleration.airBrakeLevel ?? 1))
-  const onset = deceleration.turnOnsetDeflection ?? 0.25
-  const release = Math.max(deceleration.turnReleaseDeflection ?? 0.7, onset + 1e-3)
-  const deflection = Math.hypot(
-    Number(axes.pitch) || 0,
-    Number(axes.roll) || 0,
-    Number(axes.yaw) || 0,
-  )
-  return level * (1 - smoothstep01((deflection - onset) / (release - onset)))
+// The board is its own intent. It remains available with every throttle and maneuver state;
+// deployment smoothing and drag live in the aircraft model.
+export function readAirBrake(pressed) {
+  return pressed.has('air-brake') ? 1 : 0
 }
 
-// The commandable band is the whole dry envelope the airframe has anywhere, not the
-// narrower one it happens to hold at this altitude. Clamping to the local ceiling instead
-// would make the pilot's chosen number change by itself during a climb or a dive; letting
-// the command stand and letting the derived throttle saturate at full power keeps the
-// control honest and lets a climb simply deliver the speed that was already asked for.
-//
-// "Anywhere" is `readMaxDryCeilingKmh` rather than the table's high-altitude column,
-// because `maxPerformanceMix` means that column is no longer somewhere the aircraft can
-// get to. A command past this one would be a number that saturates the throttle at every
-// height on every map — a stretch of travel that does nothing.
-export function readCommandSpeedLimits(envelope) {
-  return {
-    min: envelope.performance.minKmh,
-    max: Math.max(envelope.performance.seaLevel.dryKmh, readMaxDryCeilingKmh(envelope)),
-  }
-}
-
-export function clampCommandSpeedKmh(speedKmh, envelope) {
-  const { min, max } = readCommandSpeedLimits(envelope)
-  return Math.max(min, Math.min(max, Number(speedKmh) || min))
-}
-
-export function createFlightInputState(commandSpeedKmh = 0) {
+export function createFlightInputState(initialCommandedThrottle = 0) {
+  const commandedThrottle = Math.max(0, Math.min(1, Number(initialCommandedThrottle) || 0))
   return {
     pressed: new Set(),
     analog: new Map(),
@@ -539,16 +437,23 @@ export function createFlightInputState(commandSpeedKmh = 0) {
       x: 0,
       y: 0,
     },
-    // The speed the pilot has asked for, and the power that currently serves it. Only the
-    // first is a control; `throttle` is published for the flight model and the HUD.
-    commandSpeedKmh,
-    throttle: 0,
+    commandedThrottle,
+    throttle: commandedThrottle,
+    // Input timing for the W+S chord. `chordBaseThrottle` lets a near-simultaneous second
+    // key restore the intent from before the first key, so entering Extreme never produces
+    // a one-frame MIL/idle command.
+    chordWindowRemaining: 0,
+    chordBaseThrottle: commandedThrottle,
+    throttleUpWasHeld: false,
+    throttleDownWasHeld: false,
+    extremeManeuverActive: false,
     intent: {
       pitch: 0,
       roll: 0,
       yaw: 0,
       flaps: 0,
-      throttle: 0,
+      throttle: commandedThrottle,
+      commandedThrottle,
       airBrake: 0,
       afterburner: false,
       // The four semantic commands the flight model reads as intent rather than as axes.
@@ -558,15 +463,17 @@ export function createFlightInputState(commandSpeedKmh = 0) {
       decelerate: false,
       highG: false,
       psmArm: false,
+      extremeManeuverActive: false,
     },
   }
 }
 
-// Anything that is not the keyboard — the HUD speed selector, a HOTAS detent, a touch
-// control — sets the commanded speed here rather than reaching for the throttle.
-export function setCommandSpeedKmh(state, speedKmh, envelope) {
-  state.commandSpeedKmh = clampCommandSpeedKmh(speedKmh, envelope)
-  return state.commandSpeedKmh
+// Device adapters with an analogue dry-power intent (bots, touch controls, HOTAS) use the
+// same normalized command the W/S resolver publishes.
+export function setCommandedThrottle(state, commandedThrottle) {
+  state.commandedThrottle = Math.max(0, Math.min(1, Number(commandedThrottle) || 0))
+  state.chordBaseThrottle = state.commandedThrottle
+  return state.commandedThrottle
 }
 
 // `direct` says this source already publishes a continuous, closed-loop signal and wants the
@@ -589,29 +496,38 @@ export function releaseFlightInput(state) {
   clearMouseStick(state)
 }
 
-export function resetFlightInput(state, commandSpeedKmh = state.commandSpeedKmh) {
+export function resetFlightInput(state, commandedThrottle = state.commandedThrottle) {
   releaseFlightInput(state)
-  state.commandSpeedKmh = commandSpeedKmh
+  state.commandedThrottle = Math.max(0, Math.min(1, Number(commandedThrottle) || 0))
+  state.throttle = state.commandedThrottle
+  state.chordWindowRemaining = 0
+  state.chordBaseThrottle = state.commandedThrottle
+  state.throttleUpWasHeld = false
+  state.throttleDownWasHeld = false
+  state.extremeManeuverActive = false
   state.intent.pitch = 0
   state.intent.roll = 0
   state.intent.yaw = 0
   state.intent.flaps = 0
   state.intent.airBrake = 0
+  state.intent.throttle = state.commandedThrottle
+  state.intent.commandedThrottle = state.commandedThrottle
   state.intent.afterburner = false
   state.intent.accelerate = false
   state.intent.decelerate = false
   state.intent.highG = false
   state.intent.psmArm = false
+  state.intent.extremeManeuverActive = false
   return state
 }
 
 /*
-`altitude` is required rather than defaulted, because the throttle that serves a given
-speed depends on it and a silent sea-level fallback would quietly mis-power every caller
-that forgot. Passing last frame's altitude is fine — the aircraft cannot climb far enough
-in one frame to matter, and the flight model settles the difference either way.
+`altitude` is required rather than defaulted, because the internal power that serves a given
+speed depends on it. `motion` is last frame's actual trajectory, not nose attitude: a Cobra
+may point straight up while momentum stays level and must not accidentally spend the speed
+command. Omitting motion keeps non-flight input probes level and backwards compatible.
 */
-export function stepFlightInput(state, step, envelope, altitude) {
+export function stepFlightInput(state, step, envelope, altitude, motion = null) {
   const raw = readAxes(state.pressed)
   const targets = { pitch: 0, roll: 0, yaw: 0 }
 
@@ -634,41 +550,60 @@ export function stepFlightInput(state, step, envelope, altitude) {
     RESPONSE.flaps,
     step,
   )
-  state.intent.airBrake = smoothAxis(
-    state.intent.airBrake,
-    readAirBrake(state.pressed, targets, envelope),
-    RESPONSE.airBrake,
-    step,
-  )
+  state.intent.airBrake = readAirBrake(state.pressed)
   state.intent.afterburner = readAfterburnerCommand(state.pressed)
-  state.intent.accelerate = readAccelerate(state.pressed)
-  state.intent.decelerate = readDecelerate(state.pressed)
-  state.intent.highG = readHighG(state.pressed)
-  state.intent.psmArm = readPsmArm(state.pressed)
-
-  // W and S walk the commanded speed, which then holds. Power is whatever it takes to
-  // serve that number here, so the pilot never operates the engine directly.
-  state.commandSpeedKmh = clampCommandSpeedKmh(
-    state.commandSpeedKmh
-      + (readThrottleDirection(state.pressed) * step * envelope.commandKmhPerSecond),
-    envelope,
+  const engine = envelope.engineControl ?? {}
+  const upHeld = state.pressed.has('throttle-up')
+  const downHeld = state.pressed.has('throttle-down')
+  const extremeHeld = upHeld && downHeld
+  const wasExtreme = state.extremeManeuverActive
+  const startedSingle = !extremeHeld && (
+    (upHeld && !state.throttleUpWasHeld && !downHeld)
+    || (downHeld && !state.throttleDownWasHeld && !upHeld)
   )
-  /*
-  Space cuts the power and leaves the command alone.
+  if (startedSingle && !wasExtreme) {
+    state.chordWindowRemaining = engine.extremeChordWindow ?? 0.18
+    state.chordBaseThrottle = state.commandedThrottle
+  }
+  state.chordWindowRemaining = Math.max(0, state.chordWindowRemaining - step)
 
-  The cut is applied here, to the derived throttle, and never to `commandSpeedKmh` — the
-  number the pilot chose survives the manoeuvre untouched, so releasing the key is the whole
-  of the recovery: the next step derives the same power it would have had, and the model
-  spools back up to it. The engine's own spool is what softens the step at both ends, which
-  is why this is a plain assignment rather than another filter.
+  if (extremeHeld) {
+    if (!wasExtreme && state.chordWindowRemaining > 0) {
+      state.commandedThrottle = state.chordBaseThrottle
+    }
+  } else if (upHeld) {
+    state.commandedThrottle = engine.militaryPower ?? 1
+  } else if (downHeld) {
+    state.commandedThrottle = engine.idlePower ?? 0
+  } else {
+    // Feed-forward only: this pays estimated parasite drag at the speed the aircraft has
+    // now. It has no remembered target speed and cannot cancel G, climb, or brake losses.
+    const speedKmh = Number(motion?.speedKmh)
+    if (Number.isFinite(speedKmh)) {
+      const assistTarget = readThrottlePower(
+        readThrottleForAirspeedKmh(speedKmh, altitude, envelope),
+        envelope,
+      )
+      const response = Math.max(0, engine.autoPowerAssistStrength ?? 1.4)
+      state.commandedThrottle += (assistTarget - state.commandedThrottle)
+        * (1 - Math.exp(-response * step))
+    }
+  }
 
-  `minThrottle` rather than zero because that is where the arcade power lever bottoms out —
-  the same idle the fully-decelerating S command reaches.
-  */
-  const servingThrottle = readThrottleForAirspeedKmh(state.commandSpeedKmh, altitude, envelope)
-  state.throttle = readHighG(state.pressed)
-    ? Math.min(servingThrottle, envelope.minThrottle ?? 0)
-    : servingThrottle
+  state.extremeManeuverActive = extremeHeld
+  state.throttleUpWasHeld = upHeld
+  state.throttleDownWasHeld = downHeld
+  state.intent.accelerate = upHeld && !extremeHeld
+  state.intent.decelerate = downHeld && !extremeHeld
+  state.intent.extremeManeuverActive = extremeHeld
+  state.intent.highG = extremeHeld || readHighG(state.pressed)
+  state.intent.psmArm = extremeHeld || readPsmArm(state.pressed)
+  state.intent.commandedThrottle = state.commandedThrottle
+
+  // `throttle` remains as a compatibility alias in the old min..MIL lever range. New code
+  // consumes normalized `commandedThrottle` directly.
+  state.throttle = envelope.minThrottle
+    + (state.commandedThrottle * (1 - envelope.minThrottle))
   state.intent.throttle = state.throttle
 
   return state.intent
