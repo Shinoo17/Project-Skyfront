@@ -1,0 +1,275 @@
+.topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 82px;
+  display: grid;
+  grid-template-columns: 1fr auto 48px;
+  align-items: center;
+  gap: 28px;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(5, 7, 9, 0.76);
+  backdrop-filter: blur(14px);
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-mark {
+  position: relative;
+  width: 36px;
+  height: 28px;
+  display: block;
+}
+
+.brand-mark::before,
+.brand-mark::after,
+.brand-mark i {
+  position: absolute;
+  display: block;
+  content: "";
+  height: 2px;
+  background: var(--fog);
+  transform-origin: right center;
+}
+
+.brand-mark::before {
+  width: 34px;
+  top: 9px;
+  right: 0;
+  transform: rotate(-13deg);
+}
+
+.brand-mark::after {
+  width: 28px;
+  bottom: 7px;
+  right: 0;
+  transform: rotate(13deg);
+}
+
+.brand-mark i:first-child {
+  width: 20px;
+  right: 1px;
+  top: 13px;
+}
+
+.brand-mark i:last-child {
+  width: 2px;
+  height: 18px;
+  right: 0;
+  top: 5px;
+}
+
+.brand-lockup strong {
+  display: block;
+  font-family: var(--display);
+  font-size: 19px;
+  font-stretch: condensed;
+  letter-spacing: 0.08em;
+}
+
+.brand-lockup strong em {
+  color: var(--ash);
+  font-style: normal;
+  font-weight: 500;
+}
+
+.brand-lockup small {
+  display: block;
+  margin-top: 3px;
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+
+.top-status {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+}
+
+.top-status span {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.test-flight-button {
+  position: relative;
+  min-width: 142px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  color: var(--fog);
+  font-family: var(--display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: rgba(154, 215, 232, 0.045);
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.test-flight-button i {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--dim);
+}
+
+.test-flight-button:hover {
+  color: var(--ice);
+  border-color: rgba(154, 215, 232, 0.48);
+  background: rgba(154, 215, 232, 0.09);
+}
+
+.test-flight-button.is-active {
+  color: var(--void);
+  border-color: var(--ice);
+  background: var(--ice);
+}
+
+.test-flight-button.is-active i {
+  background: var(--void);
+}
+
+.icon-button {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: color 180ms ease, background 180ms ease;
+}
+
+.icon-button:hover {
+  color: var(--ice);
+  background: rgba(154, 215, 232, 0.08);
+}
+
+.left-readout {
+  position: absolute;
+  left: 32px;
+  top: 50%;
+  display: grid;
+  grid-template-columns: auto 42px auto;
+  align-items: center;
+  gap: 12px;
+  transform: translateY(-50%) rotate(-90deg) translateX(-50%);
+  transform-origin: left top;
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+}
+
+.left-readout span {
+  color: var(--amber);
+}
+
+.left-readout i {
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.left-readout p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.airframe-title {
+  position: absolute;
+  left: clamp(64px, 7.2vw, 126px);
+  bottom: 18px;
+  width: min(600px, calc(100vw - 480px));
+}
+
+.airframe-title span {
+  color: var(--amber);
+  font-family: var(--display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+}
+
+.airframe-title strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--fog);
+  font-family: var(--display);
+  font-size: clamp(46px, 5.8vw, 88px);
+  font-weight: 800;
+  line-height: 0.85;
+  letter-spacing: -0.025em;
+}
+
+.airframe-title p {
+  margin: 8px 0 0;
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 8px;
+  line-height: 1.5;
+  letter-spacing: 0.13em;
+}
+
+.viewer-status-rail {
+  position: absolute;
+  top: 96px;
+  left: 32px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(82px, auto));
+  border: 1px solid var(--line);
+  background: rgba(5, 7, 9, 0.68);
+  backdrop-filter: blur(10px);
+}
+
+.viewer-status-rail > span {
+  min-height: 44px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 0 12px;
+  border-right: 1px solid var(--line);
+  font-family: var(--display);
+  font-variant-numeric: tabular-nums;
+}
+
+.viewer-status-rail > span:last-child {
+  border-right: 0;
+}
+
+.viewer-status-rail small {
+  color: var(--dim);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.viewer-status-rail strong {
+  color: var(--fog);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}

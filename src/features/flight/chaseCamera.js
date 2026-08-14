@@ -1,5 +1,37 @@
 import { MathUtils, PerspectiveCamera, Quaternion, Vector3 } from 'three'
 
+import {
+  BASE_FOV,
+  CAMERA_DISTANCE_SCALE,
+  CAMERA_STYLES,
+  CHASE_CAMERA_LOOK_AHEAD,
+  CHASE_CAMERA_OFFSET,
+} from './chase-camera/profiles'
+import { FLIGHT_FOV_RANGE, clampFlightFov } from './chase-camera/settings'
+
+/*
+The camera rig. The framing it aims for lives in `chase-camera/profiles.js` and the pilot's
+saved preferences in `chase-camera/settings.js`; both are re-exported here so callers keep
+importing the camera from one place.
+*/
+export {
+  BASE_FOV,
+  CHASE_CAMERA_LOOK_AHEAD,
+  CHASE_CAMERA_OFFSET,
+} from './chase-camera/profiles'
+export {
+  FLIGHT_CAMERA_DISTANCE_OPTIONS,
+  FLIGHT_CAMERA_STYLE_OPTIONS,
+  FLIGHT_FOV_RANGE,
+  clampFlightFov,
+  readFlightCameraDistance,
+  readFlightCameraStyle,
+  readFlightFov,
+  writeFlightCameraDistance,
+  writeFlightCameraStyle,
+  writeFlightFov,
+} from './chase-camera/settings'
+
 /*
 The pilot's camera, lifted out of the flight scene so more than one surface can drive it.
 
@@ -15,18 +47,6 @@ const LOCAL_UP = new Vector3(0, 1, 0)
 // The pilot's head pitches about it and yaws about the airframe's up.
 const BODY_RIGHT = new Vector3(0, 0, 1)
 
-// The boom is authored against the airframe rather than against a round number: the model is
-// seven world units nose to tail and close to five across the span, so ten units aft and
-// three up put the wing across roughly a sixth of the frame at Normal and a quarter at Near.
-// That is the framing a third-person combat camera wants — the airframe is the subject and
-// its control surfaces are readable — and the distance ladder spreads either side of it.
-export const CHASE_CAMERA_OFFSET = new Vector3(-10.05, 3.3, 0)
-// The aim point rides ahead of the nose, and how far ahead is what puts the jet low in the
-// frame rather than on the centreline. It is tied to the boom: shortening the boom without
-// shortening the lead would tip the lens up and drop the airframe out of the bottom of the
-// shot, so both came down together.
-export const CHASE_CAMERA_LOOK_AHEAD = 10
-export const BASE_FOV = 70
 const AFTERBURNER_SHAKE = 0.05
 const NOSE_CAMERA_OFFSET = new Vector3(3.8, 0.85, 0)
 const NOSE_CAMERA_LOOK_AHEAD = 64
@@ -51,118 +71,9 @@ const FREE_LOOK_FOLLOW = 14
 // past the limit stores no slack and the very next pixel back down moves the view again.
 const FREE_LOOK_MAX_ELEVATION = MathUtils.degToRad(80)
 const NOSE_LOOK_MAX_PITCH = MathUtils.degToRad(75)
-const CAMERA_STYLE_KEY = 'f22-flight-camera-style'
-const CAMERA_DISTANCE_KEY = 'f22-flight-camera-distance'
 
-export const FLIGHT_CAMERA_STYLE_OPTIONS = [
-  {
-    id: 'combat',
-    label: 'Combat Chase',
-    detail: '70° lens · sprung nose + velocity follow',
-  },
-  {
-    id: 'action',
-    label: 'Action',
-    detail: 'Close 69° lens · inertial PSM framing',
-  },
-]
 
-export const FLIGHT_CAMERA_DISTANCE_OPTIONS = [
-  { id: 'near', label: 'Near', detail: '75% chase distance' },
-  { id: 'normal', label: 'Normal', detail: 'Current chase distance' },
-  { id: 'far', label: 'Far', detail: '140% chase distance' },
-]
 
-const CAMERA_DISTANCE_SCALE = {
-  near: 0.75,
-  normal: 1,
-  far: 1.4,
-}
-
-/*
-The pilot's lens, as a trim on the authored one rather than as a replacement for it.
-
-Each style carries its own base — 70° for Combat Chase, 69° for Action — and both are then
-stretched by speed, pinched by braking, and pushed out under load and reheat. Handing the
-setting the absolute number would throw all of that away and leave two styles that look
-identical. So the setting is read as a difference from `BASE_FOV` and added to whichever
-base is in force: Action stays the tighter of the two at every position of the control, and
-every dynamic modifier still lands on top.
-
-Nose view is left alone. Its 58° is the view out of the cockpit at the frame the aircraft
-really presents, and a chase-camera preference has nothing to say about it.
-*/
-export const FLIGHT_FOV_RANGE = { min: 60, max: 100, step: 1, default: BASE_FOV }
-const CAMERA_FOV_KEY = 'f22-flight-camera-fov'
-
-export function clampFlightFov(value) {
-  const number = Number(value)
-  if (!Number.isFinite(number)) return FLIGHT_FOV_RANGE.default
-  return Math.min(FLIGHT_FOV_RANGE.max, Math.max(FLIGHT_FOV_RANGE.min, Math.round(number)))
-}
-
-export function readFlightFov() {
-  try {
-    const stored = window.localStorage.getItem(CAMERA_FOV_KEY)
-    return stored === null ? FLIGHT_FOV_RANGE.default : clampFlightFov(stored)
-  } catch {
-    return FLIGHT_FOV_RANGE.default
-  }
-}
-
-export function writeFlightFov(value) {
-  try {
-    window.localStorage.setItem(CAMERA_FOV_KEY, String(clampFlightFov(value)))
-  } catch {
-    // Storage can be unavailable in privacy modes; the in-session choice still works.
-  }
-}
-
-const CAMERA_STYLES = {
-  combat: {
-    offset: CHASE_CAMERA_OFFSET,
-    lookAhead: CHASE_CAMERA_LOOK_AHEAD,
-    velocityBlend: 0.22,
-    positionResponse: 4.2,
-    targetResponse: 5.4,
-    baseFov: BASE_FOV,
-    speedFov: 5,
-    brakingFov: 4,
-    // What a hard turn and reheat read as on the lens and the boom. Both are multiplied by
-    // a blend that is zero in ordinary flight, so neither shifts the authored base framing.
-    maneuverFov: 4,
-    maneuverBoom: 0.1,
-    burnerFov: 3,
-    burnerBoom: 0.06,
-    shake: 0.5,
-  },
-  action: {
-    // A tighter, calmer lens than Combat Chase, and about a quarter closer on the boom, so
-    // the aircraft occupies the shot instead of becoming a marker at the end of it. The lead
-    // shortens with the boom: the aim point is what holds the airframe low in frame, and
-    // leaving it long behind a short boom would tip the lens up and crop the tail away.
-    offset: new Vector3(-7.8, 2.5, 0),
-    lookAhead: 6,
-    // Action reads the flight path before it reads the nose. That is what lets a looping
-    // aircraft come back toward the lens at the top of an Immelmann instead of dragging the
-    // whole camera round with its quaternion. Recovery temporarily reverses that priority:
-    // Pitch Down is an explicit request to put the chase rig back behind the nose.
-    velocityBlend: 0.82,
-    recoveryVelocityBlend: 0.18,
-    positionResponse: 3.4,
-    targetResponse: 4.4,
-    returnDuration: 0.85,
-    returnMinDuration: 0.62,
-    baseFov: 69,
-    speedFov: 3,
-    brakingFov: 3,
-    maneuverFov: 3.5,
-    maneuverBoom: 0.12,
-    burnerFov: 2.5,
-    burnerBoom: 0.07,
-    shake: 0.28,
-  },
-}
 
 const CONTROLLED_PSM_PHASES = new Set([
   'post-stall',
@@ -186,44 +97,6 @@ function recoveryAlignment(noseOffPathDeg) {
   return 1 - MathUtils.smoothstep(noseOffPathDeg, 20, 70)
 }
 
-export function readFlightCameraStyle() {
-  try {
-    const saved = window.localStorage.getItem(CAMERA_STYLE_KEY)
-    // `normal` was the pre-Combat-Chase id. Preserve the user's stable-camera choice
-    // across the rename instead of silently moving them to Action.
-    if (saved === 'normal') return 'combat'
-    return CAMERA_STYLES[saved] ? saved : 'combat'
-  } catch {
-    return 'combat'
-  }
-}
-
-export function writeFlightCameraStyle(value) {
-  if (!CAMERA_STYLES[value]) return
-  try {
-    window.localStorage.setItem(CAMERA_STYLE_KEY, value)
-  } catch {
-    // Storage can be unavailable in privacy modes; the in-session choice still works.
-  }
-}
-
-export function readFlightCameraDistance() {
-  try {
-    const saved = window.localStorage.getItem(CAMERA_DISTANCE_KEY)
-    return CAMERA_DISTANCE_SCALE[saved] ? saved : 'normal'
-  } catch {
-    return 'normal'
-  }
-}
-
-export function writeFlightCameraDistance(value) {
-  if (!CAMERA_DISTANCE_SCALE[value]) return
-  try {
-    window.localStorage.setItem(CAMERA_DISTANCE_KEY, value)
-  } catch {
-    // Storage can be unavailable in privacy modes; the in-session choice still works.
-  }
-}
 
 /*
 The camera rolls with the aircraft, all the way round, and there is no horizon lock.

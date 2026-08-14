@@ -1,0 +1,69 @@
+/*
+Narrow and short frames. The command column stops being a column and becomes a strip across
+the top of the body, because below this width two columns leave the settings panel too
+narrow to hold a row's name and its control side by side.
+*/
+@media (max-width: 900px) {
+  .pause-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    padding: 18px 18px 14px;
+  }
+
+  .pause-commands {
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .pause-column-head {
+    display: none;
+  }
+
+  .pause-command {
+    flex: 1 1 160px;
+    padding: 11px 12px;
+  }
+
+  .pause-command-name strong {
+    font-size: 19px;
+  }
+
+  .pause-command-name i,
+  .pause-command-index {
+    display: none;
+  }
+
+  .pause-row,
+  .pause-bind {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .pause-panel-head h2 {
+    font-size: 28px;
+  }
+
+  .pause-frozen,
+  .pause-place {
+    display: none;
+  }
+
+  .pause-brackets {
+    display: none;
+  }
+}
+
+@media (max-height: 620px) {
+  .pause-brackets {
+    display: none;
+  }
+
+  .pause-command-name strong {
+    font-size: 20px;
+  }
+
+  .pause-panel-head h2 {
+    font-size: 26px;
+  }
+}

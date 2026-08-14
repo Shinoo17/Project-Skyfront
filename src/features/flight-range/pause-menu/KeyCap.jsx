@@ -17,7 +17,7 @@ back to its text label. That is the honest outcome, and it is why the label is a
 rendered as the accessible name whether or not a glyph is available.
 */
 
-import { describeKey } from '../flight/keybindings'
+import { describeKey } from '../../flight/keybindings'
 
 const ICON_BASE = '/assets/input_prompts/Keyboard_and_Mouse/Vector'
 

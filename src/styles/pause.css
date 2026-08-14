@@ -1,0 +1,23 @@
+/*
+The pause screen, cut the same way the component is: the frame, then each region of it,
+then the two viewport bands that reflow the whole thing. Source order is the cascade here —
+`responsive.css` overrides everything above it — so these imports must stay in sequence.
+
+  frame       the darkened canopy and its bracketed corners
+  topbar      identity, place, and the telemetry frozen at the pause
+  commands    the command column down the left
+  panel       the settings panel shell and its tabs
+  rows        the shared row, segmented control, slider and preset card
+  binds       the key-rebind caps, used only by the Controls tab
+  views       standby and credits
+  legend      the key legend along the floor
+*/
+@import './pause/frame.css';
+@import './pause/topbar.css';
+@import './pause/commands.css';
+@import './pause/panel.css';
+@import './pause/rows.css';
+@import './pause/binds.css';
+@import './pause/views.css';
+@import './pause/legend.css';
+@import './pause/responsive.css';

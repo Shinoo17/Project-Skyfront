@@ -1,0 +1,56 @@
+.viewer-sight {
+  position: absolute;
+  top: 50%;
+  left: calc((100% - 352px) / 2);
+  width: min(32vw, 440px);
+  height: min(38vh, 320px);
+  transform: translate(-50%, -50%);
+  opacity: 0.32;
+}
+
+.viewer-sight::before,
+.viewer-sight::after,
+.viewer-sight i::before,
+.viewer-sight i::after {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-color: var(--ice);
+  border-style: solid;
+  content: "";
+}
+
+.viewer-sight::before {
+  top: 0;
+  left: 0;
+  border-width: 1px 0 0 1px;
+}
+
+.viewer-sight::after {
+  top: 0;
+  right: 0;
+  border-width: 1px 1px 0 0;
+}
+
+.viewer-sight i:first-child::before {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 1px 1px;
+}
+
+.viewer-sight i:first-child::after {
+  right: 0;
+  bottom: 0;
+  border-width: 0 1px 1px 0;
+}
+
+.viewer-sight b {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border: 1px solid var(--ice);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}

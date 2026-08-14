@@ -1,0 +1,26 @@
+.corner-data {
+  position: absolute;
+  right: 25px;
+  bottom: 28px;
+  width: 304px;
+  height: 82px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 20px;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 8px;
+  letter-spacing: 0.11em;
+}
+
+.corner-data i {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.open-panel {
+  display: none;
+}

@@ -1,0 +1,56 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: #dae2e6;
+  background: #050709;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --void: #050709;
+  --hangar: #0b0f12;
+  --carbon: #12171c;
+  --panel: rgba(10, 14, 17, 0.92);
+  --line: rgba(174, 201, 211, 0.18);
+  --line-strong: rgba(184, 214, 225, 0.32);
+  --fog: #dae2e6;
+  --ash: #87949b;
+  --dim: #59656b;
+  --ice: #9ad7e8;
+  --amber: #ffb74a;
+  --danger: #ff6b5f;
+  --display: "DIN Alternate", "Arial Narrow", "Aptos Narrow", sans-serif;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 320px;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--void);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--ice);
+  outline-offset: 3px;
+}

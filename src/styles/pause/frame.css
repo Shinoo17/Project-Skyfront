@@ -1,0 +1,76 @@
+/*
+Pause menu.
+
+The sortie carries no chrome at all while it is flying, so when it stops it takes the whole
+frame rather than floating a dialog over it. That is the one decision the rest of this block
+follows from: a bracketed top bar with the airframe and the frozen readouts, a command column
+down the left, a settings panel filling the rest, and a key legend on the floor — a desktop
+game's pause screen, built out of the same phosphor and the same hairlines as the glass it is
+covering, so it reads as the instrument's own menu and not as a website dialog dropped on it.
+
+The frozen frame stays visible underneath and is darkened rather than hidden, because a
+stopped aircraft is the clearest possible statement that the sim is stopped.
+
+Nothing here is a card. Depth belongs to the 3D scene; separation is a single hairline and a
+change of tone, and the only filled surfaces are the ones saying which option is latched.
+*/
+.pause-menu {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  color: var(--hud-green-dim);
+  font-family: var(--display);
+  background: rgba(4, 8, 10, 0.72);
+  backdrop-filter: blur(9px);
+
+  --hud-ice: #62ff84;
+  --hud-green-dim: rgba(98, 255, 132, 0.68);
+  --hud-green-soft: rgba(98, 255, 132, 0.24);
+  --hud-green-hair: rgba(98, 255, 132, 0.14);
+}
+
+/* Four corner brackets, the same mark the glass uses to say a frame is under instrument
+   control. Decoration only, and the only decoration on the screen. Taken out of the grid
+   flow entirely — left in it, it would claim a row and push the top bar down one. */
+.pause-brackets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pause-brackets i {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 0 solid var(--hud-green-soft);
+}
+
+.pause-brackets i:nth-child(1) {
+  top: 62px;
+  left: 22px;
+  border-top-width: 1px;
+  border-left-width: 1px;
+}
+
+.pause-brackets i:nth-child(2) {
+  top: 62px;
+  right: 22px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+}
+
+.pause-brackets i:nth-child(3) {
+  bottom: 56px;
+  left: 22px;
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+}
+
+.pause-brackets i:nth-child(4) {
+  bottom: 56px;
+  right: 22px;
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+}

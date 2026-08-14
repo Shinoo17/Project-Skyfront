@@ -1,0 +1,103 @@
+.pause-topbar {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 30px;
+  border-bottom: 1px solid var(--hud-green-hair);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.1));
+}
+
+.pause-identity {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex: none;
+}
+
+.pause-identity strong {
+  color: var(--fog);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.pause-diamond {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  background: var(--hud-ice);
+  transform: rotate(45deg);
+}
+
+.pause-rule {
+  width: 1px;
+  height: 18px;
+  background: var(--hud-green-soft);
+}
+
+.pause-state {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--hud-ice);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+}
+
+.pause-state i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hud-ice);
+  animation: pause-blink 1.8s infinite;
+}
+
+@keyframes pause-blink {
+  0%, 45% { opacity: 1; }
+  50%, 95% { opacity: 0.25; }
+  100% { opacity: 1; }
+}
+
+.pause-place {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ash);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The last frame the sortie drew, not a live feed: the simulation is not running, and a
+   readout that ticked while the world was stopped would be inventing frames. */
+.pause-frozen {
+  display: flex;
+  gap: 22px;
+  flex: none;
+  margin: 0;
+}
+
+.pause-frozen div {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+}
+
+.pause-frozen dt {
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.pause-frozen dd {
+  margin: 0;
+  color: var(--hud-green-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+}

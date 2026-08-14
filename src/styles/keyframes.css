@@ -1,0 +1,24 @@
+@keyframes reticle-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes scan-drift {
+  0%, 100% { transform: translateY(-14vh); opacity: 0; }
+  15%, 75% { opacity: 0.22; }
+  80% { transform: translateY(18vh); opacity: 0; }
+}
+
+@keyframes skeleton-pulse {
+  50% { opacity: 0.3; }
+}
+
+@keyframes hud-alert {
+  to { opacity: 0.58; }
+}
+
+@keyframes hud-stall-alert {
+  to {
+    color: color-mix(in srgb, var(--danger) 55%, var(--fog));
+    background: color-mix(in srgb, var(--danger) 24%, var(--void));
+  }
+}

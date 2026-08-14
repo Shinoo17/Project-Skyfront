@@ -1,0 +1,75 @@
+.viewer-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--void);
+}
+
+.canvas-stage {
+  position: absolute;
+  inset: 0 352px 0 0;
+  z-index: 0;
+}
+
+.canvas-stage canvas {
+  display: block;
+  cursor: grab;
+}
+
+.canvas-stage canvas:active {
+  cursor: grabbing;
+}
+
+.fps-readout {
+  position: absolute;
+  top: 104px;
+  left: 32px;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  pointer-events: none;
+  font-family: var(--display);
+  font-variant-numeric: tabular-nums;
+}
+
+.fps-readout span {
+  color: var(--dim);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+.fps-readout output {
+  min-width: 2ch;
+  color: var(--ice);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: right;
+}
+
+.atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 48% 46%, transparent 0 28%, rgba(5, 7, 9, 0.06) 58%, rgba(5, 7, 9, 0.42) 100%),
+    linear-gradient(90deg, rgba(5, 7, 9, 0.28), transparent 22%, transparent 70%, rgba(5, 7, 9, 0.34));
+}
+
+.scanline {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  top: 49%;
+  height: 1px;
+  pointer-events: none;
+  opacity: 0.22;
+  background: linear-gradient(90deg, transparent 12%, rgba(154, 215, 232, 0.35), transparent 84%);
+  animation: scan-drift 9s var(--ease-out) infinite;
+}

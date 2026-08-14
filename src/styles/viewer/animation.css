@@ -1,0 +1,131 @@
+.clip-count {
+  margin-left: auto;
+  color: var(--ash);
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.animation-toggle-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  padding-right: 7px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(154, 215, 232, 0.42) rgba(255, 255, 255, 0.035);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.animation-toggle-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.animation-toggle-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.animation-toggle-list::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: rgba(154, 215, 232, 0.42);
+}
+
+.animation-toggle-list:focus-visible {
+  outline: 1px solid var(--ice);
+  outline-offset: 3px;
+}
+
+.animation-toggle {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 2px;
+  color: var(--ash);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.animation-toggle:hover {
+  color: var(--fog);
+  background: rgba(154, 215, 232, 0.05);
+}
+
+.animation-toggle.is-active {
+  color: var(--fog);
+  background: rgba(154, 215, 232, 0.09);
+}
+
+.animation-index {
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+
+.animation-copy {
+  min-width: 0;
+}
+
+.animation-copy strong,
+.animation-copy small {
+  display: block;
+  overflow: hidden;
+  font-family: var(--display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.animation-copy strong {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.animation-copy small {
+  margin-top: 3px;
+  color: var(--dim);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+}
+
+.animation-toggle.is-active .animation-copy small {
+  color: var(--ice);
+}
+
+.animation-switch {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.animation-switch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dim);
+  content: "";
+  transition: transform 220ms var(--ease-out), background 160ms ease;
+}
+
+.animation-toggle.is-active .animation-switch {
+  border-color: rgba(154, 215, 232, 0.55);
+}
+
+.animation-toggle.is-active .animation-switch::after {
+  background: var(--ice);
+  transform: translateX(12px);
+}

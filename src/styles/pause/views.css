@@ -1,0 +1,51 @@
+.pause-standby {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* A single phosphor rule down the left, the same mark the HUD uses for an advisory: this is
+   the instrument talking, not a paragraph of website copy. */
+.pause-lede {
+  max-width: 62ch;
+  margin: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--hud-green-soft);
+  color: var(--ash);
+  font-size: 14px;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+}
+
+.pause-facts,
+.pause-credits {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.pause-facts div,
+.pause-credits div {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+  gap: 20px;
+  padding: 13px 2px;
+  border-top: 1px solid var(--hud-green-hair);
+}
+
+.pause-facts dt,
+.pause-credits dt {
+  color: var(--hud-ice);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.pause-facts dd,
+.pause-credits dd {
+  margin: 0;
+  color: var(--ash);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: 0.03em;
+}

@@ -1,0 +1,234 @@
+.pause-rows,
+.pause-controls,
+.pause-binds {
+  display: flex;
+  flex-direction: column;
+}
+
+.pause-controls {
+  gap: 26px;
+}
+
+/*
+One settings row: the name and its note on the left, the control on the right, separated
+from its neighbours by a hairline and nothing else. Every tab is built from this, which is
+what keeps five screens reading as one instrument.
+*/
+.pause-row {
+  display: grid;
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+  padding: 14px 2px;
+}
+
+/* The rule goes between rows rather than above each one: `:first-of-type` would match by
+   element rather than by class and miss whichever tab opens with a preset grid. */
+.pause-row + .pause-row {
+  border-top: 1px solid var(--hud-green-hair);
+}
+
+.pause-row-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pause-row-name span {
+  color: var(--fog);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.pause-row-name i {
+  color: var(--dim);
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0.06em;
+}
+
+.pause-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pause-seg {
+  padding: 9px 15px;
+  border: 1px solid var(--hud-green-hair);
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.16s var(--ease-out), color 0.16s var(--ease-out),
+    background 0.16s var(--ease-out);
+}
+
+/* Explicitly not the latched option. Hover is a heavier selector than `.is-on`, so without
+   this the pointer resting on the option it just chose repaints its label phosphor green on
+   a phosphor green fill and the label disappears. */
+.pause-seg:hover:not(:disabled):not(.is-on) {
+  border-color: var(--hud-green-soft);
+  color: var(--hud-ice);
+}
+
+/* Latched, not merely chosen: filled phosphor with the panel's own black on it, so which
+   option is in force is readable without comparing it to its neighbours. */
+.pause-seg.is-on {
+  border-color: var(--hud-ice);
+  color: #04120a;
+  background: var(--hud-ice);
+}
+
+/* Latched, but not live. Phosphor on this interface means a system is running, so an option
+   that switches one off takes the neutral fill instead of claiming the signal. */
+.pause-seg.is-on.is-negative {
+  border-color: rgba(218, 226, 230, 0.5);
+  color: var(--void);
+  background: rgba(218, 226, 230, 0.72);
+}
+
+.pause-seg:disabled {
+  color: rgba(135, 148, 155, 0.4);
+  border-color: rgba(98, 255, 132, 0.08);
+  cursor: not-allowed;
+}
+
+.pause-ghost {
+  align-self: flex-start;
+  padding: 9px 14px;
+  border: 1px solid var(--hud-green-hair);
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.16s var(--ease-out), color 0.16s var(--ease-out);
+}
+
+.pause-ghost:hover {
+  border-color: var(--hud-green-soft);
+  color: var(--hud-ice);
+}
+
+/* The same instrument the throttle uses, so a setting and a control read as one family. */
+.pause-slider {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
+.pause-slider input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.pause-slider input:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.pause-slider input::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--hud-green-soft);
+}
+
+.pause-slider input::-webkit-slider-thumb {
+  width: 10px;
+  height: 20px;
+  margin-top: -8px;
+  appearance: none;
+  border: 1px solid var(--hud-ice);
+  border-radius: 2px;
+  background: var(--carbon);
+}
+
+.pause-slider input::-moz-range-track {
+  height: 3px;
+  background: var(--hud-green-soft);
+}
+
+.pause-slider input::-moz-range-thumb {
+  width: 10px;
+  height: 20px;
+  border: 1px solid var(--hud-ice);
+  border-radius: 2px;
+  background: var(--carbon);
+}
+
+.pause-slider output {
+  flex: none;
+  min-width: 74px;
+  color: var(--fog);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+  text-align: right;
+}
+
+/*
+Quality presets, as four cards that each state what they buy. The trade is the point — pixels
+against frames — so the summary is part of the control rather than a tooltip on it.
+*/
+.pause-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pause-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 15px 14px;
+  border: 1px solid var(--hud-green-hair);
+  color: var(--hud-green-dim);
+  text-align: left;
+  background: rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition: border-color 0.16s var(--ease-out), background 0.16s var(--ease-out);
+}
+
+.pause-preset:hover {
+  border-color: var(--hud-green-soft);
+}
+
+.pause-preset.is-on {
+  border-color: var(--hud-ice);
+  background: rgba(98, 255, 132, 0.1);
+}
+
+.pause-preset strong {
+  color: var(--fog);
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.pause-preset.is-on strong {
+  color: var(--hud-ice);
+}
+
+.pause-preset i {
+  color: var(--dim);
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}

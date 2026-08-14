@@ -1,0 +1,11 @@
+.interface {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.interface button,
+.control-panel {
+  pointer-events: auto;
+}

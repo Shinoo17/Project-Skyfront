@@ -1,0 +1,110 @@
+.pause-body {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: stretch;
+  width: 100%;
+  max-width: 1440px;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 26px 30px 20px;
+}
+
+.pause-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.pause-column-head,
+.pause-group-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 4px;
+  color: var(--hud-ice);
+  font-size: 10px;
+  letter-spacing: 0.28em;
+}
+
+.pause-group-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hud-green-hair);
+}
+
+/*
+The command column. Each row is a cut panel rather than a button: the notch on two corners
+is the aerospace datum the rest of the interface uses, at the one scale where it reads.
+Selection is the whole row lighting — the diamond, the border and the name together — because
+this column is flown with the arrow keys as often as with the pointer.
+*/
+.pause-command {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  padding: 15px 16px;
+  border: 1px solid var(--hud-green-hair);
+  color: var(--hud-green-dim);
+  text-align: left;
+  background: rgba(0, 0, 0, 0.42);
+  cursor: pointer;
+  clip-path: polygon(
+    10px 0, 100% 0, 100% calc(100% - 10px),
+    calc(100% - 10px) 100%, 0 100%, 0 10px
+  );
+  transition: border-color 0.16s var(--ease-out), background 0.16s var(--ease-out);
+}
+
+.pause-command .pause-diamond {
+  background: var(--dim);
+  transition: background 0.16s var(--ease-out);
+}
+
+.pause-command.is-selected,
+.pause-command:focus-visible {
+  border-color: var(--hud-green-soft);
+  background: rgba(98, 255, 132, 0.09);
+  outline: none;
+}
+
+.pause-command.is-selected .pause-diamond {
+  background: var(--hud-ice);
+}
+
+.pause-command-name {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pause-command-name strong {
+  color: var(--fog);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.pause-command-name i {
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pause-command-index {
+  margin-left: auto;
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}

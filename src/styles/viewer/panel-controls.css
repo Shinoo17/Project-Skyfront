@@ -1,0 +1,118 @@
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.segmented-control button {
+  height: 34px;
+  border: 0;
+  border-radius: 2px;
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 9px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.segmented-control button:hover {
+  color: var(--fog);
+}
+
+.segmented-control button.is-active {
+  color: var(--void);
+  background: var(--fog);
+}
+
+.view-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--line);
+}
+
+.view-grid button {
+  height: 38px;
+  border: 0;
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  background: var(--hangar);
+  cursor: pointer;
+  transition: color 180ms ease, background 180ms ease;
+}
+
+.view-grid button:hover {
+  color: var(--ice);
+  background: #111a1f;
+}
+
+.toggle-stack {
+  display: grid;
+  gap: 2px;
+  border-bottom: 0;
+}
+
+.toggle-row {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 22px 1fr 24px;
+  align-items: center;
+  padding: 0 3px;
+  border: 0;
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 10px;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.toggle-row:hover {
+  color: var(--fog);
+}
+
+.toggle-row i {
+  position: relative;
+  width: 24px;
+  height: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.toggle-row i::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  content: "";
+  transition: transform 220ms var(--ease-out), background 220ms ease;
+}
+
+.toggle-row.is-active {
+  color: var(--fog);
+}
+
+.toggle-row.is-active i {
+  border-color: rgba(154, 215, 232, 0.5);
+}
+
+.toggle-row.is-active i::after {
+  background: var(--ice);
+  transform: translateX(12px);
+}
+
+.panel-note {
+  flex: 0 0 auto;
+  margin: 10px 0 0;
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 7px;
+  line-height: 1.8;
+  letter-spacing: 0.13em;
+}

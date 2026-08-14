@@ -1,0 +1,362 @@
+/* ---- Cockpit bezel --------------------------------------------------------------- */
+
+.deck {
+  position: absolute;
+  color: var(--hud-green-dim);
+  font-family: var(--display);
+  background: rgba(9, 13, 16, 0.86);
+  backdrop-filter: blur(9px);
+}
+
+/* ---- Control deck ---------------------------------------------------------------- */
+
+.deck-controls {
+  right: 26px;
+  bottom: 44px;
+  left: 26px;
+  display: none;
+  align-items: end;
+  justify-content: space-between;
+  background: none;
+  backdrop-filter: none;
+}
+
+.deck-stick {
+  width: 216px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.deck-stick > span {
+  min-height: 58px;
+}
+
+.deck-key {
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 4px;
+  border: 1px solid var(--hud-green-strong);
+  border-radius: 2px;
+  color: var(--hud-ice);
+  background: rgba(9, 13, 16, 0.86);
+  backdrop-filter: blur(9px);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 140ms var(--ease-out);
+}
+
+.deck-key span {
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.deck-key:hover {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+  transform: translateY(-2px);
+}
+
+.deck-key:active {
+  color: var(--void);
+  border-color: var(--hud-ice);
+  background: var(--hud-ice);
+  transform: translateY(0);
+}
+
+.deck-key.is-selected {
+  color: var(--void);
+  border-color: var(--hud-ice);
+  background: var(--hud-ice);
+}
+
+.deck-key.is-reset {
+  color: var(--hud-ice);
+}
+
+.deck-key.is-reset:hover {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+}
+
+.deck-key.is-afterburner {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Reheat is the one control with a budget, so the budget rides on the key: a strip that
+   drains under the thumb holding it and creeps back once the nozzle is cold. */
+.deck-key.is-afterburner::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--hud-ice);
+  opacity: 0.5;
+  transform: scaleX(var(--reserve, 1));
+  transform-origin: left center;
+}
+
+.deck-key.is-afterburner.is-active {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+  background: var(--hud-green-soft);
+  box-shadow: 0 0 10px rgba(48, 255, 104, 0.38);
+}
+
+.deck-key.is-afterburner.is-active::after {
+  opacity: 1;
+}
+
+/* Burnt out and cooling: the key stays lit but stops promising thrust, and its strip
+   refills instead of draining. */
+.deck-key.is-afterburner.is-depleted {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+.deck-key.is-afterburner.is-depleted::after {
+  background: var(--amber);
+  opacity: 0.9;
+}
+
+.deck-engine {
+  width: 320px;
+  display: grid;
+  gap: 6px;
+}
+
+.deck-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+.deck-row .deck-key {
+  min-height: 50px;
+}
+
+/* Secondary touch controls stay out of the stick and throttle groups. The two flight
+   actions — the high-G turn and Maneuver Assist — are promoted here side by side, because
+   the pair is what the pilot has to tell apart; camera utilities remain quieter peers. */
+.deck-row.is-modes {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.deck-row.is-modes .deck-key {
+  min-height: 40px;
+}
+
+.deck-auto-mode {
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(98, 255, 132, 0.24);
+  border-radius: 2px;
+  color: var(--hud-green-dim);
+  background: rgba(9, 13, 16, 0.58);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+
+/* The flight-model debug readout: one monospace block off the sightline, phosphor on
+   glass like everything else, and invisible to the pointer. */
+.hud-debug {
+  position: absolute;
+  top: 22px;
+  left: 18px;
+  margin: 0;
+  padding: 10px 13px;
+  border: 1px solid var(--hud-green-strong);
+  border-radius: 2px;
+  background: rgba(6, 10, 12, 0.74);
+  color: var(--hud-green, #62ff84);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  letter-spacing: 0.04em;
+  white-space: pre;
+  pointer-events: none;
+  z-index: 30;
+}
+
+.deck-throttle {
+  padding: 12px 13px 13px;
+  border: 1px solid var(--hud-green-strong);
+  border-radius: 2px;
+  background: rgba(9, 13, 16, 0.86);
+  backdrop-filter: blur(9px);
+}
+
+.deck-throttle-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 11px;
+}
+
+.deck-throttle-head span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--hud-green-dim);
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+}
+
+/* The normal HUD names the engine state, not a simulator-style throttle percentage. */
+.deck-command-speed {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.deck-command-speed b {
+  color: var(--hud-green, #62ff84);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+.deck-throttle-row {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr) 50px;
+  align-items: center;
+  gap: 10px;
+}
+
+.deck-throttle-row .deck-key {
+  min-height: 42px;
+}
+
+.deck-power-hint {
+  color: var(--hud-green-dim);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.deck-power-hint kbd {
+  color: var(--hud-green, #62ff84);
+}
+
+.deck-throttle-row input {
+  width: 100%;
+  height: 30px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.deck-throttle-row input::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--hud-green-soft);
+}
+
+.deck-throttle-row input::-webkit-slider-thumb {
+  width: 10px;
+  height: 22px;
+  margin-top: -9px;
+  appearance: none;
+  border: 1px solid var(--hud-ice);
+  border-radius: 2px;
+  background: var(--carbon);
+}
+
+.deck-throttle-row input::-moz-range-track {
+  height: 3px;
+  background: var(--hud-green-soft);
+}
+
+.deck-throttle-row input::-moz-range-thumb {
+  width: 10px;
+  height: 22px;
+  border: 1px solid var(--hud-ice);
+  border-radius: 2px;
+  background: var(--carbon);
+}
+
+.deck-keymap {
+  position: absolute;
+  bottom: 13px;
+  left: 50%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 0;
+  padding: 6px 14px;
+  border-radius: 2px;
+  color: var(--hud-green-dim);
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: rgba(9, 13, 16, 0.78);
+  backdrop-filter: blur(9px);
+  transform: translateX(-50%);
+}
+
+.deck-keymap kbd {
+  min-width: 23px;
+  padding: 4px 6px;
+  border: 1px solid var(--hud-green-strong);
+  border-radius: 2px;
+  color: var(--hud-ice);
+  font-family: var(--display);
+  font-size: 11px;
+  line-height: 1;
+  text-align: center;
+  background: var(--carbon);
+}
+
+.deck-keymap span {
+  margin-right: 14px;
+  margin-left: 3px;
+}
+
+.deck-keymap span:last-child {
+  margin-right: 0;
+}
+
+/* One control and its keys, kept together across a wrap. The margin moves out to the group
+   so the caption sits tight against the keys it belongs to. */
+.deck-keymap-entry {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin: 0;
+}
+
+.deck-keymap-entry span {
+  margin-right: 0;
+}
+
+.deck-keymap kbd.is-unbound {
+  border-color: var(--hud-green-soft, rgba(98, 255, 132, 0.24));
+  color: var(--dim);
+}

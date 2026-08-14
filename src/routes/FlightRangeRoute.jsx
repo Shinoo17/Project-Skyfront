@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom'
 
 import FlightHud from '../features/flight-range/FlightHud'
 import FlightRangeScene from '../features/flight-range/FlightRangeScene'
-import PauseMenu from '../features/flight-range/PauseMenu'
+import PauseMenu from '../features/flight-range/pause-menu'
 import {
   centreMouseStick,
   clearMouseStick,

@@ -1,0 +1,106 @@
+.control-panel {
+  position: absolute;
+  top: 104px;
+  right: 24px;
+  bottom: 24px;
+  width: 304px;
+  min-height: 530px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 22px 20px 18px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 16px 24px 54px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px);
+}
+
+.panel-drag {
+  display: none;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.panel-heading span,
+.section-label {
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.panel-heading strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--fog);
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.close-panel {
+  display: none;
+}
+
+.panel-tabs {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--line);
+  background-clip: content-box;
+}
+
+.panel-tabs button {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--hangar);
+  cursor: pointer;
+}
+
+.panel-tabs button:hover {
+  color: var(--fog);
+  background: #111a1f;
+}
+
+.panel-tabs button.is-active {
+  color: var(--void);
+  background: var(--fog);
+}
+
+.panel-tabs button:disabled {
+  color: var(--line-strong);
+  cursor: not-allowed;
+}
+
+.panel-tabs button:disabled:hover {
+  color: var(--line-strong);
+  background: var(--hangar);
+}
+
+.panel-section {
+  flex: 0 0 auto;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}

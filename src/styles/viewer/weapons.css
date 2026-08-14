@@ -1,0 +1,132 @@
+.weapon-section {
+  min-height: 200px;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  padding-right: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(154, 215, 232, 0.42) rgba(255, 255, 255, 0.035);
+  scrollbar-width: thin;
+}
+
+.weapon-section::-webkit-scrollbar {
+  width: 4px;
+}
+
+.weapon-section::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.weapon-section::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: rgba(154, 215, 232, 0.42);
+}
+
+.weapon-list {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.weapon-option {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 2px;
+  color: var(--ash);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
+}
+
+.weapon-option:hover {
+  color: var(--fog);
+  background: rgba(154, 215, 232, 0.05);
+}
+
+.weapon-option.is-active {
+  border-left-color: var(--ice);
+  color: var(--fog);
+  background: rgba(154, 215, 232, 0.09);
+}
+
+.weapon-option.is-all {
+  margin-bottom: 5px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 2px 2px 0 0;
+}
+
+.weapon-count {
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.weapon-option.is-active .weapon-count {
+  color: var(--ice);
+}
+
+.weapon-station {
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.weapon-spec {
+  display: grid;
+  gap: 1px;
+  margin: 15px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.weapon-spec > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+}
+
+.weapon-spec dt {
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.weapon-spec dd {
+  margin: 0;
+  color: var(--fog);
+  font-family: var(--display);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-align: right;
+}
+
+.weapon-hint {
+  margin: 15px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.7;
+}

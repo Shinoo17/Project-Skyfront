@@ -1,0 +1,419 @@
+/* ---- Dev observer surface --------------------------------------------------------- */
+
+/*
+The developer test-flight page. It borrows the sortie's full-bleed stage and its HUD, and
+adds exactly two things of its own: a panel of controls and live numbers, and the frame
+around the picture-in-picture. The frame is decoration only — the pilot's view inside it is
+WebGL, scissored into the same rectangle by the renderer, so this element must never take
+a pointer or paint a background over it.
+*/
+
+.flight-interface select {
+  pointer-events: auto;
+}
+
+.dev-panel {
+  position: absolute;
+  top: 92px;
+  left: 24px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 246px;
+  max-height: calc(100% - 120px);
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid rgba(98, 255, 132, 0.22);
+  border-radius: 3px;
+  pointer-events: auto;
+  color: var(--hud-green-dim, rgba(98, 255, 132, 0.68));
+  font-family: var(--display);
+  background: rgba(7, 12, 15, 0.86);
+  backdrop-filter: blur(9px);
+
+  --hud-ice: #62ff84;
+  --hud-green-dim: rgba(98, 255, 132, 0.68);
+  --hud-green-soft: rgba(98, 255, 132, 0.24);
+}
+
+.dev-panel-title {
+  margin: 0;
+  color: var(--hud-ice);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.dev-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.dev-panel-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--hud-green-soft);
+  border-radius: 2px;
+  color: var(--hud-ice);
+  font-family: inherit;
+  font-size: 10px;
+  background: rgba(3, 9, 12, 0.9);
+}
+
+.dev-panel-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dev-panel-buttons button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border: 1px solid var(--hud-green-soft);
+  border-radius: 2px;
+  color: var(--hud-green-dim);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-align: left;
+  background: rgba(3, 9, 12, 0.72);
+  cursor: pointer;
+}
+
+.dev-panel-buttons button:hover:not(:disabled) {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+}
+
+.dev-panel-buttons button.is-on {
+  color: #06110a;
+  border-color: var(--hud-ice);
+  background: var(--hud-ice);
+}
+
+.dev-panel-buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dev-panel-buttons kbd,
+.dev-panel-hint kbd {
+  margin-left: auto;
+  padding: 1px 4px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 9px;
+}
+
+.dev-panel-readout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 10px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.dev-panel-readout div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.dev-panel-readout dt {
+  color: rgba(98, 255, 132, 0.5);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+}
+
+.dev-panel-readout dd {
+  margin: 0;
+  color: var(--hud-ice);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.dev-panel-hint {
+  margin: 0;
+  color: rgba(98, 255, 132, 0.46);
+  font-size: 9px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+}
+
+.dev-panel-hint kbd {
+  margin: 0 2px;
+}
+
+/* ---- Picture-in-picture ----------------------------------------------------------- */
+
+/*
+The rule is inset, not a border: `box-sizing: border-box` would take a real border out of
+the content box, the HUD inside would lay out two pixels short of the WebGL rectangle
+beside it, and the projected ladder would scale off the horizon it is supposed to sit on.
+*/
+.pip-frame {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(98, 255, 132, 0.34),
+    0 8px 28px rgba(3, 7, 10, 0.55);
+}
+
+.pip-label {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  color: rgba(98, 255, 132, 0.72);
+  font-family: var(--display);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 7px rgba(48, 255, 104, 0.34);
+}
+
+/*
+Inside the inset the HUD is a few hundred pixels wide, so the two sightline properties are
+restated against the box rather than the viewport — otherwise the advisory, the one piece
+of symbology that stays in the DOM, hangs off a ladder measured in `vh` and lands somewhere
+the canvas never drew.
+*/
+.hud.is-glass {
+  --hud-half: 42%;
+  --hud-tape-height: 58%;
+}
+
+.hud.is-glass .hud-advisory {
+  top: auto;
+  bottom: 8px;
+  padding: 3px 8px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.hud.is-glass .hud-stall-warning {
+  gap: 5px;
+  padding: 5px 8px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+}
+
+.hud.is-glass .hud-stall-warning svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---- Manoeuvre demonstration board ------------------------------------------------ */
+
+/*
+Right-hand column on the developer page, clear of the picture-in-picture in the bottom
+corner. It borrows the dev panel's chrome — same carbon plate, same green — because it is
+the same surface; only the content differs.
+*/
+.demo-panel {
+  position: absolute;
+  top: 92px;
+  right: 24px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 244px;
+  /* Clear of the picture-in-picture in the bottom-right corner, which is at most 560 wide
+     by 315 tall plus its 22px margin. */
+  max-height: max(180px, calc(100% - 440px));
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid rgba(98, 255, 132, 0.22);
+  border-radius: 3px;
+  pointer-events: auto;
+  color: var(--hud-green-dim, rgba(98, 255, 132, 0.68));
+  font-family: var(--display);
+  background: rgba(7, 12, 15, 0.86);
+  backdrop-filter: blur(9px);
+
+  --hud-ice: #62ff84;
+  --hud-green-dim: rgba(98, 255, 132, 0.68);
+  --hud-green-soft: rgba(98, 255, 132, 0.24);
+}
+
+.demo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.demo-list button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--hud-green-soft);
+  border-radius: 2px;
+  color: var(--hud-green-dim);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-align: left;
+  background: rgba(3, 9, 12, 0.72);
+  cursor: pointer;
+}
+
+.demo-list button span {
+  flex: 1 1 auto;
+}
+
+/*
+Both glyphs ship on every row and CSS picks one, so the panel's animation frame can swap
+play for stop by toggling a class instead of re-rendering the list.
+*/
+.demo-list button .demo-icon-stop,
+.demo-list button.is-on .demo-icon-play,
+.demo-list button.is-on.is-done .demo-icon-stop {
+  display: none;
+}
+
+.demo-list button.is-on .demo-icon-stop,
+.demo-list button.is-on.is-done .demo-icon-play {
+  display: block;
+}
+
+/* The regime the script claims. Quiet — it is a footnote until the verdict line uses it. */
+.demo-list button em {
+  font-size: 8px;
+  font-style: normal;
+  letter-spacing: 0.1em;
+  opacity: 0.62;
+}
+
+.demo-list button:hover {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+}
+
+.demo-list button.is-on {
+  color: #06110a;
+  border-color: var(--hud-ice);
+  background: var(--hud-ice);
+}
+
+.demo-panel-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.demo-panel-buttons button {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid var(--hud-green-soft);
+  border-radius: 2px;
+  color: var(--hud-green-dim);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  background: rgba(3, 9, 12, 0.72);
+  cursor: pointer;
+}
+
+.demo-panel-buttons button.is-on {
+  color: #06110a;
+  border-color: var(--hud-ice);
+  background: var(--hud-ice);
+}
+
+.demo-panel-buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.demo-brief {
+  margin: 0;
+  color: rgba(98, 255, 132, 0.56);
+  font-size: 9px;
+  line-height: 1.65;
+  letter-spacing: 0.03em;
+}
+
+.demo-progress {
+  --progress: 0;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(98, 255, 132, 0.16);
+}
+
+.demo-progress i {
+  display: block;
+  height: 100%;
+  background: var(--hud-ice);
+  transform: scaleX(var(--progress));
+  transform-origin: left center;
+}
+
+.demo-readout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/*
+The verdict. Neither glyph shows until the run has said something: a tick once the flight
+model has actually reported the regime, a cross once a finished run never did.
+*/
+.demo-verdict {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: rgba(98, 255, 132, 0.5);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.demo-verdict strong {
+  color: var(--hud-ice);
+  font-weight: 700;
+}
+
+.demo-verdict .demo-tick,
+.demo-verdict .demo-cross {
+  display: none;
+  flex: 0 0 auto;
+}
+
+.demo-verdict.is-matched {
+  color: var(--hud-ice);
+}
+
+.demo-verdict.is-matched .demo-tick {
+  display: block;
+}
+
+.demo-verdict.is-missed {
+  color: var(--danger);
+}
+
+.demo-verdict.is-missed .demo-cross {
+  display: block;
+}
+
+@media (max-width: 900px) {
+  .demo-panel {
+    display: none;
+  }
+}

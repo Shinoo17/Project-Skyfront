@@ -1,0 +1,138 @@
+/*
+Test Flight HUD.
+
+Two materials, and the split is the whole design. `.hud-glass` is projected symbology,
+drawn on one canvas: one colour, no fills, no boxes, sitting on the sightline. `.deck` is
+cockpit bezel: opaque carbon clamped to the frame edges, deliberately quiet.
+
+Legibility over a bright sky is bought with a dark halo on every glyph and stroke rather
+than by dimming the world behind it, because the range runs from a sunlit sky (#688293)
+down to shadowed rock and no single scrim serves both. On the glass the halo is painted
+into the canvas; in the DOM it is text-shadow. No `filter` touches an element that
+animates every frame.
+
+The sightline geometry is declared twice on purpose: `hud.js` computes it in canvas pixels,
+and these two custom properties restate the same expression so the advisory — the one
+symbol that stays in the DOM, because it is announced — can hang off the bottom of the
+status block without JavaScript measuring anything.
+*/
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+
+  --hud-ice: #62ff84;
+  --hud-green-dim: rgba(98, 255, 132, 0.68);
+  --hud-green-soft: rgba(98, 255, 132, 0.24);
+  --hud-green-strong: rgba(98, 255, 132, 0.52);
+  --hud-glyph: 0 0 7px rgba(48, 255, 104, 0.34);
+  --hud-half: min(42vw, 72vh);
+  --hud-tape-height: min(42vh, calc(var(--hud-half) * 0.95));
+}
+
+/*
+The glass is a single canvas covering the same box as the WebGL view, so a world point
+projected through the flight camera lands on the same pixel in both and the pitch ladder
+stays welded to the real horizon. Every stroke carries a translucent green under-pass,
+painted into the canvas — nothing here needs a `filter`, which would recomposite the layer.
+*/
+.hud-glass {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hud-a11y-readout {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The sortie dropped its top bar for the pause menu, so both corner readouts move up into
+   the space it used to hold. Only the sortie draws these — the observer page runs the glass
+   variant, which has neither. */
+.flight-fps {
+  top: 26px;
+  right: 26px;
+  left: auto;
+  min-width: 66px;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border: 1px solid var(--hud-green-soft);
+  background: rgba(3, 9, 12, 0.78);
+}
+
+.flight-fps span {
+  color: var(--hud-green-dim);
+}
+
+.flight-fps output {
+  color: var(--hud-ice);
+}
+
+/* ---- Advisory -------------------------------------------------------------------- */
+
+.hud-advisory {
+  position: absolute;
+  top: calc(50% + (var(--hud-tape-height) / 2) + 92px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 7px 16px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  color: var(--hud-ice);
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+  white-space: nowrap;
+  background: rgba(3, 9, 12, 0.72);
+  text-shadow: var(--hud-glyph);
+  transform: translateX(-50%);
+}
+
+.hud-advisory.is-caution {
+  color: var(--hud-ice);
+}
+
+/* Alert state stays monochrome: the icon, dark green plate, and pulse carry urgency. */
+.hud-advisory.is-alert {
+  color: var(--hud-ice);
+  border-color: var(--hud-ice);
+  background: rgba(3, 9, 12, 0.86);
+  animation: hud-alert 720ms steps(1, end) infinite alternate;
+}
+
+/* Stall is an immediate aircraft-state warning, not part of the advisory queue. Keeping
+   it on the centre datum means terrain, range, and manoeuvre advisories remain readable
+   below the sightline while the stall state can never be replaced by them. */
+.hud-stall-warning {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 18px;
+  border-block: 1px solid currentColor;
+  color: var(--danger);
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  line-height: 1;
+  background: color-mix(in srgb, var(--danger) 14%, var(--void));
+  text-shadow: 0 0 8px color-mix(in srgb, var(--danger) 50%, transparent);
+  transform: translate(-50%, -50%);
+  animation: hud-stall-alert 520ms steps(1, end) infinite alternate;
+}

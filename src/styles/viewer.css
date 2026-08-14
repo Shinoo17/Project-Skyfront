@@ -1,0 +1,15 @@
+/*
+The hangar viewer's own chrome, in the order the single sheet declared it. Order still
+matters here — `panel-controls.css` holds primitives that later panes override — so these
+imports must not be resorted.
+*/
+@import './viewer/layout.css';
+@import './viewer/topbar.css';
+@import './viewer/sight.css';
+@import './viewer/panel.css';
+@import './viewer/flight-section.css';
+@import './viewer/animation.css';
+@import './viewer/weapons.css';
+@import './viewer/clips.css';
+@import './viewer/panel-controls.css';
+@import './viewer/corner.css';

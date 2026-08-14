@@ -1,0 +1,100 @@
+/*
+The rebind list, on the same two columns as every other settings row: the control named on
+the left, the thing you press on the right. A bind row is a setting like any other, and
+giving it its own reading order would make the Controls tab the one screen the eye has to
+re-learn.
+*/
+.pause-bind {
+  display: grid;
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+  padding: 9px 2px;
+  border-top: 1px solid var(--hud-green-hair);
+}
+
+.pause-bind-keys {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/*
+One slot. Empty it is a dash with a dimmed border; listening it inverts to filled phosphor,
+because a slot waiting for a key is a modal state and has to look like one.
+*/
+.pause-cap {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  min-width: 82px;
+  min-height: 34px;
+  padding: 5px 9px;
+  border: 1px solid var(--hud-green-hair);
+  color: var(--hud-green-dim);
+  background: rgba(98, 255, 132, 0.04);
+  cursor: pointer;
+  transition: border-color 0.16s var(--ease-out), color 0.16s var(--ease-out),
+    background 0.16s var(--ease-out);
+}
+
+.pause-cap:hover {
+  border-color: var(--hud-green-soft);
+  color: var(--hud-ice);
+}
+
+.pause-cap em {
+  color: inherit;
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0.12em;
+}
+
+.pause-cap.is-empty {
+  color: var(--dim);
+  background: transparent;
+}
+
+.pause-cap.is-listening {
+  border-color: var(--hud-ice);
+  color: #04120a;
+  background: var(--hud-ice);
+}
+
+.pause-cap.is-fixed {
+  border-style: dashed;
+  cursor: default;
+}
+
+/*
+The prompt art, used as a mask rather than as an image, so one asset follows `currentColor`
+into every state the cap has — dimmed while empty, phosphor on hover, panel-black while the
+slot is listening. An `<img>` would be a white sticker through all of it.
+*/
+.key-cap {
+  display: inline-block;
+  flex: none;
+  width: 21px;
+  height: 21px;
+  background: currentColor;
+  mask-image: var(--key-art);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-image: var(--key-art);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+}
+
+.key-cap.is-text {
+  width: auto;
+  height: auto;
+  background: none;
+  color: inherit;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  mask-image: none;
+  -webkit-mask-image: none;
+}
