@@ -71,10 +71,87 @@ export const FLIGHT_QUALITY_OPTIONS = [
 export const DEFAULT_FLIGHT_QUALITY = 'medium'
 
 const QUALITY_STORAGE_KEY = 'f22-viewer:flight-quality'
+const CUSTOM_STORAGE_KEY = 'f22-viewer:flight-graphics-custom'
+
+/*
+Custom, as its own preset rather than as a fourth profile.
+
+The three named profiles say what they buy in one line, which is what most pilots want. A
+custom one is for the pilot who has already read a frame-rate number and wants to move one
+knob against it, so every field here is a setting the flight surface genuinely consumes —
+nothing is offered that the range would ignore.
+
+`restart` is the honest part. Antialiasing, the pixel ratio and the GPU preference are fixed
+when the WebGL context is created, so changing them is a new context, which is a new sortie
+from the spawn. Shadows and the frame target ride the existing renderer and take effect on
+the next frame. The menu groups them by that answer so the cost is visible before the click.
+*/
+export const FLIGHT_GRAPHICS_FIELDS = [
+  {
+    id: 'dpr',
+    label: 'Resolution scale',
+    note: 'Device pixel ratio',
+    restart: true,
+    options: [
+      { id: '1', label: '1×', value: 1 },
+      { id: '1-1.5', label: '1–1.5×', value: [1, 1.5] },
+      { id: '1-2', label: '1–2×', value: [1, 2] },
+    ],
+  },
+  {
+    id: 'antialias',
+    label: 'Anti-aliasing',
+    note: 'MSAA on the default framebuffer',
+    restart: true,
+    options: [
+      { id: 'on', label: 'On', value: true },
+      { id: 'off', label: 'Off', value: false },
+    ],
+  },
+  {
+    id: 'powerPreference',
+    label: 'GPU preference',
+    note: 'Hint to the browser, not a guarantee',
+    restart: true,
+    options: [
+      { id: 'high-performance', label: 'Performance', value: 'high-performance' },
+      { id: 'default', label: 'Default', value: 'default' },
+    ],
+  },
+  {
+    id: 'targetFps',
+    label: 'Frame target',
+    note: 'Frames the surface asks for each second',
+    restart: false,
+    options: [
+      { id: '30', label: '30', value: 30 },
+      { id: '60', label: '60', value: 60 },
+      { id: '120', label: '120', value: 120 },
+    ],
+  },
+]
+
+/*
+Shadows are deliberately absent from that list. The flight maps light themselves with a
+hemisphere and a sun that casts nothing, so the switch would cost the pilot a click and
+change no pixel on this surface — and a control that does nothing is exactly what the
+"don't invent" rule is about. It stays in the profiles because the studio viewer, which
+does cast, reads the same table.
+*/
+
+// Custom starts from Medium rather than from nothing, so the first knob the pilot moves is
+// a change to a profile they have already seen rather than a blank they have to fill in.
+export const DEFAULT_FLIGHT_CUSTOM = {
+  dpr: '1-1.5',
+  antialias: 'on',
+  powerPreference: 'high-performance',
+  targetFps: '60',
+}
 
 export function readFlightQuality() {
   try {
     const stored = window.localStorage.getItem(QUALITY_STORAGE_KEY)
+    if (stored === 'custom') return 'custom'
     return FLIGHT_QUALITY_OPTIONS.some((option) => option.id === stored)
       ? stored
       : DEFAULT_FLIGHT_QUALITY
@@ -90,6 +167,91 @@ export function writeFlightQuality(quality) {
   } catch {
     // Not being able to remember the choice is not a reason to refuse it this session.
   }
+}
+
+function sanitiseCustom(source) {
+  const next = {}
+  for (const field of FLIGHT_GRAPHICS_FIELDS) {
+    const chosen = source?.[field.id]
+    next[field.id] = field.options.some((option) => option.id === chosen)
+      ? chosen
+      : DEFAULT_FLIGHT_CUSTOM[field.id]
+  }
+  return next
+}
+
+export function readFlightCustomGraphics() {
+  try {
+    const stored = window.localStorage.getItem(CUSTOM_STORAGE_KEY)
+    return sanitiseCustom(stored ? JSON.parse(stored) : null)
+  } catch {
+    return sanitiseCustom(null)
+  }
+}
+
+export function writeFlightCustomGraphics(custom) {
+  try {
+    window.localStorage.setItem(CUSTOM_STORAGE_KEY, JSON.stringify(custom))
+  } catch {
+    // Not being able to remember the choice is not a reason to refuse it this session.
+  }
+}
+
+/*
+The profile the surface actually renders from. A named quality is its authored profile
+unchanged; `custom` is built field by field from the pilot's choices, on top of medium so
+that anything not exposed here — the shadow map size, the environment — still has the value
+the flight profiles were tuned with.
+*/
+export function resolveFlightGraphics(quality, custom) {
+  if (quality !== 'custom') {
+    return GRAPHICS_PROFILES[quality] ?? GRAPHICS_PROFILES[DEFAULT_FLIGHT_QUALITY]
+  }
+  const chosen = sanitiseCustom(custom)
+  const profile = { ...GRAPHICS_PROFILES.medium }
+  for (const field of FLIGHT_GRAPHICS_FIELDS) {
+    const option = field.options.find((entry) => entry.id === chosen[field.id])
+    if (option) profile[field.id] = option.value
+  }
+  return profile
+}
+
+/*
+The fields as the settings screen has to show them: whatever profile is actually in force,
+named back in option ids.
+
+A named quality has no stored fields of its own, so they are read off its authored profile
+by matching values. That is what lets the screen show Low, Medium and High with their real
+knobs rather than with a custom set the pilot has not chosen — and it means the first knob
+they move starts from the preset they were on rather than from an unrelated saved one.
+*/
+export function describeFlightGraphics(quality, custom) {
+  if (quality === 'custom') return sanitiseCustom(custom)
+  const profile = GRAPHICS_PROFILES[quality] ?? GRAPHICS_PROFILES[DEFAULT_FLIGHT_QUALITY]
+  const described = {}
+  for (const field of FLIGHT_GRAPHICS_FIELDS) {
+    const match = field.options.find(
+      (option) => JSON.stringify(option.value) === JSON.stringify(profile[field.id]),
+    )
+    // A profile whose value is not one the screen offers — a frame target no card names —
+    // falls back to the custom default rather than showing a field with nothing latched.
+    described[field.id] = match?.id ?? DEFAULT_FLIGHT_CUSTOM[field.id]
+  }
+  return described
+}
+
+/*
+What has to change for the context to be thrown away and rebuilt. Only the restart fields
+are in it, so moving the frame target on a custom profile keeps the sortie in the air while
+moving the pixel ratio honestly restarts it.
+*/
+export function flightGraphicsKey(quality, custom) {
+  if (quality !== 'custom') return quality
+  const chosen = sanitiseCustom(custom)
+  return FLIGHT_GRAPHICS_FIELDS
+    .filter((field) => field.restart)
+    .map((field) => `${field.id}:${chosen[field.id]}`)
+    .join('|')
 }
 
 export function useGraphicsProfile(name = DEFAULT_GRAPHICS_PROFILE) {

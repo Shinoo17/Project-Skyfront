@@ -6,6 +6,7 @@ import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 import { makeHinges } from '../../three/hinge'
 import { applyClosedRestPose } from '../../three/pose'
 import {
+  FLIGHT_FOV_RANGE,
   createChaseCameraState,
   resetChaseCamera,
   updateChaseCamera,
@@ -81,6 +82,7 @@ export default function FlightAircraft({
   cameraMode = 'chase',
   cameraStyle = 'combat',
   cameraDistance = 'normal',
+  cameraFov = FLIGHT_FOV_RANGE.default,
   paused = false,
 }) {
   const envelope = aircraft.flight.envelope
@@ -379,6 +381,7 @@ export default function FlightAircraft({
       mode: cameraMode,
       style: cameraStyle,
       distance: cameraDistance,
+      fov: cameraFov,
       cameraLook: controls.current.cameraLook,
       rearView: controls.current.pressed.has('rear-view'),
     })

@@ -24,9 +24,16 @@ import {
   TriangleAlert,
   Zap,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 
+import { DEFAULT_KEY_BINDINGS, describeKey } from '../flight/keybindings'
 import { createFlightHud } from './hud'
+import {
+  DEFAULT_ALTITUDE_UNIT,
+  DEFAULT_SPEED_UNIT,
+  getSpeedUnit,
+  metresPerWorldUnit,
+} from './units'
 import { EMPTY_TELEMETRY } from '../flight/telemetry'
 
 const RESET_CAPTIONS = {
@@ -54,6 +61,29 @@ const MANEUVER_CAPTIONS = {
 // A retina backing store for a canvas that repaints every frame is the difference between
 // crisp symbology and a soft one; past 2x it is pixels nobody can see.
 const MAX_PIXEL_RATIO = 2
+
+/*
+The key legend, as controls rather than as keys.
+
+Every row names the aircraft function; which key is on it is read from the pilot's own
+bindings at render time. Printing the authored default here — which is what this legend used
+to do — would leave a rebound pilot flying one key while the glass told them another, and a
+legend that lies is worse than no legend.
+
+Extreme manoeuvre has no key of its own: it is the two throttle intents held together, so it
+borrows both and says so.
+*/
+const LEGEND_ROWS = [
+  { actions: ['pitch-up', 'pitch-down'], caption: 'pitch' },
+  { actions: ['roll-left', 'roll-right'], caption: 'roll' },
+  { actions: ['yaw-left', 'yaw-right'], caption: 'yaw' },
+  { actions: ['throttle-up', 'throttle-down'], caption: 'MIL power / idle' },
+  { actions: ['afterburner'], caption: 'afterburner' },
+  { actions: ['air-brake'], caption: 'airbrake' },
+  { actions: ['flaps'], caption: 'flaps' },
+  { actions: ['maneuver-assist'], caption: 'maneuver assist' },
+  { actions: ['rear-view'], caption: 'look back' },
+]
 
 /*
 The advisory and the independent stall latch are the only HUD states that belong in React:
@@ -252,12 +282,31 @@ export default function FlightHud({
   variant = 'cockpit',
   mouseFlightEnabled = true,
   mousePitchInverted = false,
+  // The pilot's units, from the pause menu. They change the tapes rather than only their
+  // labels — see `units.js`. The debug block below stays in the model's own km/h and world
+  // units whatever is chosen, because it is a readout of the simulation, not of the sortie.
+  speedUnit = DEFAULT_SPEED_UNIT,
+  altitudeUnit = DEFAULT_ALTITUDE_UNIT,
+  // The pilot's own keyboard, so the legend under the deck names the keys they actually
+  // fly with rather than the ones this build shipped.
+  keyBindings = DEFAULT_KEY_BINDINGS,
   // Whether the mouse currently has the stick, which is not the same question as whether it
   // is allowed to: on a browser with Pointer Lock the pilot has to click the sky first.
   mouseStickLive = true,
 }) {
   const glassOnly = variant === 'glass'
+  const speedScale = getSpeedUnit(speedUnit)
   const dom = useRef({})
+
+  // Both keys on a control, as caps. An unbound slot prints nothing rather than an empty
+  // box, and a control with nothing on it at all says so — the pilot has cleared it, and
+  // the legend should not pretend otherwise.
+  const keys = (action) => {
+    const caps = (keyBindings[action] ?? [])
+      .filter(Boolean)
+      .map((code) => <kbd key={code}>{describeKey(code).label}</kbd>)
+    return caps.length ? caps : <kbd className="is-unbound">—</kbd>
+  }
   const [advisory, setAdvisory] = useState(() => readAdvisory(EMPTY_TELEMETRY))
   const advisoryKey = useRef(advisory.key)
   const [stallWarning, setStallWarning] = useState(false)
@@ -271,7 +320,12 @@ export default function FlightHud({
     const frame = dom.current.root
     if (!canvas || !frame) return undefined
 
-    const hud = createFlightHud(canvas, { combatBand: envelope.combatBandKmh ?? null })
+    const hud = createFlightHud(canvas, {
+      combatBand: envelope.combatBandKmh ?? null,
+      speedUnit,
+      altitudeUnit,
+      metresPerWorldUnit: metresPerWorldUnit(envelope),
+    })
 
     // The ratio is read per resize, not once: browser zoom and a drag onto a display of a
     // different density both fire the observer, and a backing store left at the old ratio
@@ -305,7 +359,7 @@ export default function FlightHud({
       // none of it sits on the sightline.
       const nodes = dom.current
       setText(nodes.fps, value.live && value.fps ? String(value.fps) : '–')
-      setText(nodes.speed, value.live ? String(Math.round(value.speed)) : '–')
+      setText(nodes.speed, value.live ? String(Math.round(speedScale.fromKmh(value.speed))) : '–')
       setText(nodes.mach, value.live ? value.mach.toFixed(2) : '–')
       setText(nodes.afterburnerState, value.afterburnerState === 'depleted'
         ? `cooling down, ${value.afterburnerCooldown.toFixed(1)} seconds`
@@ -338,7 +392,7 @@ export default function FlightHud({
       window.cancelAnimationFrame(request)
       observer.disconnect()
     }
-  }, [telemetry, envelope])
+  }, [telemetry, envelope, speedScale, altitudeUnit, speedUnit])
 
   return (
     <div
@@ -350,7 +404,7 @@ export default function FlightHud({
       <canvas className="hud-glass" aria-hidden="true" ref={(node) => { dom.current.glass = node }} />
 
       <dl className="hud-a11y-readout">
-        <div><dt>Speed</dt><dd><output ref={(node) => { dom.current.speed = node }}>–</output> km/h</dd></div>
+        <div><dt>Speed</dt><dd><output ref={(node) => { dom.current.speed = node }}>–</output> {speedScale.label}</dd></div>
         <div><dt>Mach</dt><dd><output ref={(node) => { dom.current.mach = node }}>–</output></dd></div>
         <div><dt>Afterburner</dt><dd ref={(node) => { dom.current.afterburnerState = node }}>off</dd></div>
         <div>
@@ -461,7 +515,9 @@ export default function FlightHud({
               <HoldControl control="throttle-down" label="Request idle power" icon={Minus} controls={controls}>
                 Slow
               </HoldControl>
-              <span className="deck-power-hint"><kbd>W</kbd> + <kbd>S</kbd> EXTREME</span>
+              <span className="deck-power-hint">
+                {keys('throttle-up')} + {keys('throttle-down')} EXTREME
+              </span>
               <HoldControl control="throttle-up" label="Request military power" icon={Plus} controls={controls}>
                 Fast
               </HoldControl>
@@ -478,14 +534,18 @@ export default function FlightHud({
           {mouseFlightEnabled && !mouseStickLive && 'click the sky to take the stick'}
           {!mouseFlightEnabled && 'flight control off'}
         </span>
-        <kbd>↑</kbd><kbd>↓</kbd><span>pitch</span>
-        <kbd>A</kbd><kbd>D</kbd><span>roll</span>
-        <kbd>Q</kbd><kbd>E</kbd><span>yaw</span>
-        <kbd>W</kbd><kbd>S</kbd><span>MIL power / idle</span>
-        <kbd>W+S</kbd><span>extreme maneuver</span>
-        <kbd>SHIFT</kbd><span>afterburner</span>
-        <kbd>SPACE</kbd><span>airbrake</span>
-        <kbd>ALT</kbd><kbd>↑</kbd><span>maneuver</span>
+        {/* Each entry is one inline group rather than loose keys and a caption: the legend
+            wraps, and a caption that wraps away from its own keys is worse than no legend. */}
+        {LEGEND_ROWS.map((row) => (
+          <span className="deck-keymap-entry" key={row.caption}>
+            {row.actions.map((action) => (
+              <Fragment key={action}>{keys(action)}</Fragment>
+            ))}
+            <span>{row.caption}</span>
+          </span>
+        ))}
+        {/* The sortie's own keys rather than the pilot's: these are not in the binding map
+            and cannot be moved, so they are the one part of this legend that is fixed. */}
         <kbd>C</kbd><kbd>ESC</kbd><span>camera · release &amp; menu</span>
       </p>}
     </div>

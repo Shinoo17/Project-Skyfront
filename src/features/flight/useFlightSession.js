@@ -19,7 +19,15 @@ keys passes them in `extraKeys`; it never re-declares the ones every flight surf
 are let go of, while the event keys keep working so the menu can be closed again. Surfaces
 that never pause simply do not pass it.
 */
-export default function useFlightSession({ mapId, aircraftId, extraKeys, paused = false } = {}) {
+export default function useFlightSession({
+  mapId,
+  aircraftId,
+  extraKeys,
+  // The pilot's own keyboard, already flattened to the `code → control` map the input layer
+  // reads. Surfaces that have no rebind screen pass nothing and fly the authored defaults.
+  bindings,
+  paused = false,
+} = {}) {
   const aircraft = getAircraft(aircraftId)
   const map = getMap(mapId)
   const envelope = aircraft.flight.envelope
@@ -56,6 +64,7 @@ export default function useFlightSession({ mapId, aircraftId, extraKeys, paused 
   // from that trim at the map altitude by FlightAircraft; live speed never is.
   const controls = useFlightControls({
     initialCommandedThrottle: readThrottlePower(envelope.idleThrottle, envelope),
+    bindings,
     keyActions,
     paused,
   })

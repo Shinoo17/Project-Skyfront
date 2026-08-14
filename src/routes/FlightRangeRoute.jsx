@@ -29,12 +29,34 @@ import useFlightSession from '../features/flight/useFlightSession'
 import {
   readFlightCameraDistance,
   readFlightCameraStyle,
+  readFlightFov,
   writeFlightCameraDistance,
   writeFlightCameraStyle,
+  writeFlightFov,
 } from '../features/flight/chaseCamera'
+import {
+  assignBinding,
+  clearBinding,
+  defaultKeyBindings,
+  readKeyBindings,
+  toBindingMap,
+  writeKeyBindings,
+} from '../features/flight/keybindings'
+import { readMasterVolume, writeMasterVolume } from '../features/flight-range/audio'
+import {
+  readAltitudeUnit,
+  readSpeedUnit,
+  writeAltitudeUnit,
+  writeSpeedUnit,
+} from '../features/flight-range/units'
 import LoaderScreen from '../ui/LoaderScreen'
 import SceneErrorBoundary from '../ui/SceneErrorBoundary'
-import { readFlightQuality, writeFlightQuality } from '../three/graphics'
+import {
+  readFlightCustomGraphics,
+  readFlightQuality,
+  writeFlightCustomGraphics,
+  writeFlightQuality,
+} from '../three/graphics'
 import useFullscreen from '../ui/useFullscreen'
 import { VIEWER_PATH } from './paths'
 
@@ -54,6 +76,12 @@ export default function FlightRangeRoute() {
   const [cameraMode, setCameraMode] = useState('chase')
   const [cameraStyle, setCameraStyle] = useState(readFlightCameraStyle)
   const [cameraDistance, setCameraDistance] = useState(readFlightCameraDistance)
+  const [cameraFov, setCameraFov] = useState(readFlightFov)
+  const [speedUnit, setSpeedUnit] = useState(readSpeedUnit)
+  const [altitudeUnit, setAltitudeUnit] = useState(readAltitudeUnit)
+  const [keyBindings, setKeyBindings] = useState(readKeyBindings)
+  const [customGraphics, setCustomGraphics] = useState(readFlightCustomGraphics)
+  const [masterVolume, setMasterVolume] = useState(readMasterVolume)
   const [mouseFlightEnabled, setMouseFlightEnabled] = useState(readMouseFlightEnabled)
   const [mousePitchInverted, setMousePitchInverted] = useState(readMousePitchInverted)
   const [mouseSensitivity, setMouseSensitivity] = useState(readMouseSensitivity)
@@ -109,6 +137,11 @@ export default function FlightRangeRoute() {
     return { Escape: open, KeyP: open, KeyC: camera }
   }, [toggleCameraMode])
 
+  // Flattened once per rebind rather than per render: `useFlightControls` re-subscribes the
+  // window whenever this identity changes, and a fresh object every render would tear down
+  // and rebuild the keyboard listener sixty times a second.
+  const bindingMap = useMemo(() => toBindingMap(keyBindings), [keyBindings])
+
   const {
     aircraft,
     map,
@@ -119,7 +152,7 @@ export default function FlightRangeRoute() {
     reset,
     debug,
     setDebug,
-  } = useFlightSession({ extraKeys, paused })
+  } = useFlightSession({ extraKeys, paused, bindings: bindingMap })
   controlsRef.current = controls.current
 
   const centreStick = useCallback(() => centreMouseStick(controls.current), [controls])
@@ -175,35 +208,91 @@ export default function FlightRangeRoute() {
     requestPointerLock()
   }, [centreStick, requestPointerLock])
   const exit = useCallback(() => navigate(VIEWER_PATH), [navigate])
-  const toggleDebug = useCallback(() => setDebug((value) => !value), [setDebug])
-  const chooseQuality = useCallback((value) => {
-    setQuality(value)
-    writeFlightQuality(value)
-  }, [])
-  const chooseCameraStyle = useCallback((value) => {
-    setCameraStyle(value)
-    writeFlightCameraStyle(value)
-  }, [])
-  const chooseCameraDistance = useCallback((value) => {
-    setCameraDistance(value)
-    writeFlightCameraDistance(value)
-  }, [])
 
-  const chooseMouseFlightEnabled = useCallback((value) => {
-    setMouseFlightEnabled(value)
-    writeMouseFlightEnabled(value)
-    if (!value) dropStick()
-  }, [dropStick])
+  /*
+  Every setting the menu can move, through one door.
 
-  const chooseMousePitchInverted = useCallback((value) => {
-    setMousePitchInverted(value)
-    writeMousePitchInverted(value)
-  }, [])
+  Each one is two things — the value this sortie flies with, and the value the next one
+  starts from — and pairing them here is what keeps the menu from having to know about
+  local storage at all. It hands back a name and a value; the module that owns that name
+  does the remembering.
 
-  const chooseMouseSensitivity = useCallback((value) => {
-    setMouseSensitivity(value)
-    writeMouseSensitivity(value)
-  }, [])
+  Only the mouse stick has a side effect beyond that: switching it off has to let go of a
+  stick that may be deflected, or the aircraft holds the last deflection for ever.
+  */
+  const changeSetting = useCallback((name, value) => {
+    switch (name) {
+      case 'quality':
+        setQuality(value)
+        writeFlightQuality(value)
+        break
+      case 'customGraphics':
+        setCustomGraphics(value)
+        writeFlightCustomGraphics(value)
+        break
+      case 'cameraStyle':
+        setCameraStyle(value)
+        writeFlightCameraStyle(value)
+        break
+      case 'cameraDistance':
+        setCameraDistance(value)
+        writeFlightCameraDistance(value)
+        break
+      case 'cameraFov':
+        setCameraFov(value)
+        writeFlightFov(value)
+        break
+      case 'speedUnit':
+        setSpeedUnit(value)
+        writeSpeedUnit(value)
+        break
+      case 'altitudeUnit':
+        setAltitudeUnit(value)
+        writeAltitudeUnit(value)
+        break
+      case 'keyBindings':
+        setKeyBindings(value)
+        writeKeyBindings(value)
+        break
+      case 'masterVolume':
+        setMasterVolume(value)
+        writeMasterVolume(value)
+        break
+      case 'mouseFlightEnabled':
+        setMouseFlightEnabled(value)
+        writeMouseFlightEnabled(value)
+        if (!value) dropStick()
+        break
+      case 'mousePitchInverted':
+        setMousePitchInverted(value)
+        writeMousePitchInverted(value)
+        break
+      case 'mouseSensitivity':
+        setMouseSensitivity(value)
+        writeMouseSensitivity(value)
+        break
+      case 'debug':
+        setDebug(value)
+        break
+      default:
+        break
+    }
+  }, [dropStick, setDebug])
+
+  // A rebind is a change to the whole map rather than to one key, because taking a code
+  // means taking it away from whatever else was holding it. Both of these come back as a
+  // new map and go out through the same door as everything else.
+  const bindKey = useCallback((action, slot, code) => {
+    changeSetting('keyBindings', assignBinding(keyBindings, action, slot, code))
+  }, [changeSetting, keyBindings])
+
+  const unbindKey = useCallback((action, slot) => {
+    changeSetting('keyBindings', clearBinding(keyBindings, action, slot))
+  }, [changeSetting, keyBindings])
+
+  const resetKeyBindings = useCallback(() => {
+    changeSetting('keyBindings', defaultKeyBindings())
+  }, [changeSetting])
 
   /*
   The stage's pointer, and the three things it does.
@@ -385,6 +474,37 @@ export default function FlightRangeRoute() {
   const stickLive = mouseFlightEnabled && (pointerLocked || !POINTER_LOCK_SUPPORTED)
   const showEngagePrompt = mouseFlightEnabled && POINTER_LOCK_SUPPORTED && !pointerLocked && !paused
 
+  // One object rather than sixteen props. The menu reads it; only `changeSetting` writes.
+  const settings = useMemo(() => ({
+    quality,
+    customGraphics,
+    cameraStyle,
+    cameraDistance,
+    cameraFov,
+    speedUnit,
+    altitudeUnit,
+    keyBindings,
+    masterVolume,
+    mouseFlightEnabled,
+    mousePitchInverted,
+    mouseSensitivity,
+    debug,
+  }), [
+    quality,
+    customGraphics,
+    cameraStyle,
+    cameraDistance,
+    cameraFov,
+    speedUnit,
+    altitudeUnit,
+    keyBindings,
+    masterVolume,
+    mouseFlightEnabled,
+    mousePitchInverted,
+    mouseSensitivity,
+    debug,
+  ])
+
   return (
     <section className="test-flight-surface" aria-label={`Test flight over ${map.name} ${map.region}`}>
       <div
@@ -415,6 +535,8 @@ export default function FlightRangeRoute() {
             cameraMode={cameraMode}
             cameraStyle={cameraStyle}
             cameraDistance={cameraDistance}
+            cameraFov={cameraFov}
+            customGraphics={customGraphics}
           />
         </SceneErrorBoundary>
       </div>
@@ -441,28 +563,25 @@ export default function FlightRangeRoute() {
           mouseFlightEnabled={mouseFlightEnabled}
           mousePitchInverted={mousePitchInverted}
           mouseStickLive={stickLive}
+          speedUnit={speedUnit}
+          altitudeUnit={altitudeUnit}
+          keyBindings={keyBindings}
         />
       </div>
 
       <PauseMenu
         open={paused}
+        aircraft={aircraft}
+        map={map}
+        telemetry={telemetry}
+        settings={settings}
+        onChange={changeSetting}
+        onBindKey={bindKey}
+        onUnbindKey={unbindKey}
+        onResetKeyBindings={resetKeyBindings}
         onResume={resume}
         onExit={exit}
         onFullscreen={handleFullscreen}
-        debug={debug}
-        onToggleDebug={toggleDebug}
-        quality={quality}
-        onChooseQuality={chooseQuality}
-        cameraStyle={cameraStyle}
-        onChooseCameraStyle={chooseCameraStyle}
-        cameraDistance={cameraDistance}
-        onChooseCameraDistance={chooseCameraDistance}
-        mouseFlightEnabled={mouseFlightEnabled}
-        onChooseMouseFlightEnabled={chooseMouseFlightEnabled}
-        mousePitchInverted={mousePitchInverted}
-        onChooseMousePitchInverted={chooseMousePitchInverted}
-        mouseSensitivity={mouseSensitivity}
-        onChooseMouseSensitivity={chooseMouseSensitivity}
       />
 
       <LoaderScreen mode="flight" map={map} />

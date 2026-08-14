@@ -16,6 +16,7 @@ without adding a black occlusion outline.
 import { MathUtils, Vector3 } from 'three'
 
 import { MOUSE_STICK_GATE } from '../flight/flightInput'
+import { getAltitudeUnit, getSpeedUnit } from './units'
 
 const HUD_GREEN = 'rgba(98, 255, 132, 0.98)'
 const HUD_GREEN_DIM = 'rgba(98, 255, 132, 0.66)'
@@ -24,10 +25,11 @@ const HUD_GREEN_ALERT = 'rgba(122, 255, 151, 1)'
 const HUD_BLOOM = 'rgba(48, 255, 104, 0.24)'
 const DISPLAY = '"DIN Alternate", "Arial Narrow", "Aptos Narrow", sans-serif'
 
-// Tape geometry in the tape's own units — km/h for speed, world units for altitude, and
-// degrees for heading. `span` is how much of the scale is visible end to end.
-const SPEED_TAPE = { minor: 100, major: 500, span: 1400 }
-const ALTITUDE_TAPE = { minor: 25, major: 100, span: 620 }
+// Tape geometry travels with the unit the pilot chose — see `units.js`, which carries the
+// minor and major tick spacing and the visible span for each one. Only the altitude ladder
+// for an airframe that declares no real-world scale is stated here, because that tape is
+// reading raw world units and no unit module owns those.
+const WORLD_ALTITUDE_TAPE = { minor: 25, major: 100, span: 620 }
 const HEADING_HALF_SPAN = 26
 
 // Rungs every 5 degrees, drawn out to ±60. Past that the ladder is behind the camera far
@@ -105,8 +107,27 @@ that makes 650 to 1000 the right place to be — the high-G energy gate, the sur
 curve, the point past which radius grows for nothing — is a smooth blend the pilot feels
 only after they have already lost the turn. A bracket on the tape is the one place that
 answer can be read before the merge instead of after it.
+
+`speedUnit` and `altitudeUnit` are the pilot's choice from the pause menu, and they change
+the tape rather than its label: the value, the tick ladder and the digit count all come from
+the unit. `metresPerWorldUnit` is what makes an altitude in metres possible at all — without
+it the altitude tape stays in world units and says so, because inventing a height the range
+never declared is worse than showing the number the model actually has.
 */
-export function createFlightHud(canvas, { combatBand = null } = {}) {
+export function createFlightHud(canvas, {
+  combatBand = null,
+  speedUnit = 'kmh',
+  altitudeUnit = 'metres',
+  metresPerWorldUnit = null,
+} = {}) {
+  const speedScale = getSpeedUnit(speedUnit)
+  const altitudeScale = getAltitudeUnit(altitudeUnit)
+  // The band arrives from the airframe in km/h, like every other published speed, so it is
+  // converted once here rather than every frame.
+  const speedBand = combatBand
+    ? { min: speedScale.fromKmh(combatBand.min), max: speedScale.fromKmh(combatBand.max) }
+    : null
+  const altitudeScaled = Number.isFinite(metresPerWorldUnit) && metresPerWorldUnit > 0
   const ctx = canvas.getContext('2d')
   let width = 0
   let height = 0
@@ -461,8 +482,10 @@ export function createFlightHud(canvas, { combatBand = null } = {}) {
       ctx.restore()
     }
 
-    // Current value, in a box that points back at the scale it came from.
-    const boxW = 66
+    // Current value, in a box that points back at the scale it came from. Five-digit units —
+    // altitude in metres or feet — get a wider box rather than a smaller number, because the
+    // reading is what the tape is for.
+    const boxW = digits >= 5 ? 80 : 66
     const boxH = 24
     const boxX = side === 'left' ? x - boxW - 10 : x + 10
     box(boxX, layout.cy - boxH / 2, boxW, boxH, 1.5)
@@ -732,25 +755,27 @@ export function createFlightHud(canvas, { combatBand = null } = {}) {
 
     drawTape(layout, {
       x: layout.cx - half * layout.tapeOffset,
-      value: state.speed,
+      value: speedScale.fromKmh(state.speed),
       side: 'left',
-      tape: SPEED_TAPE,
-      band: combatBand,
-      label: 'SPEED · KM/H',
+      tape: speedScale.tape,
+      band: speedBand,
+      label: speedScale.tapeLabel,
       subreadout: state.live
         ? `MACH ${state.mach.toFixed(2)}  ${state.acceleration > 5 ? '↑' : state.acceleration < -5 ? '↓' : '→'}`
         : 'MACH –.–',
-      digits: 4,
+      digits: speedScale.digits,
       live: state.live,
     })
 
     drawTape(layout, {
       x: layout.cx + half * layout.tapeOffset,
-      value: state.altitude,
+      value: altitudeScaled
+        ? altitudeScale.fromMetres(state.altitude * metresPerWorldUnit)
+        : state.altitude,
       side: 'right',
-      tape: ALTITUDE_TAPE,
-      label: 'ALT',
-      digits: 4,
+      tape: altitudeScaled ? altitudeScale.tape : WORLD_ALTITUDE_TAPE,
+      label: altitudeScaled ? altitudeScale.tapeLabel : 'ALT',
+      digits: altitudeScaled ? altitudeScale.digits : 4,
       live: state.live,
     })
 

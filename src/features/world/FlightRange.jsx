@@ -25,6 +25,7 @@ export default function FlightRange({
   cameraMode,
   cameraStyle,
   cameraDistance,
+  cameraFov,
   onRangeReady,
   paused = false,
 }) {
@@ -57,6 +58,7 @@ export default function FlightRange({
         cameraMode={cameraMode}
         cameraStyle={cameraStyle}
         cameraDistance={cameraDistance}
+        cameraFov={cameraFov}
         paused={paused}
       />
     </>

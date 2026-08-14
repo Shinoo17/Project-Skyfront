@@ -1572,196 +1572,497 @@ underneath does.
 /*
 Pause menu.
 
-The sortie carries no top bar, so this is the only chrome it ever shows, and it only shows
-while the world is stopped. It sits above the instruments and below the loader — a range
-still streaming in has nothing to pause — and darkens the frozen frame rather than hiding
-it, because the stopped aircraft is the clearest possible statement that the sim is paused.
-Same green as the glass: this is cockpit furniture, not a website dialog.
+The sortie carries no chrome at all while it is flying, so when it stops it takes the whole
+frame rather than floating a dialog over it. That is the one decision the rest of this block
+follows from: a bracketed top bar with the airframe and the frozen readouts, a command column
+down the left, a settings panel filling the rest, and a key legend on the floor — a desktop
+game's pause screen, built out of the same phosphor and the same hairlines as the glass it is
+covering, so it reads as the instrument's own menu and not as a website dialog dropped on it.
+
+The frozen frame stays visible underneath and is darkened rather than hidden, because a
+stopped aircraft is the clearest possible statement that the sim is stopped.
+
+Nothing here is a card. Depth belongs to the 3D scene; separation is a single hairline and a
+change of tone, and the only filled surfaces are the ones saying which option is latched.
 */
 .pause-menu {
   position: absolute;
   inset: 0;
   z-index: 15;
   display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(4, 8, 10, 0.66);
-  backdrop-filter: blur(7px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  color: var(--hud-green-dim);
+  font-family: var(--display);
+  background: rgba(4, 8, 10, 0.72);
+  backdrop-filter: blur(9px);
 
   --hud-ice: #62ff84;
   --hud-green-dim: rgba(98, 255, 132, 0.68);
   --hud-green-soft: rgba(98, 255, 132, 0.24);
+  --hud-green-hair: rgba(98, 255, 132, 0.14);
+}
+
+/* Four corner brackets, the same mark the glass uses to say a frame is under instrument
+   control. Decoration only, and the only decoration on the screen. Taken out of the grid
+   flow entirely — left in it, it would claim a row and push the top bar down one. */
+.pause-brackets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pause-brackets i {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 0 solid var(--hud-green-soft);
+}
+
+.pause-brackets i:nth-child(1) {
+  top: 62px;
+  left: 22px;
+  border-top-width: 1px;
+  border-left-width: 1px;
+}
+
+.pause-brackets i:nth-child(2) {
+  top: 62px;
+  right: 22px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+}
+
+.pause-brackets i:nth-child(3) {
+  bottom: 56px;
+  left: 22px;
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+}
+
+.pause-brackets i:nth-child(4) {
+  bottom: 56px;
+  right: 22px;
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+}
+
+.pause-topbar {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 30px;
+  border-bottom: 1px solid var(--hud-green-hair);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.1));
+}
+
+.pause-identity {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex: none;
+}
+
+.pause-identity strong {
+  color: var(--fog);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.pause-diamond {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  background: var(--hud-ice);
+  transform: rotate(45deg);
+}
+
+.pause-rule {
+  width: 1px;
+  height: 18px;
+  background: var(--hud-green-soft);
+}
+
+.pause-state {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--hud-ice);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+}
+
+.pause-state i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hud-ice);
+  animation: pause-blink 1.8s infinite;
+}
+
+@keyframes pause-blink {
+  0%, 45% { opacity: 1; }
+  50%, 95% { opacity: 0.25; }
+  100% { opacity: 1; }
+}
+
+.pause-place {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ash);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The last frame the sortie drew, not a live feed: the simulation is not running, and a
+   readout that ticked while the world was stopped would be inventing frames. */
+.pause-frozen {
+  display: flex;
+  gap: 22px;
+  flex: none;
+  margin: 0;
+}
+
+.pause-frozen div {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+}
+
+.pause-frozen dt {
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.pause-frozen dd {
+  margin: 0;
+  color: var(--hud-green-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+}
+
+.pause-body {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: stretch;
+  width: 100%;
+  max-width: 1440px;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 26px 30px 20px;
+}
+
+.pause-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.pause-column-head,
+.pause-group-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 4px;
+  color: var(--hud-ice);
+  font-size: 10px;
+  letter-spacing: 0.28em;
+}
+
+.pause-group-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hud-green-hair);
+}
+
+/*
+The command column. Each row is a cut panel rather than a button: the notch on two corners
+is the aerospace datum the rest of the interface uses, at the one scale where it reads.
+Selection is the whole row lighting — the diamond, the border and the name together — because
+this column is flown with the arrow keys as often as with the pointer.
+*/
+.pause-command {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  padding: 15px 16px;
+  border: 1px solid var(--hud-green-hair);
+  color: var(--hud-green-dim);
+  text-align: left;
+  background: rgba(0, 0, 0, 0.42);
+  cursor: pointer;
+  clip-path: polygon(
+    10px 0, 100% 0, 100% calc(100% - 10px),
+    calc(100% - 10px) 100%, 0 100%, 0 10px
+  );
+  transition: border-color 0.16s var(--ease-out), background 0.16s var(--ease-out);
+}
+
+.pause-command .pause-diamond {
+  background: var(--dim);
+  transition: background 0.16s var(--ease-out);
+}
+
+.pause-command.is-selected,
+.pause-command:focus-visible {
+  border-color: var(--hud-green-soft);
+  background: rgba(98, 255, 132, 0.09);
+  outline: none;
+}
+
+.pause-command.is-selected .pause-diamond {
+  background: var(--hud-ice);
+}
+
+.pause-command-name {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pause-command-name strong {
+  color: var(--fog);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.pause-command-name i {
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pause-command-index {
+  margin-left: auto;
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.16em;
 }
 
 .pause-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  width: min(392px, 100%);
-  max-height: 100%;
-  overflow-y: auto;
-  padding: 22px;
-  border: 1px solid var(--hud-green-soft);
-  border-radius: 3px;
-  color: var(--hud-green-dim);
-  font-family: var(--display);
-  background: rgba(6, 11, 14, 0.9);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  min-height: 0;
+  border: 1px solid var(--hud-green-hair);
+  background: rgba(6, 11, 14, 0.82);
 }
 
-.pause-head {
+.pause-panel-head {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--hud-green-soft);
+  gap: 20px;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex: none;
+  padding: 20px 24px 0;
 }
 
 .pause-kicker {
+  margin: 0 0 7px;
   color: var(--hud-ice);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.26em;
+  letter-spacing: 0.28em;
 }
 
-.pause-head strong {
+.pause-panel-head h2 {
+  margin: 0;
   color: var(--fog);
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 0.94;
+  text-transform: uppercase;
 }
 
-.pause-head em {
-  color: var(--hud-ice);
-  font-style: normal;
+.pause-tabs {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  margin: 18px 24px 0;
+  border-bottom: 1px solid var(--hud-green-hair);
 }
 
-.pause-commands,
-.pause-pane {
+.pause-tab {
+  padding: 11px 15px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  background: none;
+  cursor: pointer;
+  transition: color 0.16s var(--ease-out), border-color 0.16s var(--ease-out);
+}
+
+.pause-tab:hover {
+  color: var(--fog);
+}
+
+.pause-tab.is-on {
+  border-bottom-color: var(--hud-ice);
+  color: var(--fog);
+  background: rgba(98, 255, 132, 0.06);
+}
+
+.pause-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px 26px;
+}
+
+.pause-rows,
+.pause-controls,
+.pause-binds {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
-.pause-pane-title {
-  margin: 0 0 2px;
-  color: var(--hud-ice);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
-.pause-key {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--hud-green-soft);
-  border-radius: 2px;
-  color: var(--hud-green-dim);
-  font-size: 13px;
-  letter-spacing: 0.13em;
-  text-align: left;
-  text-transform: uppercase;
-  background: rgba(98, 255, 132, 0.05);
-  cursor: pointer;
-  transition: background 0.18s var(--ease-out), color 0.18s var(--ease-out),
-    border-color 0.18s var(--ease-out);
-}
-
-.pause-key:hover {
-  border-color: rgba(98, 255, 132, 0.5);
-  color: var(--hud-ice);
-  background: rgba(98, 255, 132, 0.12);
-}
-
-.pause-key:disabled {
-  color: rgba(135, 148, 155, 0.46);
-  border-color: rgba(98, 255, 132, 0.1);
-  background: rgba(98, 255, 132, 0.02);
-  cursor: not-allowed;
-}
-
-.pause-key:disabled i {
-  color: rgba(135, 148, 155, 0.46);
-}
-
-.pause-key.is-primary {
-  border-color: rgba(98, 255, 132, 0.46);
-  color: var(--hud-ice);
-}
-
-.pause-key.is-on {
-  color: var(--hud-ice);
-}
-
-.pause-key i {
-  margin-left: auto;
-  color: var(--hud-ice);
-  font-size: 10px;
-  font-style: normal;
-  letter-spacing: 0.18em;
+.pause-controls {
+  gap: 26px;
 }
 
 /*
-The quality control is three keys rather than a select, because the trade it makes is the
-point: each option states the pixels, the antialiasing and the frame target it is buying,
-and the one in force reads as latched instead of merely chosen.
+One settings row: the name and its note on the left, the control on the right, separated
+from its neighbours by a hairline and nothing else. Every tab is built from this, which is
+what keeps five screens reading as one instrument.
 */
-.pause-quality {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px;
-  border: 1px solid var(--hud-green-soft);
-  border-radius: 2px;
-  background: rgba(98, 255, 132, 0.03);
+.pause-row {
+  display: grid;
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+  padding: 14px 2px;
 }
 
-.pause-quality-head {
+/* The rule goes between rows rather than above each one: `:first-of-type` would match by
+   element rather than by class and miss whichever tab opens with a preset grid. */
+.pause-row + .pause-row {
+  border-top: 1px solid var(--hud-green-hair);
+}
+
+.pause-row-name {
   display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 2px;
-  color: var(--hud-ice);
-  font-size: 10px;
-  letter-spacing: 0.2em;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pause-row-name span {
+  color: var(--fog);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.pause-row-name i {
+  color: var(--dim);
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0.06em;
+}
+
+.pause-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pause-seg {
+  padding: 9px 15px;
+  border: 1px solid var(--hud-green-hair);
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.16s var(--ease-out), color 0.16s var(--ease-out),
+    background 0.16s var(--ease-out);
+}
+
+/* Explicitly not the latched option. Hover is a heavier selector than `.is-on`, so without
+   this the pointer resting on the option it just chose repaints its label phosphor green on
+   a phosphor green fill and the label disappears. */
+.pause-seg:hover:not(:disabled):not(.is-on) {
+  border-color: var(--hud-green-soft);
+  color: var(--hud-ice);
+}
+
+/* Latched, not merely chosen: filled phosphor with the panel's own black on it, so which
+   option is in force is readable without comparing it to its neighbours. */
+.pause-seg.is-on {
+  border-color: var(--hud-ice);
+  color: #04120a;
+  background: var(--hud-ice);
+}
+
+/* Latched, but not live. Phosphor on this interface means a system is running, so an option
+   that switches one off takes the neutral fill instead of claiming the signal. */
+.pause-seg.is-on.is-negative {
+  border-color: rgba(218, 226, 230, 0.5);
+  color: var(--void);
+  background: rgba(218, 226, 230, 0.72);
+}
+
+.pause-seg:disabled {
+  color: rgba(135, 148, 155, 0.4);
+  border-color: rgba(98, 255, 132, 0.08);
+  cursor: not-allowed;
+}
+
+.pause-ghost {
+  align-self: flex-start;
+  padding: 9px 14px;
+  border: 1px solid var(--hud-green-hair);
+  color: var(--ash);
+  font-family: var(--display);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.16s var(--ease-out), color 0.16s var(--ease-out);
+}
+
+.pause-ghost:hover {
+  border-color: var(--hud-green-soft);
+  color: var(--hud-ice);
 }
 
 /* The same instrument the throttle uses, so a setting and a control read as one family. */
 .pause-slider {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 7px 12px 3px;
-  border: 1px solid var(--hud-green-soft);
-  border-radius: 2px;
-  background: rgba(98, 255, 132, 0.04);
-}
-
-.pause-slider > span {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  justify-content: space-between;
-  color: var(--hud-ice);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-}
-
-.pause-slider > span i {
-  color: var(--hud-green-dim);
-  font-size: 11px;
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.1em;
+  gap: 18px;
+  align-items: center;
 }
 
 .pause-slider input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   height: 26px;
   margin: 0;
   appearance: none;
@@ -1802,89 +2103,333 @@ and the one in force reads as latched instead of merely chosen.
   background: var(--carbon);
 }
 
-.pause-key.is-quality {
-  padding: 9px 12px;
-  font-size: 12px;
-}
-
-.pause-key.is-quality i {
-  text-transform: none;
-  letter-spacing: 0.06em;
-  color: var(--ash);
-}
-
-.pause-key.is-quality.is-on {
-  border-color: rgba(98, 255, 132, 0.5);
-  background: rgba(98, 255, 132, 0.14);
-}
-
-.pause-key.is-quality.is-on i {
-  color: var(--hud-green-dim);
-}
-
-.pause-note,
-.pause-hint {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin: 0;
-  color: var(--ash);
-  font-size: 11px;
+.pause-slider output {
+  flex: none;
+  min-width: 74px;
+  color: var(--fog);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.1em;
+  text-align: right;
 }
 
-.pause-hint {
-  padding-top: 12px;
-  border-top: 1px solid var(--hud-green-soft);
+/*
+Quality presets, as four cards that each state what they buy. The trade is the point — pixels
+against frames — so the summary is part of the control rather than a tooltip on it.
+*/
+.pause-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pause-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 15px 14px;
+  border: 1px solid var(--hud-green-hair);
+  color: var(--hud-green-dim);
+  text-align: left;
+  background: rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition: border-color 0.16s var(--ease-out), background 0.16s var(--ease-out);
+}
+
+.pause-preset:hover {
+  border-color: var(--hud-green-soft);
+}
+
+.pause-preset.is-on {
+  border-color: var(--hud-ice);
+  background: rgba(98, 255, 132, 0.1);
+}
+
+.pause-preset strong {
+  color: var(--fog);
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
-.pause-note kbd,
-.pause-hint kbd {
+.pause-preset.is-on strong {
+  color: var(--hud-ice);
+}
+
+.pause-preset i {
+  color: var(--dim);
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+
+/*
+The rebind list, on the same two columns as every other settings row: the control named on
+the left, the thing you press on the right. A bind row is a setting like any other, and
+giving it its own reading order would make the Controls tab the one screen the eye has to
+re-learn.
+*/
+.pause-bind {
+  display: grid;
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+  padding: 9px 2px;
+  border-top: 1px solid var(--hud-green-hair);
+}
+
+.pause-bind-keys {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/*
+One slot. Empty it is a dash with a dimmed border; listening it inverts to filled phosphor,
+because a slot waiting for a key is a modal state and has to look like one.
+*/
+.pause-cap {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  min-width: 82px;
+  min-height: 34px;
+  padding: 5px 9px;
+  border: 1px solid var(--hud-green-hair);
+  color: var(--hud-green-dim);
+  background: rgba(98, 255, 132, 0.04);
+  cursor: pointer;
+  transition: border-color 0.16s var(--ease-out), color 0.16s var(--ease-out),
+    background 0.16s var(--ease-out);
+}
+
+.pause-cap:hover {
+  border-color: var(--hud-green-soft);
+  color: var(--hud-ice);
+}
+
+.pause-cap em {
+  color: inherit;
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0.12em;
+}
+
+.pause-cap.is-empty {
+  color: var(--dim);
+  background: transparent;
+}
+
+.pause-cap.is-listening {
+  border-color: var(--hud-ice);
+  color: #04120a;
+  background: var(--hud-ice);
+}
+
+.pause-cap.is-fixed {
+  border-style: dashed;
+  cursor: default;
+}
+
+/*
+The prompt art, used as a mask rather than as an image, so one asset follows `currentColor`
+into every state the cap has — dimmed while empty, phosphor on hover, panel-black while the
+slot is listening. An `<img>` would be a white sticker through all of it.
+*/
+.key-cap {
+  display: inline-block;
+  flex: none;
+  width: 21px;
+  height: 21px;
+  background: currentColor;
+  mask-image: var(--key-art);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-image: var(--key-art);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+}
+
+.key-cap.is-text {
+  width: auto;
+  height: auto;
+  background: none;
+  color: inherit;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+
+.pause-standby {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* A single phosphor rule down the left, the same mark the HUD uses for an advisory: this is
+   the instrument talking, not a paragraph of website copy. */
+.pause-lede {
+  max-width: 62ch;
+  margin: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--hud-green-soft);
+  color: var(--ash);
+  font-size: 14px;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+}
+
+.pause-facts,
+.pause-credits {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.pause-facts div,
+.pause-credits div {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+  gap: 20px;
+  padding: 13px 2px;
+  border-top: 1px solid var(--hud-green-hair);
+}
+
+.pause-facts dt,
+.pause-credits dt {
+  color: var(--hud-ice);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.pause-facts dd,
+.pause-credits dd {
+  margin: 0;
+  color: var(--ash);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: 0.03em;
+}
+
+.pause-note {
+  max-width: 78ch;
+  margin: 14px 0 0;
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.75;
+  letter-spacing: 0.04em;
+}
+
+.pause-legend {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 30px;
+  border-top: 1px solid var(--hud-green-hair);
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.1));
+}
+
+.pause-legend em {
+  margin-left: auto;
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: 0.08em;
+}
+
+.pause-legend kbd,
+.pause-note kbd {
+  margin-right: 3px;
   padding: 2px 6px;
-  border: 1px solid var(--hud-green-soft);
+  border: 1px solid var(--hud-green-hair);
   border-radius: 2px;
   color: var(--hud-green-dim);
   font-family: var(--display);
   font-size: 10px;
 }
 
-.pause-back {
-  align-self: flex-start;
-  padding: 8px 0;
-  border: 0;
-  color: var(--hud-green-dim);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  background: none;
-  cursor: pointer;
+/*
+Narrow and short frames. The command column stops being a column and becomes a strip across
+the top of the body, because below this width two columns leave the settings panel too
+narrow to hold a row's name and its control side by side.
+*/
+@media (max-width: 900px) {
+  .pause-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    padding: 18px 18px 14px;
+  }
+
+  .pause-commands {
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .pause-column-head {
+    display: none;
+  }
+
+  .pause-command {
+    flex: 1 1 160px;
+    padding: 11px 12px;
+  }
+
+  .pause-command-name strong {
+    font-size: 19px;
+  }
+
+  .pause-command-name i,
+  .pause-command-index {
+    display: none;
+  }
+
+  .pause-row,
+  .pause-bind {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .pause-panel-head h2 {
+    font-size: 28px;
+  }
+
+  .pause-frozen,
+  .pause-place {
+    display: none;
+  }
+
+  .pause-brackets {
+    display: none;
+  }
 }
 
-.pause-back:hover {
-  color: var(--hud-ice);
-}
+@media (max-height: 620px) {
+  .pause-brackets {
+    display: none;
+  }
 
-.pause-credits {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0;
-}
+  .pause-command-name strong {
+    font-size: 20px;
+  }
 
-.pause-credits dt {
-  color: var(--hud-ice);
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
-.pause-credits dd {
-  margin: 3px 0 0;
-  color: var(--ash);
-  font-size: 12px;
-  line-height: 1.5;
-  letter-spacing: 0.04em;
+  .pause-panel-head h2 {
+    font-size: 26px;
+  }
 }
 
 /*
@@ -2369,6 +2914,24 @@ painted into the canvas — nothing here needs a `filter`, which would recomposi
 
 .deck-keymap span:last-child {
   margin-right: 0;
+}
+
+/* One control and its keys, kept together across a wrap. The margin moves out to the group
+   so the caption sits tight against the keys it belongs to. */
+.deck-keymap-entry {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin: 0;
+}
+
+.deck-keymap-entry span {
+  margin-right: 0;
+}
+
+.deck-keymap kbd.is-unbound {
+  border-color: var(--hud-green-soft, rgba(98, 255, 132, 0.24));
+  color: var(--dim);
 }
 
 .loader-screen {

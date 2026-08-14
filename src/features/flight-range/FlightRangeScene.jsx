@@ -10,9 +10,13 @@ import { PerspectiveCamera } from 'three'
 
 import { getAircraft } from '../../aircraft'
 import { getMap } from '../../maps'
-import { DEFAULT_FLIGHT_QUALITY, useGraphicsProfile } from '../../three/graphics'
+import {
+  DEFAULT_FLIGHT_QUALITY,
+  flightGraphicsKey,
+  resolveFlightGraphics,
+} from '../../three/graphics'
 import SyncedFrameLoop from '../../three/SyncedFrameLoop'
-import { BASE_FOV } from '../flight/chaseCamera'
+import { FLIGHT_FOV_RANGE } from '../flight/chaseCamera'
 import DebugVectors from '../flight/DebugVectors'
 import FlightRange from '../world/FlightRange'
 import MapEnvironment from '../world/MapEnvironment'
@@ -26,20 +30,24 @@ export default function FlightRangeScene({
   cameraMode = 'chase',
   cameraStyle = 'combat',
   cameraDistance = 'normal',
+  cameraFov = FLIGHT_FOV_RANGE.default,
   debug = false,
   paused = false,
   quality = DEFAULT_FLIGHT_QUALITY,
+  customGraphics = null,
 }) {
   const aircraft = getAircraft(aircraftId)
   const map = getMap(mapId)
-  const graphics = useGraphicsProfile(quality)
+  const graphics = resolveFlightGraphics(quality, customGraphics)
 
   return (
     <Canvas
       // Antialiasing and the GPU power preference are fixed when the WebGL context is
       // created, so a quality change is a new context — which is a new sortie, from the
-      // spawn. The menu says so before it happens.
-      key={quality}
+      // spawn. The menu says so before it happens. On a custom profile only the fields that
+      // genuinely need a new context are in this key, so moving the frame target keeps the
+      // aircraft in the air.
+      key={flightGraphicsKey(quality, customGraphics)}
       // Manual, not on demand: this surface renders every frame it asks for, and demand
       // mode tops out at half the display's refresh rate. SyncedFrameLoop owns the tick.
       frameloop="never"
@@ -47,7 +55,9 @@ export default function FlightRangeScene({
       shadows={graphics.shadows}
       camera={{
         position: [-286, 480, 0],
-        fov: BASE_FOV,
+        // The pilot's lens, so the first frame is already at the field of view they chose
+        // rather than lerping into it from the authored default.
+        fov: cameraFov,
         near: map.camera.near,
         far: map.camera.far,
       }}
@@ -73,6 +83,7 @@ export default function FlightRangeScene({
           cameraMode={cameraMode}
           cameraStyle={cameraStyle}
           cameraDistance={cameraDistance}
+          cameraFov={cameraFov}
           paused={paused}
         />
       </Suspense>
