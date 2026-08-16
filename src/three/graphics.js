@@ -63,9 +63,27 @@ export const DEFAULT_GRAPHICS_PROFILE = 'studio'
 
 // The order the quality control offers them in, with the copy it shows. Cheapest first.
 export const FLIGHT_QUALITY_OPTIONS = [
-  { id: 'low', label: 'Low', detail: '1x pixels · no AA · 30 fps' },
-  { id: 'medium', label: 'Medium', detail: '1.5x pixels · AA · 60 fps' },
-  { id: 'high', label: 'High', detail: '1.5x pixels · AA · up to 120 fps' },
+  {
+    id: 'low',
+    label: 'Low',
+    detail: '1x pixels · no AA · 30 fps',
+    hoverDetail: 'Native resolution, no anti-aliasing, capped at 30 frames a second. The '
+      + 'cheapest profile — pick it if the range is dropping frames on this machine.',
+  },
+  {
+    id: 'medium',
+    label: 'Medium',
+    detail: '1.5x pixels · AA · 60 fps',
+    hoverDetail: '1.5x pixel density with anti-aliasing, capped at 60 frames a second. '
+      + 'Matches most displays’ refresh rate at a moderate GPU cost.',
+  },
+  {
+    id: 'high',
+    label: 'High',
+    detail: '1.5x pixels · AA · up to 120 fps',
+    hoverDetail: 'Medium’s image at up to double the frame rate. Only pays off on a 120 Hz+ '
+      + 'display with the GPU headroom to hold it.',
+  },
 ]
 
 export const DEFAULT_FLIGHT_QUALITY = 'medium'
@@ -92,10 +110,30 @@ export const FLIGHT_GRAPHICS_FIELDS = [
     label: 'Resolution scale',
     note: 'Device pixel ratio',
     restart: true,
+    detail: 'How many pixels the renderer draws for each pixel your display shows. Fixed '
+      + 'when the WebGL context is created, so moving it restarts the sortie.',
     options: [
-      { id: '1', label: '1×', value: 1 },
-      { id: '1-1.5', label: '1–1.5×', value: [1, 1.5] },
-      { id: '1-2', label: '1–2×', value: [1, 2] },
+      {
+        id: '1',
+        label: '×1',
+        value: 1,
+        detail: 'One rendered pixel per screen pixel. Softest image, cheapest on the GPU — '
+          + 'the one to pick if frame rate is what is limiting you.',
+      },
+      {
+        id: '1-1.5',
+        label: '×1.5',
+        value: [1, 1.5],
+        detail: 'Renders at up to 1.5x your display’s pixel density. Noticeably sharper '
+          + 'edges for a moderate GPU cost — the balance point.',
+      },
+      {
+        id: '1-2',
+        label: '×2',
+        value: [1, 2],
+        detail: 'Renders at up to double pixel density. The sharpest image on offer, and the '
+          + 'heaviest — expect fewer frames on an integrated GPU.',
+      },
     ],
   },
   {
@@ -103,9 +141,23 @@ export const FLIGHT_GRAPHICS_FIELDS = [
     label: 'Anti-aliasing',
     note: 'MSAA on the default framebuffer',
     restart: true,
+    detail: 'Multisamples the default framebuffer to soften jagged edges. Fixed when the '
+      + 'WebGL context is created, so moving it restarts the sortie.',
     options: [
-      { id: 'on', label: 'On', value: true },
-      { id: 'off', label: 'Off', value: false },
+      {
+        id: 'on',
+        label: 'On',
+        value: true,
+        detail: 'Softens jagged edges on canopy struts and terrain silhouettes. Costs a '
+          + 'fixed slice of GPU time no matter what is on screen.',
+      },
+      {
+        id: 'off',
+        label: 'Off',
+        value: false,
+        detail: 'No multisampling — edges alias, but nothing is spent smoothing them. Frees '
+          + 'up headroom to spend on resolution scale or frame target instead.',
+      },
     ],
   },
   {
@@ -113,9 +165,23 @@ export const FLIGHT_GRAPHICS_FIELDS = [
     label: 'GPU preference',
     note: 'Hint to the browser, not a guarantee',
     restart: true,
+    detail: 'A hint passed to the browser about which GPU to hand the context to. Fixed when '
+      + 'the WebGL context is created, so moving it restarts the sortie.',
     options: [
-      { id: 'high-performance', label: 'Performance', value: 'high-performance' },
-      { id: 'default', label: 'Default', value: 'default' },
+      {
+        id: 'high-performance',
+        label: 'Performance',
+        value: 'high-performance',
+        detail: 'Asks the browser for the discrete GPU where the machine has one. A hint, '
+          + 'not a guarantee — battery-saver modes can still override it.',
+      },
+      {
+        id: 'default',
+        label: 'Default',
+        value: 'default',
+        detail: 'Lets the browser choose — often the integrated GPU on a laptop, which '
+          + 'saves battery but renders fewer frames.',
+      },
     ],
   },
   {
@@ -123,10 +189,30 @@ export const FLIGHT_GRAPHICS_FIELDS = [
     label: 'Frame target',
     note: 'Frames the surface asks for each second',
     restart: false,
+    detail: 'How many frames a second the render loop asks for. Rides the existing renderer, '
+      + 'so moving it takes effect on the next frame — no restart.',
     options: [
-      { id: '30', label: '30', value: 30 },
-      { id: '60', label: '60', value: 60 },
-      { id: '120', label: '120', value: 120 },
+      {
+        id: '30',
+        label: '30',
+        value: 30,
+        detail: 'Caps the render loop at 30 frames a second. Lowest GPU load, least smooth '
+          + 'motion.',
+      },
+      {
+        id: '60',
+        label: '60',
+        value: 60,
+        detail: 'Matches most displays’ native refresh rate. Smooth motion at a moderate '
+          + 'GPU cost.',
+      },
+      {
+        id: '120',
+        label: '120',
+        value: 120,
+        detail: 'Asks for twice 60’s frame rate. Only visible on a 120 Hz+ display, and '
+          + 'only reachable if the GPU has the headroom to hold it.',
+      },
     ],
   },
 ]

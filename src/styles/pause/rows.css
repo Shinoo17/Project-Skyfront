@@ -10,6 +10,56 @@
 }
 
 /*
+The Graphics tab's own layout: the rows on the left, a detail card fixed to the right that
+explains whatever the pointer is on. Sticky rather than static — the rows can run longer than
+the viewport, and the card answering "what does this do" should still be there once they scroll.
+*/
+.pause-graphics {
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+}
+
+.pause-graphics > .pause-rows {
+  flex: 1;
+  min-width: 0;
+}
+
+.pause-detail {
+  flex: none;
+  width: 260px;
+  position: sticky;
+  top: 0;
+  padding: 18px;
+  border: 1px solid var(--hud-green-hair);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.pause-detail-kicker {
+  margin: 0 0 10px;
+  color: var(--hud-ice);
+  font-size: 10px;
+  letter-spacing: 0.28em;
+}
+
+.pause-detail h3 {
+  margin: 0 0 10px;
+  color: var(--fog);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pause-detail p:last-child {
+  margin: 0;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+}
+
+/*
 One settings row: the name and its note on the left, the control on the right, separated
 from its neighbours by a hairline and nothing else. Every tab is built from this, which is
 what keeps five screens reading as one instrument.
@@ -19,7 +69,16 @@ what keeps five screens reading as one instrument.
   grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
   gap: 24px;
   align-items: center;
-  padding: 14px 2px;
+  padding: 14px 12px;
+  margin: 0 -12px;
+  transition: background 0.12s var(--ease-out);
+}
+
+/* The row the pointer (or keyboard focus) is on lights up faintly, so the row a detail
+   panel is describing is the same one the eye is already on. */
+.pause-row:hover,
+.pause-row:focus-within {
+  background: rgba(98, 255, 132, 0.05);
 }
 
 /* The rule goes between rows rather than above each one: `:first-of-type` would match by
@@ -49,9 +108,17 @@ what keeps five screens reading as one instrument.
   letter-spacing: 0.06em;
 }
 
+/* The label sits at the row's left edge; the control it names sits flush against the
+   right edge, so the eye reads one straight column of names and one of values. */
+.pause-row-control {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .pause-segmented {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 5px;
 }
 
@@ -118,11 +185,15 @@ what keeps five screens reading as one instrument.
   color: var(--hud-ice);
 }
 
-/* The same instrument the throttle uses, so a setting and a control read as one family. */
+/* The same instrument the throttle uses, so a setting and a control read as one family.
+   Stretched to fill the row's control column — a slider is the one control here whose
+   precision benefits from more travel, unlike a segmented control's fixed-size buttons. */
 .pause-slider {
   display: flex;
+  flex: 1;
   gap: 18px;
   align-items: center;
+  min-width: 0;
 }
 
 .pause-slider input {

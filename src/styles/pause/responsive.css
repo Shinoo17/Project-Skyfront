@@ -40,6 +40,21 @@ narrow to hold a row's name and its control side by side.
     gap: 10px;
   }
 
+  .pause-row-control,
+  .pause-segmented,
+  .pause-bind-keys {
+    justify-content: flex-start;
+  }
+
+  .pause-graphics {
+    flex-direction: column;
+  }
+
+  .pause-detail {
+    width: auto;
+    position: static;
+  }
+
   .pause-panel-head h2 {
     font-size: 28px;
   }

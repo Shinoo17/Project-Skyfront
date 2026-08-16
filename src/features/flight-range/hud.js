@@ -761,7 +761,7 @@ export function createFlightHud(canvas, {
       band: speedBand,
       label: speedScale.tapeLabel,
       subreadout: state.live
-        ? `MACH ${state.mach.toFixed(2)}  ${state.acceleration > 5 ? '↑' : state.acceleration < -5 ? '↓' : '→'}`
+        ? `MACH ${state.mach.toFixed(2)}`
         : 'MACH –.–',
       digits: speedScale.digits,
       live: state.live,

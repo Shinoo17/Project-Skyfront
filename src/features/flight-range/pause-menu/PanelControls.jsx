@@ -4,9 +4,9 @@ different tabs from becoming five different layouts.
 */
 
 // One row of the settings panel: what it is on the left, the control on the right.
-export function Row({ label, note, children }) {
+export function Row({ label, note, children, onMouseEnter, onMouseLeave }) {
   return (
-    <div className="pause-row">
+    <div className="pause-row" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
       <div className="pause-row-name">
         <span>{label}</span>
         {note && <i>{note}</i>}
@@ -24,7 +24,7 @@ An option that switches something *off* is filled in fog white rather than phosp
 is the live signal on this interface — it means the system is running — so a latched OFF
 glowing the same green as a latched ON would say the opposite of what it means.
 */
-export function Segmented({ options, value, onChange, label, disabled = false }) {
+export function Segmented({ options, value, onChange, label, disabled = false, onHover }) {
   return (
     <div className="pause-segmented" role="group" aria-label={label}>
       {options.map((option) => (
@@ -35,6 +35,10 @@ export function Segmented({ options, value, onChange, label, disabled = false })
           aria-pressed={option.id === value}
           disabled={disabled}
           onClick={() => onChange(option.id)}
+          onMouseEnter={() => onHover?.(option)}
+          onMouseLeave={() => onHover?.(null)}
+          onFocus={() => onHover?.(option)}
+          onBlur={() => onHover?.(null)}
         >
           {option.label}
         </button>
