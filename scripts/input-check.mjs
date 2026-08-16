@@ -153,6 +153,57 @@ centreMouseStick(input)
 assert.deepEqual(readMouseStickAxes(input.mouseStick), { pitch: 0, roll: 0, yaw: 0 },
   'centring the live mouse stick must publish neutral axes')
 
+/*
+The stick against the camera's bank share, which is the one place two sign conventions from
+different files have to agree.
+
+The stick is a position on the glass and that only means anything while screen-up is body
+pitch-up. Under Roll On the camera takes the whole bank and the two are the same axis; under
+Hybrid and Off they are not, and `chase.screenRoll` — how far the airframe appears rotated
+inside the frame — is the angle the drawn vector has to be turned by to get back to the
+airframe's own frame.
+
+`camera-check` proves the camera publishes that angle with the right magnitude and sign. What
+it cannot prove is that this end of the wire turns the stick the *same* way, and a correction
+applied backwards is the worst available outcome: it would double the error instead of
+cancelling it, so a pilot pulling toward the top of the screen from a bank would roll further
+over rather than toward level. Every existing assertion above would still pass, because they
+all run at the zero-correction default.
+
+So the test is the whole chain in miniature. Bank right — a positive screen roll, because a
+positive angle about the follow axis is clockwise on screen — and pull straight up the glass.
+The aircraft must answer with left roll, toward level, and with less pitch than a pull from
+level would have given.
+*/
+{
+  const stick = { live: true, x: 0, y: 1 }
+  const level = readMouseStickAxes(stick, 0)
+  assert.equal(level.pitch, 1, 'no correction must leave a screen-up pull as full pitch-up')
+  assert.equal(level.roll, 0, 'no correction must leave a screen-up pull free of roll')
+
+  const banked = readMouseStickAxes(stick, Math.PI / 4)
+  assert.ok(
+    banked.roll < -0.6,
+    `a screen-up pull under a right bank must roll left toward level, got ${banked.roll}`,
+  )
+  assert.ok(
+    banked.pitch > 0 && banked.pitch < level.pitch,
+    `a screen-up pull under a right bank must keep some pitch-up, got ${banked.pitch}`,
+  )
+  assert.ok(
+    Math.abs(Math.hypot(banked.pitch, banked.roll) - Math.hypot(level.pitch, level.roll)) < 1e-9,
+    'the correction is a rotation and must not change how much stick is being held',
+  )
+
+  // A knife edge is the limit case: body up lies along screen right, so pointing at the top
+  // of the screen is a request for pure roll and nothing else.
+  const knifeEdge = readMouseStickAxes(stick, Math.PI / 2)
+  assert.ok(
+    Math.abs(knifeEdge.roll + 1) < 1e-9 && Math.abs(knifeEdge.pitch) < 1e-9,
+    `a screen-up pull at ninety degrees of bank must be pure left roll, got ${JSON.stringify(knifeEdge)}`,
+  )
+}
+
 const engine = envelope.engineControl
 for (const key of [
   'engineSpoolUpRate',

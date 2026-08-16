@@ -77,6 +77,23 @@ export const EMPTY_TELEMETRY = {
   afterburnerCooldown: 0,
   afterburnerState: 'off',
   camera: null,
+  /*
+  What the camera rig did with all of that, for the debug overlay and for nothing else.
+
+  `cameraState` is the name of the behaviour in force — see the label derivation at the end
+  of the rig, which reports what the camera did rather than instructing it. The three vectors
+  are live objects owned by the rig: the follow axis it composed on, the airframe's up before
+  the roll setting took its share, and where the boom wanted to be before the terrain
+  shortened it. `cameraRollDeg` and `cameraScreenRollDeg` are the airframe's bank and how much
+  of it survived to the screen, which is the pair the pointer stick is corrected by.
+  */
+  cameraState: 'normal-chase',
+  cameraForward: null,
+  cameraBodyUp: null,
+  cameraDesired: null,
+  cameraRollDeg: 0,
+  cameraScreenRollDeg: 0,
+  cameraCollision: false,
   // Where the pointer sits inside the gate, in gate radii per axis and unclamped, or null
   // when the mouse is not flying the aircraft. The HUD draws the gate from it: the pointer
   // itself says where the stick is, and the gate says how much of that the aircraft is given.

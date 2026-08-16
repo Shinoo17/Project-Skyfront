@@ -6,6 +6,7 @@ import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 import { makeHinges } from '../../three/hinge'
 import { applyClosedRestPose } from '../../three/pose'
 import {
+  DEFAULT_CAMERA_ROLL_MODE,
   FLIGHT_FOV_RANGE,
   createChaseCameraState,
   resetChaseCamera,
@@ -80,7 +81,7 @@ export default function FlightAircraft({
   telemetry,
   chaseCamera,
   cameraMode = 'chase',
-  cameraStyle = 'combat',
+  cameraRoll = DEFAULT_CAMERA_ROLL_MODE,
   cameraDistance = 'normal',
   cameraFov = FLIGHT_FOV_RANGE.default,
   paused = false,
@@ -231,7 +232,15 @@ export default function FlightAircraft({
     // one frame can never see half of a stick move. A right-drag steers the camera instead,
     // and centres the stick while it does: the pointer is aiming the lens, so it has stopped
     // saying anything about where the pilot wants the stick.
-    const stickAxes = readMouseStickAxes(controls.current.mouseStick)
+    //
+    // The correction is the previous frame's, because the camera has not run yet — it moves
+    // after the physics for the reasons set out in the rig. A frame of lag on a quantity that
+    // changes at the aircraft's roll rate is well under a degree, and the alternative is
+    // reordering the loop so the camera composes a frame the aircraft has not flown.
+    const stickAxes = readMouseStickAxes(
+      controls.current.mouseStick,
+      flight.current.chase.screenRoll,
+    )
     if (stickAxes) {
       setAnalogFlightInput(controls.current, MOUSE_STICK_SOURCE, stickAxes, { direct: true })
     } else {
@@ -379,11 +388,14 @@ export default function FlightAircraft({
       burnerLevel: burner.level,
       step,
       mode: cameraMode,
-      style: cameraStyle,
+      rollMode: cameraRoll,
       distance: cameraDistance,
       fov: cameraFov,
       cameraLook: controls.current.cameraLook,
       rearView: controls.current.pressed.has('rear-view'),
+      // The same landscape the ground probe above samples, so the boom is constrained by
+      // the terrain the aircraft is actually flying over rather than a second copy of it.
+      terrain: terrainRef?.current ?? null,
     })
 
     // Published every frame straight into the caller's ref. Nothing here calls setState:
@@ -393,6 +405,16 @@ export default function FlightAircraft({
     // Stable references, assigned rather than copied: the HUD projects the ladder through
     // this camera and off this position, so it must see the same objects the scene renders.
     readout.camera = camera
+    // What the rig composed, for the debug overlay. Same reference discipline as the camera
+    // above: these are the rig's own vectors, so an arrow drawn from them cannot be showing
+    // a different frame from the one on screen.
+    readout.cameraState = current.chase.stateLabel
+    readout.cameraForward = current.chase.followForward
+    readout.cameraBodyUp = current.chase.bodyUp
+    readout.cameraDesired = current.chase.desiredPosition
+    readout.cameraRollDeg = MathUtils.radToDeg(current.chase.rollAngle)
+    readout.cameraScreenRollDeg = MathUtils.radToDeg(current.chase.screenRoll)
+    readout.cameraCollision = current.chase.collision.blocked
     // The stick gate the HUD draws. Published only while the pointer is actually flying,
     // because the cursor is hidden behind it: a gate left on the glass after the mouse
     // stopped commanding the aircraft would be a lie about what is being held.

@@ -1,6 +1,6 @@
 import {
   FLIGHT_CAMERA_DISTANCE_OPTIONS,
-  FLIGHT_CAMERA_STYLE_OPTIONS,
+  FLIGHT_CAMERA_ROLL_OPTIONS,
   FLIGHT_FOV_RANGE,
 } from '../../../flight/chaseCamera'
 import { Row, Segmented, Slider } from '../PanelControls'
@@ -8,12 +8,12 @@ import { Row, Segmented, Slider } from '../PanelControls'
 export default function CameraTab({ settings, onChange }) {
   return (
     <div className="pause-rows">
-      <Row label="Camera mode" note="What the chase rig follows">
+      <Row label="Camera roll" note="How much of the bank the camera takes">
         <Segmented
-          label="Camera mode"
-          options={FLIGHT_CAMERA_STYLE_OPTIONS}
-          value={settings.cameraStyle}
-          onChange={(value) => onChange('cameraStyle', value)}
+          label="Camera roll"
+          options={FLIGHT_CAMERA_ROLL_OPTIONS}
+          value={settings.cameraRoll}
+          onChange={(value) => onChange('cameraRoll', value)}
         />
       </Row>
       <Row label="Chase distance" note="How far back the boom sits">
@@ -36,10 +36,13 @@ export default function CameraTab({ settings, onChange }) {
         />
       </Row>
       <p className="pause-note">
-        {FLIGHT_CAMERA_STYLE_OPTIONS.find((o) => o.id === settings.cameraStyle)?.detail}
-        {' · '}
-        The nose view keeps its own lens: it is the view out of the cockpit, and a
-        chase preference has nothing to say about it. <kbd>C</kbd> switches between them.
+        {FLIGHT_CAMERA_ROLL_OPTIONS.find((o) => o.id === settings.cameraRoll)?.detail}
+        {'. '}
+        A post-stall manoeuvre gives most of the bank back whichever setting is chosen —
+        a Cobra or a Kulbit is unreadable through a camera that turns with the nose. The
+        nose view keeps its own lens and its own horizon: it is the view out of the
+        cockpit, and a chase preference has nothing to say about it. <kbd>C</kbd> switches
+        between them.
       </p>
     </div>
   )

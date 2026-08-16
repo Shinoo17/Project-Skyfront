@@ -93,17 +93,21 @@ thing the hand already knows how to do, rather than a travel to retrace by eye.
 
 This replaces a relative stick that only counted travel, and the reason that one existed no
 longer holds. It was chosen because screen-up meant body pitch-up only while the camera was
-unrolled, and the chase camera deliberately was not. The camera now carries the airframe's
-roll in full — see the horizon note in `chaseCamera.js` — so screen-up is body pitch-up at
-every attitude, and the screen is a control surface again.
+unrolled, and the chase camera deliberately was not.
 
-Two places still lapse, and both are the camera deliberately not looking down the nose. A
-held Action shot freezes in the world frame through a Cobra or a Kulbit, and rear view looks
-aft, where screen-up reads as pitch-down and roll reads reversed. Neither is worth correcting
-for: the first is a composed shot the pilot commits to rather than steers through, and the
-second is a glance behind that inverts by construction — a stick that flipped with it would
-be a control that changed meaning while the aircraft did not. The gate on the HUD stays
-truthful in both cases even while the picture behind it is not.
+That coupling is now explicit rather than assumed. The camera's bank share is the pilot's
+setting, so screen-up and body pitch-up agree only under Roll On; everywhere else the rig
+publishes how far the airframe appears rotated inside the frame and `readMouseStickAxes`
+turns the drawn vector by exactly that much. The screen is a control surface at every
+setting, and the correction is the identity at the one setting where it always was.
+
+Two places still lapse, and both are the camera deliberately not looking down the nose. The
+held post-stall shot freezes in the world frame through a Cobra or a Kulbit, and rear view
+looks aft, where screen-up reads as pitch-down and roll reads reversed. Both publish a zero
+correction on purpose: the first is a composed shot the pilot commits to rather than steers
+through, and the second is a glance behind that inverts by construction — a stick that
+flipped with it would be a control that changed meaning while the aircraft did not. The gate
+on the HUD stays truthful in both cases even while the picture behind it is not.
 
 The surface takes the pointer while the mouse is flying, so the hand cannot walk the stick
 off the canvas and into the rest of the desktop mid-turn. That removes the cursor, not the
@@ -261,7 +265,24 @@ whole reason the disc is a disc — a diagonal reaches full deflection at exactl
 distance from the middle as a straight pull, and the corner of the envelope a barrel roll
 lives in is reached by pointing at it rather than by finding a corner of a box.
 */
-export function readMouseStickAxes(stick) {
+/*
+`screenRoll` is how far the airframe appears rotated inside the frame — the camera's
+`chase.screenRoll`, in radians, clockwise positive on screen.
+
+It exists because the stick is a position on the glass, and that only means anything while
+screen-up is body pitch-up. That used to be free: the camera took the airframe's whole bank,
+so the two axes were the same axis. Under a stabilised camera they are not, and a pilot
+banked 60 degrees who pulls straight up the screen would be commanding mostly roll — the
+control would silently change meaning as a function of a *camera* setting, which is the worst
+kind of bug because nothing about it looks like a bug.
+
+So the drawn vector is turned into the airframe's frame before it is read. At zero it is the
+identity and the old mapping is recovered exactly; at 90 degrees a pull up the screen becomes
+a pure roll toward level, which is precisely what a pilot means when they point at the top of
+the screen from a knife edge. The magnitude is untouched by a rotation, so the dead zone and
+the response curve below still see the travel the hand actually held.
+*/
+export function readMouseStickAxes(stick, screenRoll = 0) {
   if (!stick?.live) return null
   const neutral = { pitch: 0, roll: 0, yaw: 0 }
   const magnitude = Math.hypot(stick.x, stick.y)
@@ -270,11 +291,20 @@ export function readMouseStickAxes(stick) {
   const travel = Math.min(magnitude, 1)
   if (travel <= MOUSE_STICK_DEAD_ZONE) return neutral
 
+  let x = stick.x
+  let y = stick.y
+  if (screenRoll) {
+    const cos = Math.cos(screenRoll)
+    const sin = Math.sin(screenRoll)
+    x = (stick.x * cos) - (stick.y * sin)
+    y = (stick.x * sin) + (stick.y * cos)
+  }
+
   const live = (travel - MOUSE_STICK_DEAD_ZONE) / (1 - MOUSE_STICK_DEAD_ZONE)
   const scale = (live ** MOUSE_STICK_CURVE) / magnitude
   return {
-    pitch: clampAxis(stick.y * scale),
-    roll: clampAxis(stick.x * scale),
+    pitch: clampAxis(y * scale),
+    roll: clampAxis(x * scale),
     yaw: 0,
   }
 }

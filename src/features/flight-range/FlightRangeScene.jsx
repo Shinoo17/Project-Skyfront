@@ -16,7 +16,7 @@ import {
   resolveFlightGraphics,
 } from '../../three/graphics'
 import SyncedFrameLoop from '../../three/SyncedFrameLoop'
-import { FLIGHT_FOV_RANGE } from '../flight/chaseCamera'
+import { DEFAULT_CAMERA_ROLL_MODE, FLIGHT_FOV_RANGE } from '../flight/chaseCamera'
 import DebugVectors from '../flight/DebugVectors'
 import FlightRange from '../world/FlightRange'
 import MapEnvironment from '../world/MapEnvironment'
@@ -28,7 +28,7 @@ export default function FlightRangeScene({
   aircraftId,
   mapId,
   cameraMode = 'chase',
-  cameraStyle = 'combat',
+  cameraRoll = DEFAULT_CAMERA_ROLL_MODE,
   cameraDistance = 'normal',
   cameraFov = FLIGHT_FOV_RANGE.default,
   debug = false,
@@ -81,7 +81,7 @@ export default function FlightRangeScene({
           resetId={resetId}
           telemetry={telemetry}
           cameraMode={cameraMode}
-          cameraStyle={cameraStyle}
+          cameraRoll={cameraRoll}
           cameraDistance={cameraDistance}
           cameraFov={cameraFov}
           paused={paused}

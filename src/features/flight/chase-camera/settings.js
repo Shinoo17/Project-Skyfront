@@ -8,22 +8,29 @@ working default, because storage can be unavailable in privacy modes and a camer
 refuses to exist is worse than a camera on its authored setting.
 */
 
-import { BASE_FOV, CAMERA_DISTANCE_SCALE, CAMERA_STYLES } from './profiles'
+import { BASE_FOV, CAMERA_DISTANCE_SCALE } from './profiles'
+import { CAMERA_ROLL_MODES, DEFAULT_CAMERA_ROLL_MODE } from './roll'
 
-const CAMERA_STYLE_KEY = 'f22-flight-camera-style'
 const CAMERA_DISTANCE_KEY = 'f22-flight-camera-distance'
+const CAMERA_ROLL_KEY = 'f22-flight-camera-roll'
 
-export const FLIGHT_CAMERA_STYLE_OPTIONS = [
-  {
-    id: 'combat',
-    label: 'Combat Chase',
-    detail: '70° lens · sprung nose + velocity follow',
-  },
-  {
-    id: 'action',
-    label: 'Action',
-    detail: 'Close 69° lens · inertial PSM framing',
-  },
+/*
+The bank share, as three positions rather than a slider.
+
+A slider would be the honest representation of what `roll.js` actually reads, and it is the
+wrong control anyway: the interesting part of this setting is not the number but which of
+three quite different cameras the pilot ends up flying, and a continuum invites hunting for a
+value instead of picking one. Hybrid is the authored default because it is the position that
+suits the device most people arrive on — a mouse and a keyboard, where a full-bank camera is
+the single most common reason somebody puts an arcade flight game down.
+
+None of these labels promise the whole envelope. Post-stall flight gives most of the bank
+back whichever position is chosen; see the regime table in `roll.js`.
+*/
+export const FLIGHT_CAMERA_ROLL_OPTIONS = [
+  { id: 'off', label: 'Off', detail: 'Horizon holds; the airframe rolls in frame' },
+  { id: 'hybrid', label: 'Hybrid', detail: '25% of bank, clamped to 15°' },
+  { id: 'on', label: 'On', detail: 'Camera rides the full bank' },
 ]
 
 export const FLIGHT_CAMERA_DISTANCE_OPTIONS = [
@@ -35,12 +42,11 @@ export const FLIGHT_CAMERA_DISTANCE_OPTIONS = [
 /*
 The pilot's lens, as a trim on the authored one rather than as a replacement for it.
 
-Each style carries its own base — 70° for Combat Chase, 69° for Action — and both are then
-stretched by speed, pinched by braking, and pushed out under load and reheat. Handing the
-setting the absolute number would throw all of that away and leave two styles that look
-identical. So the setting is read as a difference from `BASE_FOV` and added to whichever
-base is in force: Action stays the tighter of the two at every position of the control, and
-every dynamic modifier still lands on top.
+The authored lens is stretched by speed, pinched by braking, and pushed out under load and
+reheat. Handing the setting the absolute number would throw all of that away and leave a
+camera that no longer reacts to anything. So the setting is read as a difference from
+`BASE_FOV` and added to the authored base, and every dynamic modifier still lands on top of
+whatever the pilot chose.
 
 Nose view is left alone. Its 58° is the view out of the cockpit at the frame the aircraft
 really presents, and a chase-camera preference has nothing to say about it.
@@ -71,22 +77,19 @@ export function writeFlightFov(value) {
   }
 }
 
-export function readFlightCameraStyle() {
+export function readFlightCameraRoll() {
   try {
-    const saved = window.localStorage.getItem(CAMERA_STYLE_KEY)
-    // `normal` was the pre-Combat-Chase id. Preserve the user's stable-camera choice
-    // across the rename instead of silently moving them to Action.
-    if (saved === 'normal') return 'combat'
-    return CAMERA_STYLES[saved] ? saved : 'combat'
+    const saved = window.localStorage.getItem(CAMERA_ROLL_KEY)
+    return CAMERA_ROLL_MODES[saved] ? saved : DEFAULT_CAMERA_ROLL_MODE
   } catch {
-    return 'combat'
+    return DEFAULT_CAMERA_ROLL_MODE
   }
 }
 
-export function writeFlightCameraStyle(value) {
-  if (!CAMERA_STYLES[value]) return
+export function writeFlightCameraRoll(value) {
+  if (!CAMERA_ROLL_MODES[value]) return
   try {
-    window.localStorage.setItem(CAMERA_STYLE_KEY, value)
+    window.localStorage.setItem(CAMERA_ROLL_KEY, value)
   } catch {
     // Storage can be unavailable in privacy modes; the in-session choice still works.
   }

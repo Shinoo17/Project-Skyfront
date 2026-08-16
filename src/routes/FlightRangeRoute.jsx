@@ -28,10 +28,10 @@ import {
 import useFlightSession from '../features/flight/useFlightSession'
 import {
   readFlightCameraDistance,
-  readFlightCameraStyle,
+  readFlightCameraRoll,
   readFlightFov,
   writeFlightCameraDistance,
-  writeFlightCameraStyle,
+  writeFlightCameraRoll,
   writeFlightFov,
 } from '../features/flight/chaseCamera'
 import {
@@ -74,7 +74,7 @@ export default function FlightRangeRoute() {
   const navigate = useNavigate()
   const [paused, setPaused] = useState(false)
   const [cameraMode, setCameraMode] = useState('chase')
-  const [cameraStyle, setCameraStyle] = useState(readFlightCameraStyle)
+  const [cameraRoll, setCameraRoll] = useState(readFlightCameraRoll)
   const [cameraDistance, setCameraDistance] = useState(readFlightCameraDistance)
   const [cameraFov, setCameraFov] = useState(readFlightFov)
   const [speedUnit, setSpeedUnit] = useState(readSpeedUnit)
@@ -230,9 +230,9 @@ export default function FlightRangeRoute() {
         setCustomGraphics(value)
         writeFlightCustomGraphics(value)
         break
-      case 'cameraStyle':
-        setCameraStyle(value)
-        writeFlightCameraStyle(value)
+      case 'cameraRoll':
+        setCameraRoll(value)
+        writeFlightCameraRoll(value)
         break
       case 'cameraDistance':
         setCameraDistance(value)
@@ -478,7 +478,7 @@ export default function FlightRangeRoute() {
   const settings = useMemo(() => ({
     quality,
     customGraphics,
-    cameraStyle,
+    cameraRoll,
     cameraDistance,
     cameraFov,
     speedUnit,
@@ -492,7 +492,7 @@ export default function FlightRangeRoute() {
   }), [
     quality,
     customGraphics,
-    cameraStyle,
+    cameraRoll,
     cameraDistance,
     cameraFov,
     speedUnit,
@@ -533,7 +533,7 @@ export default function FlightRangeRoute() {
             paused={paused}
             quality={quality}
             cameraMode={cameraMode}
-            cameraStyle={cameraStyle}
+            cameraRoll={cameraRoll}
             cameraDistance={cameraDistance}
             cameraFov={cameraFov}
             customGraphics={customGraphics}
