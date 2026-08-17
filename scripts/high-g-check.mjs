@@ -2,8 +2,8 @@
 
 The scheme this guards is two buttons that must never become one:
 
-  Space         spend speed for control — a board when the stick is centred, a
-                max-performance aerodynamic turn when it is not
+  Space         spend speed for control — a max-performance aerodynamic turn
+  X             spend speed outright — the board, at any stick position
   Left Alt      consent to post-stall control
 
 So the cases below are all comparisons. The same pull is flown with and without the
@@ -368,7 +368,7 @@ const report = (name, detail) => console.log(`PASS ${name.padEnd(26)} ${detail}`
     + ` jerk=${run.maxAccelJump.toFixed(4)} (psm ${psmRun.maxAccelJump.toFixed(4)})`)
 }
 
-/* F: W+S owns Extreme/High-G and Space remains an independent aerodynamic overlay. */
+/* F: W+S owns Extreme/High-G and X remains an independent aerodynamic overlay. */
 {
   const SECONDS = 2.4
   const fly = (hold, seconds = SECONDS) => {
@@ -416,17 +416,17 @@ const report = (name, detail) => console.log(`PASS ${name.padEnd(26)} ${detail}`
   assert.ok(turn.highG && turn.extreme, 'F: W+S must publish Extreme/High-G intent')
   assert.ok(turn.peakAirBrake < 0.02, 'F: W+S must not imply the independent board')
   assert.ok(brake.peakAirBrake > 0.98,
-    `F: Space must deploy the full board (${brake.peakAirBrake.toFixed(3)})`)
-  assert.equal(brake.highG, false, 'F: Space must not silently request High-G')
+    `F: X must deploy the full board (${brake.peakAirBrake.toFixed(3)})`)
+  assert.equal(brake.highG, false, 'F: X must not silently request High-G')
   assert.ok(wBrake.state.commandedThrottle > 0.99 && wBrake.peakAirBrake > 0.98,
-    'F: W+Space must retain both MIL power and the full board')
+    'F: W+X must retain both MIL power and the full board')
   assert.ok(sBrake.state.commandedThrottle < 0.01 && sBrake.peakAirBrake > 0.98,
-    'F: S+Space must retain both idle and the full board')
+    'F: S+X must retain both idle and the full board')
   assert.ok(brake.state.speedKmh < cruise.state.speedKmh - 250,
     `F: the board must be a readable deceleration on its own`
     + ` (${brake.state.speedKmh.toFixed(1)} vs ${cruise.state.speedKmh.toFixed(1)} km/h)`)
   assert.ok(sBrake.state.speedKmh < wBrake.state.speedKmh,
-    'F: S+Space must decelerate harder than W+Space')
+    'F: S+X must decelerate harder than W+X')
 
   report('F independent brake/chord', `extreme brake=${turn.peakAirBrake.toFixed(2)}`
     + ` speed=${turn.state.speedKmh.toFixed(1)} km/h`
@@ -437,4 +437,4 @@ const report = (name, detail) => console.log(`PASS ${name.padEnd(26)} ${detail}`
 }
 
 console.log('PASS high-G: rate/radius/drag/bleed trade, never post-stall, energy-gated,'
-  + ' smooth release and PSM handoff, independent Space board and W+S Extreme chord')
+  + ' smooth release and PSM handoff, independent X board and W+S Extreme chord')

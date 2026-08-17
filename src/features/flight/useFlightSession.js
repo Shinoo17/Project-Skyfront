@@ -44,21 +44,20 @@ export default function useFlightSession({
 
   const reset = useCallback(() => setResetId((value) => value + 1), [])
 
+  /*
+  The reset has no key. It used to own R, and R is worth more as rear view: the reset is
+  pressed a handful of times a sortie and is reachable from the deck and from the pause
+  menu, while a look behind is held constantly and wants a key under the hand. Nothing here
+  refuses the reset — `reset` below is what the two buttons call.
+  */
   const keyActions = useMemo(() => ({
-    KeyR: (event) => {
-      // A reset asked for behind a menu would only land on the frame the pilot resumes,
-      // which is not what pressing it looked like it did.
-      if (paused) return
-      event.preventDefault()
-      setResetId((value) => value + 1)
-    },
     KeyI: (event, { fieldFocused }) => {
       if (fieldFocused) return
       event.preventDefault()
       setDebug((value) => !value)
     },
     ...extraKeys,
-  }), [extraKeys, paused])
+  }), [extraKeys])
 
   // Seed the player intent at the aircraft's authored cruise power. Spawn speed is derived
   // from that trim at the map altitude by FlightAircraft; live speed never is.

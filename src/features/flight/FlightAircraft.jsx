@@ -229,7 +229,7 @@ export default function FlightAircraft({
 
     // The pointer's stick joins the mix here rather than being written by the surface that
     // moves it, so the shaping curve stays beside every other axis in the input layer and
-    // one frame can never see half of a stick move. A right-drag steers the camera instead,
+    // one frame can never see half of a stick move. A middle-drag steers the camera instead,
     // and centres the stick while it does: the pointer is aiming the lens, so it has stopped
     // saying anything about where the pilot wants the stick.
     //

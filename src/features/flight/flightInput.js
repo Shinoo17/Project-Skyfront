@@ -1,7 +1,8 @@
 /*
 Device-neutral pilot input. This layer publishes what the player wants; it never changes
 velocity or asks for a target airspeed. W requests military power, S requests idle, Shift
-requests reheat, and Space requests the airbrake independently. The W+S chord is resolved
+requests reheat, X requests the airbrake independently, and Space requests the High-G turn.
+The W+S chord is resolved
 before either throttle command and freezes the existing power intent while it asks the
 flight-control model for its extreme/high-G envelope.
 
@@ -27,10 +28,11 @@ export const FLIGHT_BINDINGS = {
   KeyE: 'yaw-right',
   KeyW: 'throttle-up',
   KeyS: 'throttle-down',
-  KeyV: 'rear-view',
+  KeyR: 'rear-view',
   ShiftLeft: 'afterburner',
   ShiftRight: 'afterburner',
-  Space: 'air-brake',
+  Space: 'high-g',
+  KeyX: 'air-brake',
   AltLeft: 'maneuver-assist',
 }
 
@@ -418,8 +420,15 @@ export function readExtremeManeuver(pressed) {
   return pressed.has('throttle-up') && pressed.has('throttle-down')
 }
 
-// Bots and alternate devices may still publish a dedicated high-g action. Keyboard W+S is
-// combined with it in `stepFlightInput`, before W or S is interpreted as throttle intent.
+/*
+The High-G trigger, held rather than latched, and its own control rather than a mode PSM
+shares. The two are deliberately not one button: in the 220–660 km/h band where PSM arms, a
+hard turn and a Cobra entry are the same stick held for the same time, so nothing on the
+input side can tell them apart. One key would turn every hard turn in the fighting band into
+a post-stall tumble.
+
+The W+S Extreme chord still publishes it, alongside `psmArm`, in `stepFlightInput`.
+*/
 export function readHighG(pressed) {
   return pressed.has('high-g')
 }

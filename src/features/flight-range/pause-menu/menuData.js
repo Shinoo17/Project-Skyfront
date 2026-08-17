@@ -15,6 +15,9 @@ export const CREDITS = [
 
 export const COMMANDS = [
   { id: 'resume', label: 'Resume', sub: 'Back to the seat · ESC' },
+  // The reset has no key of its own — R is rear view — so the two places it can be asked for
+  // are the deck and this row.
+  { id: 'restart', label: 'Restart sortie', sub: 'Back to the spawn, with the sky reset' },
   { id: 'settings', label: 'Settings', sub: 'Gameplay · control · graphics · camera · audio' },
   { id: 'credits', label: 'Game credits', sub: 'What this is built out of' },
   { id: 'exit', label: 'Back to main', sub: 'Leave the range for the hangar' },

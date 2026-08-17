@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "input-check": "node --import ./scripts/register.mjs scripts/input-check.mjs",
+    "bindings-check": "node --import ./scripts/register.mjs scripts/bindings-check.mjs",
     "camera-check": "node --import ./scripts/register.mjs scripts/camera-check.mjs",
     "flight-physics-check": "node --import ./scripts/register.mjs scripts/flight-physics-check.mjs",
     "performance-check": "node --import ./scripts/register.mjs scripts/performance-check.mjs",

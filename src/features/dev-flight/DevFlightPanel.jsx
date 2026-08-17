@@ -156,7 +156,7 @@ export default function DevFlightPanel({
 
       <div className="dev-panel-buttons">
         <button type="button" onClick={onReset}>
-          <RotateCcw size={14} strokeWidth={1.9} /> Reset <kbd>R</kbd>
+          <RotateCcw size={14} strokeWidth={1.9} /> Reset
         </button>
         <button type="button" onClick={onRecenter}>
           <Crosshair size={14} strokeWidth={1.9} /> Centre on aircraft

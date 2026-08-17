@@ -35,11 +35,21 @@ const step = (speedKmh = trimSpeed) => stepFlightInput(
 
 assert.equal(FLIGHT_BINDINGS.KeyW, 'throttle-up', 'W must request more dry power')
 assert.equal(FLIGHT_BINDINGS.KeyS, 'throttle-down', 'S must request idle power')
-assert.equal(FLIGHT_BINDINGS.Space, 'air-brake', 'Space must be the independent airbrake')
+assert.equal(FLIGHT_BINDINGS.KeyX, 'air-brake', 'X must be the independent airbrake')
+assert.equal(FLIGHT_BINDINGS.Space, 'high-g', 'Space must be the High-G turn')
+assert.equal(FLIGHT_BINDINGS.AltLeft, 'maneuver-assist', 'Alt must stay the PSM arm')
 assert.equal(FLIGHT_BINDINGS.ShiftLeft, 'afterburner', 'Shift must request afterburner')
 assert.equal(FLIGHT_BINDINGS.KeyA, 'roll-left', 'A must roll left')
 assert.equal(FLIGHT_BINDINGS.KeyD, 'roll-right', 'D must roll right')
 assert.equal(FLIGHT_BINDINGS.KeyF, undefined, 'F must not expose a manual flap command')
+
+// The two are separate controls on purpose: in the band where PSM arms, a hard turn and a
+// Cobra entry are the same stick, so a shared key would make every hard turn a tumble.
+assert.notEqual(
+  FLIGHT_BINDINGS.Space,
+  FLIGHT_BINDINGS.AltLeft,
+  'High-G and the PSM arm must not share a key',
+)
 
 // Digital axes are softened, while the semantic engine intents are immediate.
 input.pressed.add('pitch-up')
@@ -73,18 +83,32 @@ assert.equal(intent.commandedThrottle, envelope.engineControl.idlePower,
   'S must command idle power')
 assert.equal(intent.airBrake, 0, 'S must never deploy the airbrake')
 
-// Space is an overlay: both high and low dry-power commands may coexist with the board.
+// The board is an overlay: both high and low dry-power commands may coexist with it.
 input.pressed.add('air-brake')
 intent = step()
 assert.equal(intent.commandedThrottle, envelope.engineControl.idlePower,
-  'S+Space must retain the idle command')
-assert.equal(intent.airBrake, 1, 'S+Space must deploy the board')
+  'S+X must retain the idle command')
+assert.equal(intent.airBrake, 1, 'S+X must deploy the board')
 input.pressed.delete('throttle-down')
 input.pressed.add('throttle-up')
 intent = step()
 assert.equal(intent.commandedThrottle, envelope.engineControl.militaryPower,
-  'W+Space must retain MIL power')
-assert.equal(intent.airBrake, 1, 'W+Space must keep the board deployed')
+  'W+X must retain MIL power')
+assert.equal(intent.airBrake, 1, 'W+X must keep the board deployed')
+
+// High-G and the PSM arm are each other's neighbours, never each other's alias.
+input.pressed.clear()
+resetFlightInput(input, 0.5)
+input.pressed.add('high-g')
+intent = step()
+assert.equal(intent.highG, true, 'Space must request the High-G envelope')
+assert.equal(intent.psmArm, false, 'High-G must never arm post-stall authority on its own')
+assert.equal(intent.airBrake, 0, 'High-G must not deploy the board')
+input.pressed.delete('high-g')
+input.pressed.add('maneuver-assist')
+intent = step()
+assert.equal(intent.psmArm, true, 'Alt must arm post-stall authority')
+assert.equal(intent.highG, false, 'the PSM arm must not imply the High-G envelope')
 
 // Shift is a separate reheat request and does not silently rewrite dry-power intent.
 input.pressed.clear()
@@ -218,5 +242,5 @@ for (const key of [
   assert.ok(Number.isFinite(engine[key]), `engine tuning must expose ${key}`)
 }
 
-console.log('PASS input: W/S power intent, independent Shift/Space, W+S Extreme chord and'
+console.log('PASS input: W/S power intent, independent Shift/X, separate Space High-G and'
   + ' forgiveness, soft parasite-drag assist, smooth digital and analogue controls')

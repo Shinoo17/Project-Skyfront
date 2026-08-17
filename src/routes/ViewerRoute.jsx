@@ -22,11 +22,18 @@ import SceneErrorBoundary from '../ui/SceneErrorBoundary'
 import useFullscreen from '../ui/useFullscreen'
 import { resolveLoadout } from '../weapons'
 
-// The shared range mapping puts the airbrake on Space and Maneuver Assist on Left Alt. The
-// hangar has neither — it has no flight model to ask them of — and it owns Space as its
-// playback/direct-flight escape, so both codes are dropped here: Space goes to `keyActions`
-// below, and Alt is left to the browser rather than being swallowed for nothing.
-const VIEWER_FLIGHT_BINDINGS = { ...FLIGHT_BINDINGS, Space: undefined, AltLeft: undefined }
+// The range mapping carries four controls the hangar has no flight model to ask them of —
+// High-G on Space, the airbrake on X, Maneuver Assist on Left Alt and rear view on R — and
+// the hangar already owns two of those codes: Space is its playback/direct-flight escape and
+// R recentres the view. Both go to `keyActions` below; the other two are left to the browser
+// rather than being swallowed for nothing.
+const VIEWER_FLIGHT_BINDINGS = {
+  ...FLIGHT_BINDINGS,
+  Space: undefined,
+  KeyR: undefined,
+  KeyX: undefined,
+  AltLeft: undefined,
+}
 
 export default function ViewerRoute({ aircraftId }) {
   const aircraft = getAircraft(aircraftId)

@@ -13,21 +13,32 @@ as "A" moves under the pilot's hand on AZERTY and disappears entirely when they 
 
 Two rules the screen depends on:
 
-  Reserved codes are refused. Escape, P, R, I and C are events the sortie owns — the menu,
-  the reset and the debug readout — and a pilot who binds the airbrake to Escape has locked
-  themselves out of the menu that would let them undo it.
+  Reserved codes are refused. Escape and P are the menu, I is the debug readout and C is the
+  camera; a pilot who binds the airbrake to Escape has locked themselves out of the menu that
+  would let them undo it. F and the top-row digits are held for the weapons the sortie does
+  not fly yet, so a pilot cannot build a layout today that the next build has to take away.
 
   A code taken by another control is stolen, not rejected. That is what every game does, and
   a conflict dialog in the middle of a rebind is a worse answer than showing the control it
   came from going empty.
 
 Mouse buttons are deliberately not bindable. Left click hands the pointer to the sky and
-right drag is free look; both are owned by the stage's pointer handlers rather than by this
-map, so the screen shows them as fixed rows. "Keyboard and mouse" is the device profile, not
-a promise that the buttons move.
+middle drag is free look; the right button and the locked left button are held for the enemy
+zoom and the trigger. All of them are owned by the stage's pointer handlers rather than by
+this map, so the screen shows them as fixed rows. "Keyboard and mouse" is the device profile,
+not a promise that the buttons move.
 */
 
-const BINDINGS_KEY = 'f22-flight-key-bindings'
+/*
+Versioned, and the version moved when Space stopped meaning the airbrake.
+
+A stored layout is normally worth keeping across builds, and `fillMissingControls` below is
+what keeps it. This was the one change that could not be carried: three keys changed which
+control they name rather than which key a control is on, so a layout saved against the old
+scheme is not a preference the pilot expressed about the new one — it is a pilot who would
+press Space for the board and get a high-G turn. The bump hands them the new defaults once.
+*/
+const BINDINGS_KEY = 'f22-flight-key-bindings-v2'
 
 /*
 The controls a pilot can move, in the order the screen shows them, grouped the way they are
@@ -61,6 +72,7 @@ export const FLIGHT_CONTROL_GROUPS = [
     id: 'airframe',
     title: 'AIRFRAME & VIEW',
     rows: [
+      { action: 'high-g', label: 'High-G turn', note: 'Held; tighter turn, and it costs energy' },
       { action: 'maneuver-assist', label: 'Maneuver assist', note: 'Held; arms post-stall authority' },
       { action: 'rear-view', label: 'Look back', note: 'Held; does not change the flight path' },
     ],
@@ -84,14 +96,24 @@ export const DEFAULT_KEY_BINDINGS = {
   'throttle-up': ['KeyW', null],
   'throttle-down': ['KeyS', null],
   'afterburner': ['ShiftLeft', 'ShiftRight'],
-  'air-brake': ['Space', null],
+  'air-brake': ['KeyX', null],
+  'high-g': ['Space', null],
   'maneuver-assist': ['AltLeft', null],
-  'rear-view': ['KeyV', null],
+  'rear-view': ['KeyR', null],
 }
 
-// Events the sortie owns. Binding a control onto one of these would take the menu, the
-// reset or the debug readout away from the pilot with no way back.
-export const RESERVED_CODES = new Set(['Escape', 'KeyP', 'KeyR', 'KeyI', 'KeyC'])
+/*
+Codes the pilot may not take.
+
+The first four are events the sortie owns: binding a control onto one of them would take the
+menu, the debug readout or the camera away with no way back. The rest are held for controls
+the sortie does not fly yet — flare and weapon select — and they are reserved now rather than
+when they land, because a layout a pilot spent time on is a bad thing to confiscate later.
+*/
+export const RESERVED_CODES = new Set([
+  'Escape', 'KeyP', 'KeyI', 'KeyC',
+  'KeyF', 'Digit1', 'Digit2', 'Digit3', 'Digit4',
+])
 
 // The mouse, as the screen has to show it: real controls the pilot uses, none of them
 // living in this map.
@@ -101,7 +123,7 @@ export const RESERVED_CODES = new Set(['Escape', 'KeyP', 'KeyR', 'KeyI', 'KeyC']
 export const FIXED_MOUSE_ROWS = [
   { icon: 'mouse_move', label: 'Pitch and roll', note: 'While the sky holds the pointer' },
   { icon: 'mouse_left_outline', label: 'Take the stick', note: 'Click the sky to hand it the pointer' },
-  { icon: 'mouse_right_outline', label: 'Free look', note: 'Hold and drag; the flight path is unchanged' },
+  { icon: 'mouse_scroll_outline', label: 'Free look', note: 'Hold the wheel and drag; the flight path is unchanged' },
 ]
 
 function cloneBindings(source) {
@@ -117,13 +139,43 @@ export function defaultKeyBindings() {
   return cloneBindings(DEFAULT_KEY_BINDINGS)
 }
 
+/*
+Fill in the controls the stored map never named, without handing out a code the pilot is
+already using.
+
+The naive merge this replaces was `{ ...DEFAULT_KEY_BINDINGS, ...stored }`, and it had a
+failure that is invisible until it bites: a control added by a later build brings its
+authored default with it, and if the pilot had already put that code somewhere else, both
+rows end up holding it. `toBindingMap` then gives it to whichever row it walks last, and the
+other control silently stops working — with the rebind screen showing a key on it the whole
+time, which is the one thing this file exists to prevent.
+
+So a default only lands on a code nothing else is holding. The cost is a control that
+arrives with no key rather than one that steals a key, and that is the right way round: an
+empty row is visible in the menu and takes one press to fix.
+*/
+function fillMissingControls(stored) {
+  const taken = new Set()
+  for (const slots of Object.values(stored)) {
+    for (const code of slots ?? []) if (code) taken.add(code)
+  }
+  const merged = {}
+  for (const row of FLIGHT_CONTROL_ROWS) {
+    if (stored[row.action]) {
+      merged[row.action] = stored[row.action]
+      continue
+    }
+    merged[row.action] = (DEFAULT_KEY_BINDINGS[row.action] ?? [])
+      .map((code) => (code && !taken.has(code) ? code : null))
+  }
+  return cloneBindings(merged)
+}
+
 export function readKeyBindings() {
   try {
     const stored = window.localStorage.getItem(BINDINGS_KEY)
     if (!stored) return defaultKeyBindings()
-    // Anything the stored map does not name falls back to the default for that control, so
-    // a build that adds a control does not leave the pilot with a dead row.
-    return cloneBindings({ ...DEFAULT_KEY_BINDINGS, ...JSON.parse(stored) })
+    return fillMissingControls(JSON.parse(stored))
   } catch {
     return defaultKeyBindings()
   }

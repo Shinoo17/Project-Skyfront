@@ -79,6 +79,7 @@ const LEGEND_ROWS = [
   { actions: ['throttle-up', 'throttle-down'], caption: 'MIL power / idle' },
   { actions: ['afterburner'], caption: 'afterburner' },
   { actions: ['air-brake'], caption: 'airbrake' },
+  { actions: ['high-g'], caption: 'high-G turn' },
   { actions: ['maneuver-assist'], caption: 'maneuver assist' },
   { actions: ['rear-view'], caption: 'look back' },
 ]
@@ -466,6 +467,17 @@ export default function FlightHud({
               nodeRef={(node) => { dom.current.afterburner = node }}
             >
               A/B
+            </HoldControl>
+            {/* The fourth column of this row, which the three flight holds above had left
+                empty. High-G belongs with the afterburner rather than in the mode row below:
+                both are energy the pilot spends on purpose, and the row below is views. */}
+            <HoldControl
+              control="high-g"
+              label="Hold for the high-G turn"
+              icon={Gauge}
+              controls={controls}
+            >
+              HI-G
             </HoldControl>
           </div>
 

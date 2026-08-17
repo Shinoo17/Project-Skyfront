@@ -142,18 +142,20 @@
     gap: 4px;
   }
 
+  /* Four and five keys across a 174px bezel are both rows of slivers, so each row wraps one
+     step narrower: the engine row into 2 + 2 and the mode row into 3 + 2. Both keep their
+     flight actions leading, which is what holds them on the same line as each other. */
   .deck-row {
     gap: 4px;
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .deck-row.is-modes {
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .deck-row .deck-key {
     min-height: 40px;
-  }
-
-  /* Five keys across a 174px bezel is a row of slivers, so the mode row wraps into
-     3 + 2 instead. The flight actions lead, which keeps them on the same line. */
-  .deck-row.is-modes {
-    grid-template-columns: repeat(3, 1fr);
   }
 
   .deck-throttle {

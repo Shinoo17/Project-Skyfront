@@ -37,6 +37,7 @@ export default function PauseMenu({
   onUnbindKey,
   onResetKeyBindings,
   onResume,
+  onRestart,
   onExit,
   onFullscreen,
 }) {
@@ -75,9 +76,15 @@ export default function PauseMenu({
 
   const activate = useCallback((id) => {
     if (id === 'resume') return onResume()
+    // Resumed as well as reset: a restart the pilot has to then close a menu to watch is a
+    // command that only half happened.
+    if (id === 'restart') {
+      onRestart?.()
+      return onResume()
+    }
     if (id === 'exit') return onExit()
     return setView(id)
-  }, [onExit, onResume])
+  }, [onExit, onRestart, onResume])
 
   /*
   One keyboard, and the order of its questions is the whole behaviour.

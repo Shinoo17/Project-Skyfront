@@ -33,8 +33,9 @@ export default function ControlsTab({
         ))}
         <p className="pause-note">
           The mouse buttons are not rebindable: the left click is what hands the
-          pointer to the sky and the right drag is free look, and both belong to the
-          canvas rather than to this map.
+          pointer to the sky and the middle drag is free look, while the right
+          button is held for the enemy zoom. All of them belong to the canvas
+          rather than to this map.
         </p>
       </div>
 
@@ -118,8 +119,9 @@ export default function ControlsTab({
       <p className="pause-note">
         Click a key to listen, then press the one you want — it is taken off
         whatever else was holding it. Right-click a key to clear it. Escape,
-        <kbd>P</kbd>, <kbd>R</kbd>, <kbd>I</kbd> and <kbd>C</kbd> belong to the
-        menu, the reset, the debug readout and the camera, and cannot be bound.
+        <kbd>P</kbd>, <kbd>I</kbd> and <kbd>C</kbd> belong to the menu, the debug
+        readout and the camera. <kbd>F</kbd> and <kbd>1</kbd>–<kbd>4</kbd> are
+        held for flare and weapon select. None of them can be bound.
       </p>
     </div>
   )

@@ -309,10 +309,16 @@ export default function FlightRangeRoute() {
   land in the same held position, so nothing downstream — the gate, the shaping, the
   telemetry — knows which one it is looking at.
 
-  Right drag is free look, and while it is held the stick is centred rather than left where
+  Middle drag is free look, and while it is held the stick is centred rather than left where
   it was: the pointer is aiming the camera, so it is not saying anything about the stick, and
   a look that ended somewhere else entirely would otherwise hand the aircraft a deflection
   nobody chose.
+
+  It used to be the right button, and the move is what makes room for the weapons: the right
+  button becomes the enemy zoom and the left button, once the sky already holds the pointer,
+  becomes the trigger. Neither is flown yet. Both are already swallowed here so that the day
+  they land, nothing about the pointer's shape has to change — and so a right click today is
+  a button that does nothing rather than the browser's context menu over a dogfight.
 
   Touch is left alone throughout: the on-screen deck is its control surface.
   */
@@ -320,13 +326,22 @@ export default function FlightRangeRoute() {
     if (pausedRef.current || event.pointerType === 'touch') return
 
     if (event.button === 0) {
-      if (!mouseFlightEnabledRef.current || pointerLockedRef.current) return
+      if (!mouseFlightEnabledRef.current) return
       event.preventDefault()
+      // Locked already means the click is not asking for the pointer. That is the trigger's
+      // slot; until there is a weapon on the rail it is deliberately nothing at all.
+      if (pointerLockedRef.current) return
       requestPointerLock()
       return
     }
 
-    if (event.button !== 2) return
+    // The enemy zoom's slot. Held rather than acted on, for the same reason as above.
+    if (event.button === 2) {
+      event.preventDefault()
+      return
+    }
+
+    if (event.button !== 1) return
     event.preventDefault()
     dragLook.current = { id: event.pointerId, x: event.clientX, y: event.clientY }
     // Deliberately not zeroed. The camera owns the return, and re-seeds these from the
@@ -521,6 +536,10 @@ export default function FlightRangeRoute() {
         onPointerLeave={onStagePointerLeave}
         onLostPointerCapture={onStagePointerUp}
         onContextMenu={(event) => event.preventDefault()}
+        // Middle click is autoscroll on Windows and a paste on X11, and both would land in
+        // the middle of a free look. `onPointerDown` already prevents the compatibility
+        // mousedown; this closes the click that follows it.
+        onAuxClick={(event) => event.preventDefault()}
       >
         <SceneErrorBoundary>
           <FlightRangeScene
@@ -580,6 +599,7 @@ export default function FlightRangeRoute() {
         onUnbindKey={unbindKey}
         onResetKeyBindings={resetKeyBindings}
         onResume={resume}
+        onRestart={reset}
         onExit={exit}
         onFullscreen={handleFullscreen}
       />

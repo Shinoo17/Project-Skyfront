@@ -45,3 +45,7 @@ packages/react-devtools-inline/dist
 packages/react-devtools-shell/dist
 packages/react-devtools-timeline/dist
 packages/react-devtools-cdt-mcp/dist
+
+# Output of the impeccable design skill; the tracked design.json and surfaces/ are the
+# durable part, the critiques are per-run notes.
+.impeccable/critique/
