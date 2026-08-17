@@ -97,6 +97,7 @@ import {
   readThrottlePower,
 } from '../performance'
 import { stepHighG } from './highG'
+import { stepManeuverSurfaces } from './maneuverSurfaces'
 import { approach, moveTowards, smooth01 } from './math'
 import { detectManeuver } from './maneuverDetect'
 import { isControlledPsmPhase, stepPsmAssist } from './psm'
@@ -145,7 +146,7 @@ function liftShape(alphaRad, tuning) {
 /*
 One fixed step. `command` is the resolved pilot intent:
 
-  { pitch, roll, yaw: -1..1, commandedThrottle: 0..1, flaps: 0..1,
+  { pitch, roll, yaw: -1..1, commandedThrottle: 0..1,
     airBrake: 0..1, accelerate: boolean, decelerate: boolean,
     highG: boolean, psmArm: boolean, extremeManeuverActive: boolean,
     afterburnerCommanded: boolean, burnerLevel: 0..1 }
@@ -159,6 +160,8 @@ Returns nothing; mutates `state` in place.
 */
 export function stepFlight(state, command, envelope, dt) {
   const tuning = envelope.maneuvering
+  const surfaceTuning = tuning.maneuverSurfaces ?? {}
+  const gravity = tuning.gravity
   const toWorld = 1 / envelope.performance.kmhPerWorldUnitPerSecond
   const engine = envelope.engineControl ?? {}
   const aerodynamics = envelope.aerodynamics ?? {}
@@ -239,6 +242,14 @@ export function stepFlight(state, command, envelope, dt) {
   // reference speed. Every aerodynamic effect — force or stability — scales off it.
   const qFactor = (speed / tuning.referenceSpeed) ** 2
 
+  // The automatic surface schedule reads the load this incidence would create before its
+  // own modest lift contribution. This avoids a one-frame feedback loop while still making
+  // G-load a real FCS input rather than a display-only value.
+  const scheduledLoadFactor = Math.abs(
+    (qFactor * tuning.liftGain * liftShape(sensedAlphaRad, tuning)) / gravity,
+  )
+  stepManeuverSurfaces(state, tuning, dt, scheduledLoadFactor)
+
   // ---------------------------------------------------------------- control authority
   // How much engine there is to vector: actual spooled core power plus whatever reheat is
   // alight. This can no longer claim nozzle authority from a throttle number whose engine
@@ -281,12 +292,19 @@ export function stepFlight(state, command, envelope, dt) {
   // because the compressed range spans eight times the speed end to end, and a true q law
   // across that would leave the jet dead everywhere below fighting speed while making no
   // difference at all above it.
+  const maneuverAuthorityBoost = 1 + (
+    (surfaceTuning.controlAuthorityGain ?? 0)
+    * state.maneuverSurface
+    * state.maneuverSurfaceEffectiveness
+  )
   const surfaceAuthority = MathUtils.clamp(
     (speed / tuning.authorityRefSpeed) ** tuning.authorityExponent, 0, 1,
   )
     * (1 - (tuning.postStallSurfaceLoss
       * smooth01((alphaDegAbs - tuning.stallAoADeg)
         / (tuning.surfaceLossFullAoADeg - tuning.stallAoADeg))))
+    * state.maneuverSurfaceEffectiveness
+    * maneuverAuthorityBoost
 
   // The nozzles answer to thrust, not airspeed — which is exactly why they matter at the
   // top of a loop and in the middle of a Cobra. The FCC lets them out further as the air
@@ -384,8 +402,6 @@ export function stepFlight(state, command, envelope, dt) {
     : naturalYawAuthority
 
   // ---------------------------------------------------------------- commanded rates
-  const gravity = tuning.gravity
-
   /*
   How far the envelope is open, 0..1. Two continuous factors and nothing else:
 
@@ -949,7 +965,13 @@ export function stepFlight(state, command, envelope, dt) {
 
   liftDir.copy(worldUp)
   if (hasPath) liftDir.addScaledVector(pathDir, -liftDir.dot(pathDir))
+  const maneuverLiftFactor = 1 + (
+    (surfaceTuning.liftGain ?? 0)
+    * state.maneuverSurface
+    * state.maneuverSurfaceEffectiveness
+  )
   const liftMag = qFactor * tuning.liftGain * liftShape(alphaRad, tuning)
+    * maneuverLiftFactor
   if (liftDir.lengthSq() > 1e-4) {
     liftDir.normalize()
     accel.addScaledVector(liftDir, liftMag)
@@ -975,8 +997,8 @@ export function stepFlight(state, command, envelope, dt) {
 
   // Parasite and wave drag are present at every throttle setting. The AoA-squared term is
   // the compressed induced-drag bill: more pull makes more lift/G and spends more energy.
-  // Sideslip, brake, and flaps add their own penalties; a Cobra without them would still
-  // be a free 180.
+  // Sideslip, the automatic maneuver surfaces and the brake add their own penalties; a
+  // Cobra without them would still be a free 180.
   //
   // The separated-flow surcharge is billed against measured alpha, because separation is a
   // property of the airflow over the wing and has nothing to do with how fast the aircraft
@@ -1019,7 +1041,7 @@ export function stepFlight(state, command, envelope, dt) {
   */
   parasiteDrag += qFactor * (
     (tuning.sideslipDragGain * sinBeta * sinBeta)
-    + (tuning.flapsDrag * command.flaps)
+    + ((surfaceTuning.profileDragCoefficient ?? 0) * (state.maneuverSurface ** 2))
   )
   const currentG = Math.abs(liftMag / gravity)
   const highGFactor = 1 + (
@@ -1032,6 +1054,11 @@ export function stepFlight(state, command, envelope, dt) {
     * highGFactor
     * MathUtils.lerp(1, tuning.postStallDragMultiplier, postStallBlend)
     * MathUtils.lerp(1, highG?.dragMultiplier ?? 1, state.highGBlend)
+    * (1 + (
+      (surfaceTuning.inducedDragGain ?? 0)
+      * state.maneuverSurface
+      * MathUtils.lerp(1, surfaceTuning.highGDragFactor ?? 1, state.highGBlend)
+    ))
     * MathUtils.lerp(1, psm?.dragMultiplier ?? 1, state.psmBlend)
   const airbrakeDrag = qFactor
     * (aerodynamics.airbrakeDragCoefficient ?? 0)

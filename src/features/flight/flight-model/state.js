@@ -17,6 +17,14 @@ export function createFlightState() {
     angularVelocity: new Vector3(),
     // Pilot input after smoothing — also what the control surfaces animate from.
     input: { pitch: 0, roll: 0, yaw: 0 },
+    // Automatic FCS maneuver surfaces, all normalized 0..1. Deflection is kept separate
+    // from effectiveness so animation can remain active after separated flow has taken
+    // most of the surfaces' aerodynamic authority away.
+    maneuverSurface: 0,
+    leadingEdgeDeflection: 0,
+    trailingEdgeDeflection: 0,
+    flaperonDeflection: 0,
+    maneuverSurfaceEffectiveness: 1,
     // Dry power command and actual spooled engine power, both normalized idle..MIL.
     commandedThrottle: 0,
     engineThrottle: 0,
@@ -133,6 +141,11 @@ export function resetFlightState(
   state.input.pitch = 0
   state.input.roll = 0
   state.input.yaw = 0
+  state.maneuverSurface = 0
+  state.leadingEdgeDeflection = 0
+  state.trailingEdgeDeflection = 0
+  state.flaperonDeflection = 0
+  state.maneuverSurfaceEffectiveness = 1
   state.commandedThrottle = readThrottlePower(throttle, envelope)
   state.engineThrottle = state.commandedThrottle
   state.engineCoreLevel = state.engineThrottle

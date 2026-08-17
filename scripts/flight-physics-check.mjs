@@ -49,7 +49,6 @@ const command = (pitch) => ({
   pitch,
   roll: 0,
   yaw: 0,
-  flaps: 0,
   throttle,
   airBrake: 0,
   afterburnerCommanded: false,

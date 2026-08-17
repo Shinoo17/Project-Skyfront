@@ -61,7 +61,6 @@ export const FLIGHT_CONTROL_GROUPS = [
     id: 'airframe',
     title: 'AIRFRAME & VIEW',
     rows: [
-      { action: 'flaps', label: 'Flaps', note: 'Held' },
       { action: 'maneuver-assist', label: 'Maneuver assist', note: 'Held; arms post-stall authority' },
       { action: 'rear-view', label: 'Look back', note: 'Held; does not change the flight path' },
     ],
@@ -86,7 +85,6 @@ export const DEFAULT_KEY_BINDINGS = {
   'throttle-down': ['KeyS', null],
   'afterburner': ['ShiftLeft', 'ShiftRight'],
   'air-brake': ['Space', null],
-  'flaps': ['KeyF', null],
   'maneuver-assist': ['AltLeft', null],
   'rear-view': ['KeyV', null],
 }

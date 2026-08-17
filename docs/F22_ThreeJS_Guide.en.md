@@ -744,7 +744,7 @@ const surf = {
 
 #### Deflection limits, measured
 
-Don't invent numbers — these are the peaks keyed in the showcase. Clamp to them, or a combined pitch + roll + flaps command will punch a surface through the wing.
+Don't invent numbers — these are the peaks keyed in the showcase. Clamp to them, or a combined pitch + roll + automatic FCS schedule will punch a surface through the wing.
 
 | surface | limit |
 |---|---|
@@ -759,26 +759,26 @@ Don't invent numbers — these are the peaks keyed in the showcase. Clamp to the
 ```js
 const clamp = THREE.MathUtils.clamp;
 
-// pitch/roll/yaw in -1..1
-function applyControls({ pitch, roll, yaw, flaps = 0 }) {
+// pitch/roll/yaw in -1..1; automatic surface demands in 0..1
+function applyControls({ pitch, roll, yaw, leadingEdgeDeflection = 0, flaperonDeflection = 0 }) {
   // Nose up needs the tail pushed down, so the stabilators — and the flaperons, which
   // act as elevons — go trailing edge UP. Rolling right needs more lift on the left
   // wing, so the LEFT surfaces go trailing edge down. Both tails deflect together for
-  // yaw. The LE flaps droop with the flaps, which is negative here.
+  // yaw. The LE and trailing-edge demands come from the FCS, never from player input.
   surf.stabL(clamp(-pitch * 20 + roll * 8, -20, 20));
   surf.stabR(clamp(-pitch * 20 - roll * 8, -20, 20));
   surf.ailL(clamp( roll * 25, -25, 25));
   surf.ailR(clamp(-roll * 25, -25, 25));
-  surf.flapL(clamp(-pitch * 10 + roll * 15 + flaps * 22, -22.6, 22.6));
-  surf.flapR(clamp(-pitch * 10 - roll * 15 + flaps * 22, -22.6, 22.6));
-  surf.leL(-flaps * 11);
-  surf.leR(-flaps * 11);
+  surf.flapL(clamp(-pitch * 10 + roll * 15 + flaperonDeflection * 12, -22.6, 22.6));
+  surf.flapR(clamp(-pitch * 10 - roll * 15 + flaperonDeflection * 12, -22.6, 22.6));
+  surf.leL(-leadingEdgeDeflection * 11);
+  surf.leR(-leadingEdgeDeflection * 11);
   surf.rudL(yaw * 22);
   surf.rudR(yaw * 22);
 }
 ```
 
-> **Sanity check, not a guess.** Take the aft-most vertex of each surface and confirm which way it travels: pitch up ⇒ both stabilators TE up; roll right ⇒ left TE down and right TE up; yaw right ⇒ *both* tails TE to starboard; flaps ⇒ flaperons TE down and LE flaps drooped.
+> **Sanity check, not a guess.** Take the aft-most vertex of each surface and confirm which way it travels: pitch up ⇒ both stabilators TE up; roll right ⇒ left TE down and right TE up; yaw right ⇒ *both* tails TE to starboard; positive automatic maneuver-surface demand ⇒ flaperons TE down and LE flaps drooped.
 > On yaw the left tail's trailing edge also rises while the right one dips. **That is not a bug** — it is what a 28°-canted all-moving tail does when it rotates about its own spar.
 
 ### 7.2 Thrust vectoring nozzles

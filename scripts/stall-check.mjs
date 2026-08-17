@@ -42,7 +42,6 @@ const command = (over = {}) => ({
   pitch: 0,
   roll: 0,
   yaw: 0,
-  flaps: 0,
   throttle: envelope.idleThrottle,
   airBrake: 0,
   accelerate: false,

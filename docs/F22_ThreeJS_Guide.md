@@ -737,7 +737,7 @@ const surf = {
 
 #### ลิมิตองศา — วัดมาแล้ว
 
-อย่าเดาเลข พวกนี้คือค่าสูงสุดที่ key ไว้ใน showcase ต้อง clamp ด้วย ไม่งั้นคำสั่ง pitch + roll + flaps รวมกันจะดันใบทะลุปีก
+อย่าเดาเลข พวกนี้คือค่าสูงสุดที่ key ไว้ใน showcase ต้อง clamp ด้วย ไม่งั้นคำสั่ง pitch + roll + automatic FCS schedule รวมกันจะดันใบทะลุปีก
 
 | ชิ้น | ลิมิต |
 |---|---|
@@ -752,25 +752,25 @@ const surf = {
 ```js
 const clamp = THREE.MathUtils.clamp;
 
-// pitch/roll/yaw = -1..1
-function applyControls({ pitch, roll, yaw, flaps = 0 }) {
+// pitch/roll/yaw = -1..1; ค่าพื้นผิวอัตโนมัติ = 0..1
+function applyControls({ pitch, roll, yaw, leadingEdgeDeflection = 0, flaperonDeflection = 0 }) {
   // เชิดหัวขึ้น = ต้องกดหางลง ⇒ stabilator (และ flaperon ที่ทำหน้าที่ elevon) ขอบท้าย
   // ยกขึ้น / ม้วนขวา = ต้องได้ lift ปีกซ้ายมากกว่า ⇒ ใบฝั่งซ้ายขอบท้ายกดลง /
-  // yaw ใช้หางตั้งทั้งสองข้างเบนทางเดียวกัน / LE flap ห้อยลงตาม flaps จึงติดลบ
+  // yaw ใช้หางตั้งทั้งสองข้างเบนทางเดียวกัน / ค่า LE และ trailing edge มาจาก FCS เท่านั้น
   surf.stabL(clamp(-pitch * 20 + roll * 8, -20, 20));
   surf.stabR(clamp(-pitch * 20 - roll * 8, -20, 20));
   surf.ailL(clamp( roll * 25, -25, 25));
   surf.ailR(clamp(-roll * 25, -25, 25));
-  surf.flapL(clamp(-pitch * 10 + roll * 15 + flaps * 22, -22.6, 22.6));
-  surf.flapR(clamp(-pitch * 10 - roll * 15 + flaps * 22, -22.6, 22.6));
-  surf.leL(-flaps * 11);
-  surf.leR(-flaps * 11);
+  surf.flapL(clamp(-pitch * 10 + roll * 15 + flaperonDeflection * 12, -22.6, 22.6));
+  surf.flapR(clamp(-pitch * 10 - roll * 15 + flaperonDeflection * 12, -22.6, 22.6));
+  surf.leL(-leadingEdgeDeflection * 11);
+  surf.leR(-leadingEdgeDeflection * 11);
   surf.rudL(yaw * 22);
   surf.rudR(yaw * 22);
 }
 ```
 
-> **เช็คได้ ไม่ต้องเดา** เอา vertex ท้ายสุดของแต่ละใบมาดูว่าขยับไปทางไหน: pitch up ⇒ stabilator ขอบท้ายขึ้นทั้งคู่ / roll right ⇒ ซ้ายขอบท้ายลง ขวาขอบท้ายขึ้น / yaw right ⇒ หางตั้ง **ทั้งสองข้าง** เบนไปกราบขวา / flaps ⇒ flaperon ลง + LE flap ห้อย
+> **เช็คได้ ไม่ต้องเดา** เอา vertex ท้ายสุดของแต่ละใบมาดูว่าขยับไปทางไหน: pitch up ⇒ stabilator ขอบท้ายขึ้นทั้งคู่ / roll right ⇒ ซ้ายขอบท้ายลง ขวาขอบท้ายขึ้น / yaw right ⇒ หางตั้ง **ทั้งสองข้าง** เบนไปกราบขวา / automatic maneuver-surface demand เป็นบวก ⇒ flaperon ลง + LE flap ห้อย
 > ตอน yaw ขอบท้ายหางซ้ายจะยกขึ้นส่วนขวาจะกดลง **ไม่ใช่บั๊ก** — เป็นพฤติกรรมของหางตั้งที่ cant 28° เวลาหมุนรอบสปาร์ตัวเอง
 
 ### 7.2 Thrust vectoring nozzle

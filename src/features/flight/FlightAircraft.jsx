@@ -274,7 +274,6 @@ export default function FlightAircraft({
       pitch: input.pitch,
       roll: input.roll,
       yaw: input.yaw,
-      flaps: input.flaps,
       throttle: input.throttle,
       commandedThrottle: input.commandedThrottle,
       airBrake: input.airBrake,
@@ -376,7 +375,10 @@ export default function FlightAircraft({
         pitch: aircraftState.input.pitch,
         roll: aircraftState.input.roll,
         yaw: aircraftState.input.yaw,
-        flaps: input.flaps,
+        maneuverSurface: aircraftState.maneuverSurface,
+        leadingEdgeDeflection: aircraftState.leadingEdgeDeflection,
+        trailingEdgeDeflection: aircraftState.trailingEdgeDeflection,
+        flaperonDeflection: aircraftState.flaperonDeflection,
       }),
       1 - Math.exp(-10 * step),
     )
@@ -472,7 +474,11 @@ export default function FlightAircraft({
     readout.afterburnerActive = aircraftState.afterburnerActive
     readout.currentG = aircraftState.gLoad
     readout.extremeManeuverActive = aircraftState.extremeManeuverActive
-    readout.flaps = input.flaps
+    readout.maneuverSurface = aircraftState.maneuverSurface
+    readout.leadingEdgeDeflection = aircraftState.leadingEdgeDeflection
+    readout.trailingEdgeDeflection = aircraftState.trailingEdgeDeflection
+    readout.flaperonDeflection = aircraftState.flaperonDeflection
+    readout.maneuverSurfaceEffectiveness = aircraftState.maneuverSurfaceEffectiveness
     readout.aoa = aircraftState.aoaDeg
     readout.sideslip = aircraftState.sideslipDeg
     readout.gLoad = aircraftState.gLoad

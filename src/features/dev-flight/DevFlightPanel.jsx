@@ -41,6 +41,8 @@ const READOUTS = [
   // The two intents, published side by side: how much of the conventional turn envelope is
   // open, and how much of the post-stall one. They answer to different keys.
   { key: 'highGBlend', label: 'HIGH-G' },
+  { key: 'maneuverSurface', label: 'FCS SURF' },
+  { key: 'maneuverSurfaceEffectiveness', label: 'SURF EFF' },
   { key: 'psmBlend', label: 'PSM' },
   { key: 'psmFloatBlend', label: 'FLOAT' },
   { key: 'aeroAuthority', label: 'AERO AUTH' },
@@ -78,6 +80,9 @@ function readValues(telemetry) {
     postStallBlend: `${Math.round(value.postStallBlend * 100)}%`,
     departureBlend: `${Math.round(value.departureBlend * 100)}%`,
     highGBlend: `${Math.round(value.highGBlend * 100)}%`,
+    maneuverSurface: `${Math.round(value.maneuverSurface * 100)}%`,
+    maneuverSurfaceEffectiveness:
+      `${Math.round(value.maneuverSurfaceEffectiveness * 100)}%`,
     psmBlend: `${Math.round(value.psmBlend * 100)}%`,
     psmFloatBlend: `${Math.round(value.psmFloatBlend * 100)}%`,
     aeroAuthority: `${Math.round(value.aeroAuthority * 100)}%`,

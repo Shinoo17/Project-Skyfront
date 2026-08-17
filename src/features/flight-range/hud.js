@@ -620,27 +620,20 @@ export function createFlightHud(canvas, {
     // Stacked under the bars when the frame is crowded, beside them when it is not.
     const attitudeRow = layout.tight ? second + 21 : first
     text(`PITCH ${pitch}°   BANK ${bank}°`, right, attitudeRow, display(12), HUD_GREEN_DIM, align)
-    // Its own slot in every layout: under the flap row when the block is stacked, under
-    // the attitude row when the columns are side by side.
+    // Its own slot in every layout: under the attitude row when the columns are side by side.
     const aoaRow = layout.tight ? attitudeRow + 40 : layout.compact ? second + 80 : second
     text(`α ${aoa}°   ${g}G${state.postStallActive ? '   STALL' : ''}${state.airBrake ? '   BRAKE' : ''}`,
       right, aoaRow, display(12), aoaColor, align)
 
-    // Flap and range-edge state belong to the tacmap deck, which is opaque, larger, and the
-    // only copy a screen reader can reach. The glass picks them up exactly on the frames
-    // where the stylesheet has dropped that deck, so the two never appear at once and
-    // neither ever disappears.
+    // Range-edge state belongs to the tacmap deck, which is opaque, larger, and the only
+    // copy a screen reader can reach. The glass picks it up when that deck has dropped away.
     if (layout.tight) {
       const edge = state.live ? pad(state.edge, 4) : '––––'
-      text(`${state.flaps ? 'FLAPS DOWN' : 'FLAPS UP'}   EDGE ${edge}`,
-        right, attitudeRow + 20, display(12),
-        state.flaps ? HUD_GREEN_CAUTION : HUD_GREEN_DIM, align)
+      text(`EDGE ${edge}`, right, attitudeRow + 20, display(12),
+        state.live && state.edge < 620 ? HUD_GREEN_CAUTION : HUD_GREEN_DIM, align)
     } else if (layout.compact) {
-      text(state.flaps ? 'FLAPS DOWN' : 'FLAPS UP',
-        right, second, display(12, 700),
-        state.flaps ? HUD_GREEN_CAUTION : HUD_GREEN_DIM, 'right')
       text(state.live ? `EDGE ${pad(state.edge, 4)}` : 'EDGE ––––',
-        right, second + 20, display(12),
+        right, second, display(12),
         state.live && state.edge < 620 ? HUD_GREEN_CAUTION : HUD_GREEN_DIM, 'right')
     }
 

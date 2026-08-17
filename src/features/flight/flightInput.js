@@ -27,7 +27,6 @@ export const FLIGHT_BINDINGS = {
   KeyE: 'yaw-right',
   KeyW: 'throttle-up',
   KeyS: 'throttle-down',
-  KeyF: 'flaps',
   KeyV: 'rear-view',
   ShiftLeft: 'afterburner',
   ShiftRight: 'afterburner',
@@ -66,7 +65,6 @@ const RESPONSE = {
   pitch: { engage: 4.6, release: 7.5 },
   roll: { engage: 5.5, release: 8.5 },
   yaw: { engage: 3.8, release: 6.5 },
-  flaps: { engage: 5, release: 7 },
   airBrake: { engage: 5, release: 8 },
 }
 
@@ -401,7 +399,6 @@ export function readAxes(pressed) {
     pitch: digitalAxis(pressed, 'pitch-up', 'pitch-down'),
     roll: digitalAxis(pressed, 'roll-right', 'roll-left'),
     yaw: digitalAxis(pressed, 'yaw-right', 'yaw-left'),
-    flaps: Number(pressed.has('flaps')),
   }
 }
 
@@ -481,7 +478,6 @@ export function createFlightInputState(initialCommandedThrottle = 0) {
       pitch: 0,
       roll: 0,
       yaw: 0,
-      flaps: 0,
       throttle: commandedThrottle,
       commandedThrottle,
       airBrake: 0,
@@ -538,7 +534,6 @@ export function resetFlightInput(state, commandedThrottle = state.commandedThrot
   state.intent.pitch = 0
   state.intent.roll = 0
   state.intent.yaw = 0
-  state.intent.flaps = 0
   state.intent.airBrake = 0
   state.intent.throttle = state.commandedThrottle
   state.intent.commandedThrottle = state.commandedThrottle
@@ -574,12 +569,6 @@ export function stepFlightInput(state, step, envelope, altitude, motion = null) 
     )
   }
 
-  state.intent.flaps = smoothAxis(
-    state.intent.flaps,
-    raw.flaps,
-    RESPONSE.flaps,
-    step,
-  )
   state.intent.airBrake = readAirBrake(state.pressed)
   state.intent.afterburner = readAfterburnerCommand(state.pressed)
   const engine = envelope.engineControl ?? {}

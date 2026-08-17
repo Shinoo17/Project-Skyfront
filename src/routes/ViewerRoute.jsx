@@ -47,7 +47,6 @@ export default function ViewerRoute({ aircraftId }) {
     pitch: 0,
     roll: 0,
     yaw: 0,
-    flaps: 0,
   })
   const [throttle, setThrottle] = useState(0.32)
   const [afterburner, setAfterburner] = useState(false)
@@ -68,7 +67,7 @@ export default function ViewerRoute({ aircraftId }) {
   const handleAnimationToggle = useCallback((systemId) => {
     setManualFlight(false)
     setAfterburner(false)
-    setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
+    setFlightInput({ pitch: 0, roll: 0, yaw: 0 })
     setAnimationStates((current) => ({
       ...current,
       [systemId]: !current[systemId],
@@ -97,7 +96,7 @@ export default function ViewerRoute({ aircraftId }) {
       setManualFlight(false)
       setAfterburner(false)
       setAutoRotate(false)
-      setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
+      setFlightInput({ pitch: 0, roll: 0, yaw: 0 })
       setIsPlaying(false)
       setViewRequest({ view: 'front', id: performance.now() })
     } else if (!next && current) {
@@ -108,7 +107,7 @@ export default function ViewerRoute({ aircraftId }) {
 
   const handleManualFlightChange = useCallback((enabled) => {
     setManualFlight(enabled)
-    setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
+    setFlightInput({ pitch: 0, roll: 0, yaw: 0 })
     setAutoRotate(false)
     setIsPlaying(!enabled)
     if (!enabled) setAfterburner(false)
@@ -125,7 +124,7 @@ export default function ViewerRoute({ aircraftId }) {
 
   const handleFlightReset = useCallback(() => {
     setManualFlight(true)
-    setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
+    setFlightInput({ pitch: 0, roll: 0, yaw: 0 })
     setFlightResetId((value) => value + 1)
   }, [])
 
@@ -153,7 +152,7 @@ export default function ViewerRoute({ aircraftId }) {
       if (manualFlightRef.current) {
         setManualFlight(false)
         setAfterburner(false)
-        setFlightInput({ pitch: 0, roll: 0, yaw: 0, flaps: 0 })
+        setFlightInput({ pitch: 0, roll: 0, yaw: 0 })
         setIsPlaying(true)
       } else {
         setIsPlaying((value) => !value)

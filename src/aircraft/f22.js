@@ -58,25 +58,40 @@ function nozzleAngles(vector, side) {
 // Aerodynamic sign convention, positive as defined on the hinges above. Nose up needs
 // the tail pushed down, so the stabilators and the flaperons (which act as elevons) go
 // trailing edge up. Rolling right needs more lift on the left wing, so the left surfaces
-// go trailing edge down. Both vertical tails deflect together for yaw, and the LE flaps
-// droop with the flaps.
+// go trailing edge down. Both vertical tails deflect together for yaw, while the LE and
+// trailing-edge surfaces follow the automatic FCS schedule.
 //
 // Returns degrees per surface name. Both the airframe viewer and the flight range drive
 // the same mixing; only thrust vectoring differs, because the range renders no nozzles.
 function mixControlSurfaces(
-  { pitch = 0, roll = 0, yaw = 0, flaps = 0 },
+  {
+    pitch = 0,
+    roll = 0,
+    yaw = 0,
+    maneuverSurface,
+    leadingEdgeDeflection,
+    trailingEdgeDeflection,
+    flaperonDeflection,
+  },
   { thrustVectoring = false } = {},
 ) {
-  const flapSetting = MathUtils.clamp(flaps, 0, 1)
+  // The flight model supplies the FCS schedule. The pitch-derived fallback exists only for
+  // the non-physical hangar preview, so direct-control animation still demonstrates the
+  // automatic surfaces without inventing an AoA state there.
+  const preview = MathUtils.clamp(maneuverSurface ?? Math.max(pitch, 0) * 0.55, 0, 1)
+  const leadingEdge = MathUtils.clamp(leadingEdgeDeflection ?? preview, 0, 1)
+  const trailingEdge = MathUtils.clamp(trailingEdgeDeflection ?? preview * 0.68, 0, 1)
+  const flaperon = MathUtils.clamp(flaperonDeflection ?? preview * 0.82, 0, 1)
+  const trailingSchedule = Math.max(trailingEdge, flaperon)
   const angles = {
     stabilatorLeft: (pitch * -20) + (roll * 8),
     stabilatorRight: (pitch * -20) - (roll * 8),
     aileronLeft: roll * 25,
     aileronRight: -roll * 25,
-    flaperonLeft: (pitch * -10) + (roll * 15) + (flapSetting * 22),
-    flaperonRight: (pitch * -10) - (roll * 15) + (flapSetting * 22),
-    leadingEdgeFlapLeft: flapSetting * -11,
-    leadingEdgeFlapRight: flapSetting * -11,
+    flaperonLeft: (pitch * -10) + (roll * 15) + (trailingSchedule * 12),
+    flaperonRight: (pitch * -10) - (roll * 15) + (trailingSchedule * 12),
+    leadingEdgeFlapLeft: leadingEdge * -11,
+    leadingEdgeFlapRight: leadingEdge * -11,
     rudderLeft: yaw * 22,
     rudderRight: yaw * 22,
   }
@@ -693,7 +708,42 @@ const f22 = {
         beyondBeamDragFactor: 0.62,
         sideslipDragGain: 9,
         postStallSideForceFactor: 0.35,
-        flapsDrag: 4,
+
+        // Automatic maneuver-surface schedule. These are normalized aerodynamic effects,
+        // independent of the hinge angles used by the renderer. Normal turns get a modest
+        // lift/control increment; High-G opens the full schedule and pays a steeper drag
+        // bill. Separated flow progressively removes effectiveness toward the configured
+        // floor, so the surfaces cannot carry a Cobra or flip.
+        maneuverSurfaces: {
+          aoaOnsetDeg: 5,
+          aoaFullDeg: 20,
+          gOnset: 1.4,
+          gFull: 7,
+          lowSpeedKmh: 220,
+          fullScheduleKmh: 520,
+          lowSpeedScheduleFloor: 0.38,
+          highSpeedReliefKmh: 1050,
+          highSpeedFullReliefKmh: 1550,
+          highSpeedScheduleFloor: 0.48,
+          pitchWeight: 0.34,
+          aoaWeight: 0.38,
+          gWeight: 0.16,
+          highGWeight: 0.34,
+          normalLimit: 0.7,
+          leadingEdgeShare: 0.82,
+          trailingEdgeShare: 0.62,
+          flaperonShare: 0.78,
+          engageResponse: 5.5,
+          releaseResponse: 7.5,
+          effectivenessLossOnsetDeg: 18,
+          effectivenessLossFullDeg: 62,
+          highAoAEffectivenessFloor: 0.12,
+          liftGain: 0.075,
+          controlAuthorityGain: 0.1,
+          profileDragCoefficient: 2.1,
+          inducedDragGain: 0.28,
+          highGDragFactor: 1.8,
+        },
 
         /*
         High-G turn, requested by the W+S Extreme chord (or a dedicated device action).

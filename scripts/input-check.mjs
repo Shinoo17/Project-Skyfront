@@ -39,10 +39,12 @@ assert.equal(FLIGHT_BINDINGS.Space, 'air-brake', 'Space must be the independent 
 assert.equal(FLIGHT_BINDINGS.ShiftLeft, 'afterburner', 'Shift must request afterburner')
 assert.equal(FLIGHT_BINDINGS.KeyA, 'roll-left', 'A must roll left')
 assert.equal(FLIGHT_BINDINGS.KeyD, 'roll-right', 'D must roll right')
+assert.equal(FLIGHT_BINDINGS.KeyF, undefined, 'F must not expose a manual flap command')
 
 // Digital axes are softened, while the semantic engine intents are immediate.
 input.pressed.add('pitch-up')
 const firstPitch = step().pitch
+assert.equal('flaps' in input.intent, false, 'pilot intent must not contain a flap axis')
 assert.ok(firstPitch > 0 && firstPitch < 0.2, 'keyboard pitch must ramp instead of snapping')
 for (let frame = 0; frame < 20; frame += 1) step()
 assert.equal(input.intent.pitch, 1, 'held pitch must reach full authority')

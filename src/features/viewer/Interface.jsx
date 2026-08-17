@@ -383,14 +383,6 @@ function ControlPanel({
               onFlightInput={onFlightInput}
             />
             <FlightControlButton
-              axis="flaps"
-              value={1}
-              label="Flaps"
-              icon={ChevronDown}
-              flightInput={flightInput}
-              onFlightInput={onFlightInput}
-            />
-            <FlightControlButton
               axis="pitch"
               value={-1}
               label="Pitch down"
@@ -405,7 +397,6 @@ function ControlPanel({
             <span>PITCH <strong>{signedInput(flightInput.pitch)}</strong></span>
             <span>ROLL <strong>{signedInput(flightInput.roll)}</strong></span>
             <span>YAW <strong>{signedInput(flightInput.yaw)}</strong></span>
-            <span>FLAPS <strong>{signedInput(flightInput.flaps)}</strong></span>
           </div>
 
           <div
@@ -434,7 +425,7 @@ function ControlPanel({
             <AfterburnerButton active={afterburner} onChange={onAfterburnerChange} />
           </div>
 
-          <p className="flight-help">ARROWS: PITCH / ROLL &nbsp; A D: ROLL &nbsp; Q E: YAW &nbsp; F: FLAPS &nbsp; W S: SPEED &nbsp; SHIFT: HOLD A/B</p>
+          <p className="flight-help">ARROWS: PITCH / ROLL &nbsp; A D: ROLL &nbsp; Q E: YAW &nbsp; W S: SPEED &nbsp; SHIFT: HOLD A/B &nbsp; FCS: AUTO SURFACES</p>
         </section>
       )}
 

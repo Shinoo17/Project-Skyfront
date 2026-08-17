@@ -11,7 +11,6 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  ChevronsDown,
   Camera,
   Eye,
   Flame,
@@ -80,7 +79,6 @@ const LEGEND_ROWS = [
   { actions: ['throttle-up', 'throttle-down'], caption: 'MIL power / idle' },
   { actions: ['afterburner'], caption: 'afterburner' },
   { actions: ['air-brake'], caption: 'airbrake' },
-  { actions: ['flaps'], caption: 'flaps' },
   { actions: ['maneuver-assist'], caption: 'maneuver assist' },
   { actions: ['rear-view'], caption: 'look back' },
 ]
@@ -143,7 +141,6 @@ function readAdvisory(telemetry) {
   if (telemetry.airBrake) {
     return { key: 'airbrake', label: 'AIRBRAKE · HEAVY DECEL', tone: 'caution' }
   }
-  if (telemetry.flaps) return { key: 'flaps', label: 'FLAPS DOWN', tone: 'caution' }
   return { key: 'clear', label: 'FLIGHT PATH CLEAR', tone: 'normal' }
 }
 
@@ -255,6 +252,8 @@ function formatDebug(value) {
     row('TVC', `${value.thrustVector.toFixed(1)}°`),
     row('STALL', `${Math.round(value.postStallBlend * 100)}%${value.airBrake ? ' +brake' : ''}`),
     row('HI-G', `${Math.round(value.highGBlend * 100)}%`),
+    row('FCS SURF', `${Math.round(value.maneuverSurface * 100)}%`
+      + `  eff ${Math.round(value.maneuverSurfaceEffectiveness * 100)}%`),
     row('PSM', `${value.psmPhase} ${Math.round(value.psmBlend * 100)}%`
       + ` float ${Math.round(value.psmFloatBlend * 100)}% g×${value.gravityScale.toFixed(2)}`),
     row('DEPART', `${Math.round(value.departureBlend * 100)}%`),
@@ -458,7 +457,6 @@ export default function FlightHud({
           <div className="deck-row">
             <HoldControl control="yaw-left" label="Yaw left" icon={RotateCcw} controls={controls}>Yaw L</HoldControl>
             <HoldControl control="yaw-right" label="Yaw right" icon={RotateCw} controls={controls}>Yaw R</HoldControl>
-            <HoldControl control="flaps" label="Deploy flaps" icon={ChevronsDown} controls={controls}>Flaps</HoldControl>
             <HoldControl
               control="afterburner"
               label="Hold for afterburner"

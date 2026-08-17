@@ -13,6 +13,7 @@
     "flight-physics-check": "node --import ./scripts/register.mjs scripts/flight-physics-check.mjs",
     "performance-check": "node --import ./scripts/register.mjs scripts/performance-check.mjs",
     "high-g-check": "node --import ./scripts/register.mjs scripts/high-g-check.mjs",
+    "maneuver-surface-check": "node --import ./scripts/register.mjs scripts/maneuver-surface-check.mjs",
     "psm-check": "node --import ./scripts/register.mjs scripts/psm-control-check.mjs",
     "maneuver-check": "node --import ./scripts/register.mjs scripts/maneuver-check.mjs",
     "stall-check": "node --import ./scripts/register.mjs scripts/stall-check.mjs"
